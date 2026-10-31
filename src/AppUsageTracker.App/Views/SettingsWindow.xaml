@@ -1,0 +1,156 @@
+<Window x:Class="AppUsageTracker.App.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="设置"
+        Width="620" Height="740" MinWidth="560" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None" AllowsTransparency="False"
+        ResizeMode="CanResize"
+        Background="{DynamicResource PageBrush}"
+        ShowInTaskbar="False"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="-1"
+                      CornerRadius="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <DockPanel>
+        <!-- 自绘标题栏 -->
+        <Grid DockPanel.Dock="Top" Height="40" Background="Transparent">
+            <TextBlock Text="设置" FontSize="13" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="18,0,0,0" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="OnCloseClick" ToolTip="关闭" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 底部操作行（固定，不随内容滚动） -->
+        <Grid DockPanel.Dock="Bottom" Margin="16,10,16,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="1" Style="{StaticResource GhostButton}" Content="取消" IsCancel="True"
+                    Padding="22,7" Margin="0,0,10,0" />
+            <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="保存" x:Name="SaveButton"
+                    Padding="26,7" Click="OnSaveClick" IsDefault="True" />
+        </Grid>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="16,4,16,0">
+            <StackPanel Margin="0,0,10,0">
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
+                    <DockPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="外观（跟随 Windows）" VerticalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="3">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Style="{StaticResource ThemePill}" GroupName="theme"
+                                                 Content="跟随系统" IsChecked="{Binding IsAutoTheme}" />
+                                    <RadioButton Style="{StaticResource ThemePill}" GroupName="theme"
+                                                 Content="🌙 深色" IsChecked="{Binding IsDarkThemePill}" />
+                                    <RadioButton Style="{StaticResource ThemePill}" GroupName="theme"
+                                                 Content="☀ 浅色" IsChecked="{Binding IsLightThemePill}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="监控参数" Margin="0,0,0,10" />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="40" />
+                                <RowDefinition Height="40" />
+                                <RowDefinition Height="40" />
+                                <RowDefinition Height="40" />
+                                <RowDefinition Height="32" />
+                                <RowDefinition Height="32" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Style="{StaticResource BodyText}" Text="空闲判定阈值（秒）" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}" Height="30" VerticalAlignment="Center"
+                                     Text="{Binding IdleThresholdSeconds}" />
+                            <TextBlock Grid.Column="2" Style="{StaticResource MutedText}" Text="10 ~ 3600；超时无操作暂停计时"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+
+                            <TextBlock Grid.Row="1" Style="{StaticResource BodyText}" Text="前台轮询间隔（毫秒）" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource DarkTextBox}" Height="30" VerticalAlignment="Center"
+                                     Text="{Binding ForegroundPollMs}" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource MutedText}" Text="200 ~ 10000"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+
+                            <TextBlock Grid.Row="2" Style="{StaticResource BodyText}" Text="久坐提醒（分钟）" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource DarkTextBox}" Height="30" VerticalAlignment="Center"
+                                     Text="{Binding RestReminderMinutes}" />
+                            <TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource MutedText}" Text="0 为关闭；连续活跃达到后气泡提醒休息"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+
+                            <TextBlock Grid.Row="3" Style="{StaticResource BodyText}" Text="数据保留（天）" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource DarkTextBox}" Height="30" VerticalAlignment="Center"
+                                     Text="{Binding RetentionDays}" />
+                            <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource MutedText}" Text="0 为永久；启动时自动清理过期明细"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+
+                            <CheckBox Grid.Row="4" Grid.ColumnSpan="3" Style="{StaticResource DarkCheckBox}" IsChecked="{Binding StartWithWindows}"
+                                      Content="开机自启（当前用户）" VerticalAlignment="Center" />
+                            <CheckBox Grid.Row="5" Grid.ColumnSpan="3" Style="{StaticResource DarkCheckBox}" IsChecked="{Binding ShowFloatingWidget}"
+                                      Content="显示桌面悬浮窗（实时显示今日活跃与当前应用）" VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Style="{StaticResource H2}" Text="分类规则" HorizontalAlignment="Left" />
+                            <Button Style="{StaticResource GhostButton}" Content="恢复默认" HorizontalAlignment="Right"
+                                    Command="{Binding ResetCategoryRulesCommand}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource MutedText}" Margin="0,0,0,6" TextWrapping="Wrap"
+                                   Text="每行一条：分类名=关键词1|关键词2。软件的名称/进程/exe 路径包含关键词即归入该分类，按行序优先匹配，未命中计入「未分类」。" />
+                        <TextBox Style="{StaticResource DarkTextBox}" Text="{Binding CategoryRulesText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                 Height="150" FontSize="11.5" VerticalContentAlignment="Top" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Style="{StaticResource H2}" Text="排除的应用" HorizontalAlignment="Left" />
+                            <Button Style="{StaticResource GhostButton}" Content="加入当前前台程序" HorizontalAlignment="Right"
+                                    Command="{Binding AddForegroundAppCommand}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource MutedText}" Text="每行一个 exe 完整路径（小写）。名单内的软件不参与任何统计。" Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource DarkTextBox}" Text="{Binding ExcludedAppsText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                 Height="90" FontSize="12" VerticalContentAlignment="Top" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,4">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="打开目录"
+                                Command="{Binding OpenDataFolderCommand}" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource BodyText}" Text="数据目录：" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource MutedText}" Text="{Binding DataDirectory}" VerticalAlignment="Center"
+                                       ToolTip="{Binding DataDirectory}" TextTrimming="CharacterEllipsis" MaxWidth="380" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
