@@ -203,7 +203,15 @@ public partial class DashboardViewModel : ObservableObject
         if (parts[0] == "start") StartDate = StartDate.AddDays(days);
         else EndDate = EndDate.AddDays(days);
 
-        if (EndDate < StartDate) EndDate = StartDate;
+        // 端点越过另一端时整个窗口平移（保持跨度），而不是把端点夹死——
+        // 旧行为在单日视图下按端步进会原地不动，看起来像没反应
+        if (EndDate < StartDate)
+        {
+            if (days < 0) StartDate = EndDate;
+            else EndDate = StartDate;
+        }
+
+        // 不能查看未来：越界时原地夹住
         if (StartDate > DateTime.Today) StartDate = DateTime.Today;
         if (EndDate > DateTime.Today) EndDate = DateTime.Today;
         await LoadAsync();
