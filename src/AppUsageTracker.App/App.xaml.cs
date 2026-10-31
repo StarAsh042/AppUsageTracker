@@ -35,7 +35,9 @@ public partial class App : Application
     public TrayController? Tray { get; private set; }
     public bool IsShuttingDown { get; private set; }
 
-
+    private DashboardWindow? _dashboard;
+    private SettingsWindow? _settingsWindow;
+    private FloatingWidgetWindow? _widget;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -66,8 +68,14 @@ public partial class App : Application
             return;
         }
 
+        _showUiSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowUiEventName);
+        _showUiWait = ThreadPool.RegisterWaitForSingleObject(
+            _showUiSignal,
+            (_, timedOut) => { if (!timedOut) Dispatcher.BeginInvoke(() => ShowDashboard()); },
+            null, Timeout.Infinite, executeOnlyOnce: false);
+
         Bootstrap();
-        // 外壳阶段：托盘常驻，主界面窗口在后续提交引入
+        // 默认只开悬浮窗（Bootstrap 内处理），主界面由托盘双击/菜单或第二实例信号唤起
     }
 
     private void Bootstrap()
@@ -95,6 +103,29 @@ public partial class App : Application
         }
     }
 
+    /// <summary>显示/创建悬浮窗。</summary>
+    public void ShowWidget()
+    {
+        if (_widget is null)
+        {
+            _widget = new FloatingWidgetWindow(this);
+            _widget.Closed += (_, _) => _widget = null;
+        }
+        _widget.Show();
+    }
+
+    /// <summary>托盘/悬浮窗菜单切换悬浮窗显隐（记忆到设置）。</summary>
+    public void SetWidgetVisible(bool visible)
+    {
+        Settings.ShowFloatingWidget = visible;
+        Settings.Save();
+        if (visible) ShowWidget();
+        else _widget?.Hide();
+        Tray?.SyncWidgetItem(visible);
+    }
+
+    public bool IsWidgetVisible => _widget is { IsVisible: true };
+
     /// <summary>把自身加入排除名单（托盘程序自己不该被计入使用时间）。</summary>
     private void EnsureSelfExcluded()
     {
@@ -105,6 +136,35 @@ public partial class App : Application
         Settings.Save();
     }
 
+    public void ShowDashboard(bool firstRun = false)
+    {
+        if (_dashboard is null)
+        {
+            _dashboard = new DashboardWindow(this);
+            _dashboard.Closed += (_, _) => _dashboard = null;
+        }
+
+        _dashboard.Show();
+        _dashboard.Activate();
+
+        if (firstRun)
+        {
+            Tray?.NotifyFirstRun();
+        }
+    }
+
+    public void ShowSettings()
+    {
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(this);
+        _settingsWindow.Show();
+        _settingsWindow.Activate();
+    }
 
     public void ExitApplication()
     {

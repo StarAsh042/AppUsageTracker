@@ -15,6 +15,7 @@ public sealed class TrayController : IDisposable
     private ContextMenuStrip _menu = null!;
     private ToolStripMenuItem _pauseItem = null!;
     private ToolStripMenuItem _autostartItem = null!;
+    private ToolStripMenuItem _widgetItem = null!;
     private System.Timers.Timer? _tooltipTimer;
 
     public TrayController(App app) => _app = app;
@@ -22,6 +23,18 @@ public sealed class TrayController : IDisposable
     public void Initialize()
     {
         var menu = new ContextMenuStrip();
+
+        var openItem = new ToolStripMenuItem("打开仪表盘");
+        openItem.Font = new Font(openItem.Font, FontStyle.Bold);
+        openItem.Click += (_, _) => _app.Dispatcher.BeginInvoke(() => _app.ShowDashboard());
+
+        _widgetItem = new ToolStripMenuItem("悬浮窗");
+        _widgetItem.CheckOnClick = true;
+        _widgetItem.Checked = _app.Settings.ShowFloatingWidget;
+        _widgetItem.Click += (_, _) => _app.Dispatcher.BeginInvoke(() =>
+        {
+            _app.SetWidgetVisible(_widgetItem.Checked);
+        });
 
         _pauseItem = new ToolStripMenuItem("暂停监控");
         _pauseItem.CheckOnClick = true;
@@ -48,13 +61,20 @@ public sealed class TrayController : IDisposable
             }
         };
 
+        var settingsItem = new ToolStripMenuItem("设置…");
+        settingsItem.Click += (_, _) => _app.Dispatcher.BeginInvoke(_app.ShowSettings);
+
         var exitItem = new ToolStripMenuItem("退出");
         exitItem.Click += (_, _) => _app.Dispatcher.BeginInvoke(_app.ExitApplication);
 
         menu.Items.AddRange(new ToolStripItem[]
         {
+            openItem,
+            new ToolStripSeparator(),
+            _widgetItem,
             _pauseItem,
             _autostartItem,
+            settingsItem,
             new ToolStripSeparator(),
             exitItem,
         });
@@ -98,8 +118,22 @@ public sealed class TrayController : IDisposable
         _menu.Renderer = new ToolStripProfessionalRenderer(new TrayMenuColorTable(bg, hover, border, separator));
         _menu.BackColor = bg;
         _menu.ForeColor = text;
+        _menu.Opacity = dark ? 0.88 : 0.92; // 半透明呼应磨砂玻璃
         _menu.ShowImageMargin = false;
+        _menu.ShowCheckMargin = true; // 勾选标记在专用列显示（悬浮窗/暂停/自启）
         _menu.Font = new Font("Microsoft YaHei UI", 9f);
+
+        // 圆角菜单（裁切区域）
+        var radius = 10;
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        var w = _menu.Width > 0 ? _menu.Width : 220;
+        var h = _menu.Height > 0 ? _menu.Height : 200;
+        path.AddArc(0, 0, radius * 2, radius * 2, 180, 90);
+        path.AddArc(w - radius * 2, 0, radius * 2, radius * 2, 270, 90);
+        path.AddArc(w - radius * 2, h - radius * 2, radius * 2, radius * 2, 0, 90);
+        path.AddArc(0, h - radius * 2, radius * 2, radius * 2, 90, 90);
+        path.CloseFigure();
+        _menu.Region = new Region(path);
     }
 
     /// <summary>托盘菜单的专业配色表（覆盖下拉背景/悬停/边框/分隔线）。</summary>
@@ -124,6 +158,15 @@ public sealed class TrayController : IDisposable
         public override Color MenuItemPressedGradientEnd => _hover;
         public override Color SeparatorDark => _separator;
         public override Color SeparatorLight => _separator;
+        public override Color CheckBackground => _hover;
+        public override Color CheckSelectedBackground => _hover;
+        public override Color CheckPressedBackground => _hover;
+    }
+
+    /// <summary>悬浮窗显隐变化时同步托盘菜单勾选状态。</summary>
+    public void SyncWidgetItem(bool visible)
+    {
+        if (_widgetItem is not null) _widgetItem.Checked = visible;
     }
 
     /// <summary>首次启动的气泡提示。</summary>
