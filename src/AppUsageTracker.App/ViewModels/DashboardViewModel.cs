@@ -71,6 +71,7 @@ public partial class DashboardViewModel : ObservableObject
     private Dictionary<string, double> _appTodaySeconds = new(StringComparer.OrdinalIgnoreCase);
     private bool _baseLoaded;
     private bool _fetching;
+    private bool _loading;
 
     [ObservableProperty] private DateTime _startDate = DateTime.Today;
     [ObservableProperty] private DateTime _endDate = DateTime.Today;
@@ -113,10 +114,9 @@ public partial class DashboardViewModel : ObservableObject
         _ = SetRangeAsync("today");
     }
 
-    /// <summary>实时刷新总活跃/日均；仅在查看包含今天的范围时生效。</summary>
     /// <summary>
     /// 实时刷新总活跃/日均与排行榜：每秒直读数据库（区间闭合时服务会即时落库），
-    /// 排行榜整体按实时总数重算占比，当前应用行的时间同步跳动。
+    /// 排行榜整体按实时总数重算占比，当前应用行的时间同步跳动，新应用自动加入排行。
     /// 仅在查看包含今天的范围时生效。
     /// </summary>
     private void TickLive()
@@ -147,6 +147,18 @@ public partial class DashboardViewModel : ObservableObject
         DailyAverageText = Format.Duration(live / ((EndDate - StartDate).Days + 1));
 
         if (Ranking.Count == 0 || live <= 0) return;
+
+        // 新应用出现活跃记录时自动重建排行榜，免除手动刷新
+        if (!_loading)
+        {
+            var known = Ranking.Select(r => r.AppKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (_appTodaySeconds.Any(kv => kv.Value > 0 && !known.Contains(kv.Key)))
+            {
+                _loading = true;
+                _ = LoadAsync().ContinueWith(_ => _loading = false, TaskScheduler.FromCurrentSynchronizationContext());
+                return;
+            }
+        }
 
         // 排行榜整体按实时总数重算占比，当前应用行的时间同步跳动
         var current = _service.CurrentApp;
