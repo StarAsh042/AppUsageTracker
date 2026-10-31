@@ -31,7 +31,7 @@ public partial class FloatingWidgetWindow : Window
         InitializeComponent();
         _app = app;
         Icon = AppIconCache.GetAppIconImage();
-        WindowChrome.Apply(this, ThemeManager.EffectiveTheme == "Dark", removeBorder: true);
+        WindowChrome.ApplyFloating(this, ThemeManager.EffectiveTheme == "Dark");
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Tick();
@@ -48,24 +48,22 @@ public partial class FloatingWidgetWindow : Window
     }
 
     private void OnThemeChanged(string theme) =>
-        Dispatcher.BeginInvoke(() => WindowChrome.Apply(this, theme == "Dark", removeBorder: true));
+        Dispatcher.BeginInvoke(() => WindowChrome.ApplyFloating(this, theme == "Dark"));
 
     private void RestorePosition()
     {
         var s = _app.Settings;
+        ClampToScreen(s.WidgetX, s.WidgetY);
+    }
+
+    /// <summary>把悬浮窗位置钳制在工作区内，任何情况下不超出屏幕上下左右边界。</summary>
+    private void ClampToScreen(double x, double y)
+    {
         var area = SystemParameters.WorkArea;
-        if (s.WidgetX >= 0 && s.WidgetY >= 0
-            && s.WidgetX < area.Width - 40 && s.WidgetY < area.Height - 40)
-        {
-            Left = s.WidgetX;
-            Top = s.WidgetY;
-        }
-        else
-        {
-            // 默认贴屏幕左上角
-            Left = 14;
-            Top = 12;
-        }
+        var maxLeft = Math.Max(0, area.Right - ActualWidth);
+        var maxTop = Math.Max(0, area.Bottom - ActualHeight);
+        Left = Math.Clamp(x, 0, maxLeft);
+        Top = Math.Clamp(y, 0, maxTop);
     }
 
     private void Tick()
@@ -118,6 +116,7 @@ public partial class FloatingWidgetWindow : Window
         try
         {
             DragMove();
+            ClampToScreen(Left, Top); // 拖动后钳制在屏幕边界内
             // 拖动结束记忆位置
             _app.Settings.WidgetX = (int)Left;
             _app.Settings.WidgetY = (int)Top;
