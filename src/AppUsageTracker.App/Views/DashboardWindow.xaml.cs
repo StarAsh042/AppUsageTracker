@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using AppUsageTracker.App.Services;
 
@@ -43,6 +45,33 @@ public partial class DashboardWindow : Window
     }
 
     private void OnHideClick(object sender, RoutedEventArgs e) => Hide();
+
+    /// <summary>排行行右键：按当前行应用构建分类菜单（含全部规则分类与「未分类」）。</summary>
+    private void OnRankContextMenu(object sender, ContextMenuEventArgs e)
+    {
+        if (DataContext is not ViewModels.DashboardViewModel vm) return;
+        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+        if (row?.Item is not ViewModels.RankItem item) return;
+
+        var menu = new ContextMenu();
+        foreach (var category in vm.AvailableCategories)
+        {
+            var mi = new MenuItem { Header = category };
+            mi.Click += (_, _) => vm.SetCategoryCommand.Execute($"{item.AppKey}|{category}");
+            menu.Items.Add(mi);
+        }
+        row.ContextMenu = menu;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? d) where T : DependencyObject
+    {
+        while (d is not null)
+        {
+            if (d is T t) return t;
+            d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+        }
+        return null;
+    }
 
     /// <summary>设置保存后由设置窗口调用，重载仪表盘数据。</summary>
     public void RefreshData()

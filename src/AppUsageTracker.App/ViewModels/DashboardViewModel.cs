@@ -18,23 +18,23 @@ using AppUsageTracker.Core.Tracking;
 
 namespace AppUsageTracker.App.ViewModels;
 
-    /// <summary>排行榜单行（ActiveText/Percent/BaseActiveSeconds 可变，支持每秒按数据库实时刷新）。</summary>
-    public partial class RankItem : ObservableObject
-    {
-        public int Index { get; init; }
-        public string DisplayName { get; init; } = "";
-        public string Category { get; init; } = "";
-        public SolidColorBrush CategoryBrush { get; init; } = null!;
-        public string AppKey { get; init; } = "";
-        public string ExePath { get; init; } = "";
-        public BitmapSource? Icon { get; init; }
+/// <summary>排行榜单行（ActiveText/Percent/BaseActiveSeconds/Category 可变，支持实时刷新与右键改分类）。</summary>
+public partial class RankItem : ObservableObject
+{
+    public int Index { get; init; }
+    public string DisplayName { get; init; } = "";
+    public string AppKey { get; init; } = "";
+    public string ExePath { get; init; } = "";
+    public BitmapSource? Icon { get; init; }
 
-        /// <summary>该应用今日已落库的活跃秒数（每秒随数据库刷新）。</summary>
-        public double BaseActiveSeconds { get; set; }
+    /// <summary>该应用今日已落库的活跃秒数（每秒随数据库刷新）。</summary>
+    public double BaseActiveSeconds { get; set; }
 
-        [ObservableProperty] private string _activeText = "";
-        [ObservableProperty] private double _percent;
-    }
+    [ObservableProperty] private string _activeText = "";
+    [ObservableProperty] private double _percent;
+    [ObservableProperty] private string _category = "";
+    [ObservableProperty] private SolidColorBrush _categoryBrush = null!;
+}
 
 /// <summary>分类占比图例行。</summary>
 public sealed class CategoryItem
@@ -86,6 +86,7 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _stateText = "";
     [ObservableProperty] private SolidColorBrush _stateBrush = null!;
     [ObservableProperty] private ObservableCollection<RankItem> _ranking = new();
+    [ObservableProperty] private ObservableCollection<string> _availableCategories = new();
     [ObservableProperty] private ObservableCollection<CategoryItem> _categories = new();
     [ObservableProperty] private IReadOnlyList<DonutSegment> _donutSegments = Array.Empty<DonutSegment>();
     [ObservableProperty] private IReadOnlyList<TimelineSegment> _timelineSegments = Array.Empty<TimelineSegment>();
@@ -256,7 +257,7 @@ public partial class DashboardViewModel : ObservableObject
             return _store.QueryDailyTotals(Format.DateKey(prevStart), Format.DateKey(prevEnd));
         });
 
-        var resolver = new CategoryResolver(_settings.CategoryRules);
+        var resolver = new CategoryResolver(_settings.CategoryRules, _settings.AppCategoryOverrides);
         var grouped = rows
             .GroupBy(r => r.AppKey, StringComparer.OrdinalIgnoreCase)
             .Select(g =>
@@ -432,6 +433,31 @@ public partial class DashboardViewModel : ObservableObject
     private static SolidColorBrush WarnBrush() => (SolidColorBrush)Application.Current.Resources["WarnBrush"];
     private static SolidColorBrush StoppedBrush() => (SolidColorBrush)Application.Current.Resources["StoppedBrush"];
 
+    /// <summary>右键排行行设置分类：写入按应用覆盖并持久化（未分类 = 清除覆盖，回落规则）。</summary>
+    [RelayCommand]
+    private void SetCategory(string? param)
+    {
+        if (string.IsNullOrEmpty(param)) return;
+        var sep = param.IndexOf('|');
+        if (sep <= 0) return;
+        var appKey = param[..sep];
+        var category = param[(sep + 1)..];
+
+        if (category == CategoryResolver.Uncategorized)
+            _settings.AppCategoryOverrides.Remove(appKey);
+        else
+            _settings.AppCategoryOverrides[appKey] = category;
+        _settings.Save();
+
+        // 立即更新行显示，无需全量重载
+        var row = Ranking.FirstOrDefault(r => string.Equals(r.AppKey, appKey, StringComparison.OrdinalIgnoreCase));
+        if (row is not null)
+        {
+            row.Category = category;
+            row.CategoryBrush = ThemeManager.StableBrush(category);
+        }
+    }
+
     [RelayCommand]
     private void OpenSettings() => _openSettings();
 
@@ -451,7 +477,7 @@ public partial class DashboardViewModel : ObservableObject
         {
             var from = Format.DateKey(StartDate);
             var to = Format.DateKey(EndDate);
-            var resolver = new CategoryResolver(_settings.CategoryRules);
+            var resolver = new CategoryResolver(_settings.CategoryRules, _settings.AppCategoryOverrides);
             Task.Run(() => CsvExporter.ExportRange(_store, resolver, from, to, dialog.FileName)).Wait();
             MessageBox.Show($"已导出到：\n{dialog.FileName}", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }

@@ -34,6 +34,21 @@ public class CategoryResolverTests
     }
 
     [Fact]
+    public void 应用级覆盖_优先于规则匹配()
+    {
+        var overrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"e:\game\unknown\mystery.exe"] = "娱乐",
+        };
+        var resolver = new CategoryResolver(TrackerSettings.CreateDefaultCategoryRules(), overrides);
+
+        // AppKey 命中覆盖：即使规则也能匹配，也以覆盖为准
+        Assert.Equal("娱乐", resolver.Resolve("某未知程序", "mystery", @"E:\Game\Unknown\Mystery.exe"));
+        // 未命中覆盖：走规则
+        Assert.Equal("开发", resolver.Resolve("ZCode", "zcode", @"c:\program files\zcode\zcode.exe"));
+    }
+
+    [Fact]
     public void 自定义规则_优先于内置顺序()
     {
         var resolver = new CategoryResolver(new List<CategoryRule>
