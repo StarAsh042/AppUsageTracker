@@ -143,11 +143,7 @@
                     <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="4,10,4,10">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Top" Style="{StaticResource H2}" Margin="14,4,14,6" Text="应用排行" />
-                            <DataGrid Style="{StaticResource MainGrid}" ItemsSource="{Binding Ranking}"
-                                      ContextMenuOpening="OnRankContextMenu">
-                                <DataGrid.ContextMenu>
-                                    <ContextMenu />
-                                </DataGrid.ContextMenu>
+                            <DataGrid x:Name="RankGrid" Style="{StaticResource MainGrid}" ItemsSource="{Binding Ranking}">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="34" />
                                     <DataGridTemplateColumn Header="" Width="38">

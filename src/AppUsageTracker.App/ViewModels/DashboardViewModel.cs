@@ -266,6 +266,8 @@ public partial class DashboardViewModel : ObservableObject
         });
 
         var resolver = new CategoryResolver(_settings.CategoryRules, _settings.AppCategoryOverrides);
+        AvailableCategories = new ObservableCollection<string>(
+            _settings.CategoryRules.Select(r => r.Name).Distinct().Append(CategoryResolver.Uncategorized));
         var grouped = rows
             .GroupBy(r => r.AppKey, StringComparer.OrdinalIgnoreCase)
             .Select(g =>
@@ -486,6 +488,8 @@ public partial class DashboardViewModel : ObservableObject
             var from = Format.DateKey(StartDate);
             var to = Format.DateKey(EndDate);
             var resolver = new CategoryResolver(_settings.CategoryRules, _settings.AppCategoryOverrides);
+        AvailableCategories = new ObservableCollection<string>(
+            _settings.CategoryRules.Select(r => r.Name).Distinct().Append(CategoryResolver.Uncategorized));
             Task.Run(() => CsvExporter.ExportRange(_store, resolver, from, to, dialog.FileName)).Wait();
             MessageBox.Show($"已导出到：\n{dialog.FileName}", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
