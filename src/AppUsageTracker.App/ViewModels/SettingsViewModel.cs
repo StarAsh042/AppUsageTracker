@@ -18,6 +18,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int _foregroundPollMs;
     [ObservableProperty] private int _restReminderMinutes;
     [ObservableProperty] private int _retentionDays;
+    [ObservableProperty] private bool _showFloatingWidget;
     [ObservableProperty] private bool _startWithWindows;
     [ObservableProperty] private string _excludedAppsText = "";
     [ObservableProperty] private string _categoryRulesText = "";
@@ -43,6 +44,7 @@ public partial class SettingsViewModel : ObservableObject
         ForegroundPollMs = settings.ForegroundPollMs;
         RestReminderMinutes = settings.RestReminderMinutes;
         RetentionDays = settings.RetentionDays;
+        ShowFloatingWidget = settings.ShowFloatingWidget;
         StartWithWindows = AutoStartManager.IsEnabled();
         ThemeMode = settings.Theme is "Dark" or "Light" ? settings.Theme : "Auto";
         DataDirectory = settings.DataDirectory;
@@ -111,6 +113,7 @@ public partial class SettingsViewModel : ObservableObject
         updated.ForegroundPollMs = ForegroundPollMs;
         updated.RestReminderMinutes = RestReminderMinutes;
         updated.RetentionDays = RetentionDays;
+        updated.ShowFloatingWidget = ShowFloatingWidget;
         updated.CategoryRules = rules;
         updated.ExcludedAppKeys = excluded;
         updated.Theme = ThemeMode;
@@ -155,6 +158,9 @@ public partial class SettingsViewModel : ObservableObject
             Theme = source.Theme,
             RestReminderMinutes = source.RestReminderMinutes,
             RetentionDays = source.RetentionDays,
+            ShowFloatingWidget = source.ShowFloatingWidget,
+            WidgetX = source.WidgetX,
+            WidgetY = source.WidgetY,
             CategoryRules = source.CategoryRules.Select(r => new CategoryRule
             {
                 Name = r.Name,

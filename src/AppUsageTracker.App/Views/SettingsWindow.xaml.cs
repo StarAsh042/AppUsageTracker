@@ -33,6 +33,9 @@ public partial class SettingsWindow : Window
         try
         {
             _app.Service.ApplySettings(updated);
+            // 悬浮窗开关实时生效；分类规则等变化让仪表盘立即重载数据
+            _app.SetWidgetVisible(updated.ShowFloatingWidget);
+            _app.Windows.OfType<DashboardWindow>().FirstOrDefault()?.RefreshData();
         }
         catch (Exception ex)
         {
@@ -53,7 +56,7 @@ public partial class SettingsWindow : Window
             }
         }
 
-        DialogResult = true;
+        // 本窗口以 Show() 非模态打开，不能设置 DialogResult，直接关闭即可
         Close();
     }
 }
