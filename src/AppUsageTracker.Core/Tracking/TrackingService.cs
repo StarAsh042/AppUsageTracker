@@ -127,6 +127,7 @@ public sealed class TrackingService : IDisposable
             _settings.ForegroundPollMs = newSettings.ForegroundPollMs;
             _settings.RestReminderMinutes = newSettings.RestReminderMinutes;
             _settings.RetentionDays = newSettings.RetentionDays;
+            _settings.ShowFloatingWidget = newSettings.ShowFloatingWidget;
             _settings.CategoryRules = new List<CategoryRule>(newSettings.CategoryRules);
             _settings.ExcludedAppKeys = new List<string>(newSettings.ExcludedAppKeys);
             _activeSince = null;
@@ -178,16 +179,22 @@ public sealed class TrackingService : IDisposable
     private void OnForegroundTick(AppIdentity? foreground, double idleSeconds, DateTime now)
     {
         bool changed = false;
+        bool segmentClosed = false;
         TrackingState state;
         lock (_gate)
         {
             var before = _aggregator.State;
+            var intervalsBefore = _aggregator.PendingIntervalCount;
             _aggregator.OnTick(foreground, idleSeconds, now);
             state = _aggregator.State;
             changed = state != before;
+            segmentClosed = _aggregator.PendingIntervalCount > intervalsBefore;
             UpdateRestReminder(state, now);
         }
         if (changed) RaiseStateChanged();
+        // 区间闭合（切换应用/进入空闲等）意味着数据形态变化：立即落库，
+        // 让悬浮窗与仪表盘的每秒数据库读取始终拿到最新数据
+        if (segmentClosed) FlushNow();
     }
 
     /// <summary>久坐提醒：只累计「活跃」状态；空闲/锁屏/暂停视为休息并重新计时。</summary>

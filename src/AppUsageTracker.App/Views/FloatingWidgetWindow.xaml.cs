@@ -20,16 +20,18 @@ public partial class FloatingWidgetWindow : Window
     private readonly App _app;
     private readonly DispatcherTimer _timer;
 
-    /// <summary>今日已落库的总活跃秒数缓存（每 30 秒刷新一次）。</summary>
+    /// <summary>今日已落库的总活跃秒数与按应用的活跃秒数缓存（每秒直读数据库刷新）。</summary>
     private double _todayBaseSeconds;
-    private DateTime _lastBaseFetch = DateTime.MinValue;
+    private Dictionary<string, double> _appTodaySeconds = new(StringComparer.OrdinalIgnoreCase);
+    private bool _baseLoaded;
+    private bool _fetching;
 
     public FloatingWidgetWindow(App app)
     {
         InitializeComponent();
         _app = app;
         Icon = AppIconCache.GetAppIconImage();
-        WindowChrome.Apply(this, ThemeManager.EffectiveTheme == "Dark");
+        WindowChrome.Apply(this, ThemeManager.EffectiveTheme == "Dark", removeBorder: true);
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Tick();
@@ -46,7 +48,7 @@ public partial class FloatingWidgetWindow : Window
     }
 
     private void OnThemeChanged(string theme) =>
-        Dispatcher.BeginInvoke(() => WindowChrome.Apply(this, theme == "Dark"));
+        Dispatcher.BeginInvoke(() => WindowChrome.Apply(this, theme == "Dark", removeBorder: true));
 
     private void RestorePosition()
     {
@@ -70,16 +72,23 @@ public partial class FloatingWidgetWindow : Window
     {
         var now = DateTime.Now;
 
-        if ((now - _lastBaseFetch).TotalSeconds >= 30)
+        if (!_fetching)
         {
-            _lastBaseFetch = now;
+            _fetching = true;
             var key = Format.DateKey(DateTime.Today);
-            _ = Task.Run(() => _app.Store.QueryDailyTotals(key, key))
+            _ = Task.Run(() => (Totals: _app.Store.QueryDailyTotals(key, key), PerApp: _app.Store.QueryDaily(key, key)))
                 .ContinueWith(t =>
                 {
-                    if (t.IsCompletedSuccessfully) _todayBaseSeconds = t.Result.FirstOrDefault()?.ActiveSeconds ?? 0;
+                    _fetching = false;
+                    if (!t.IsCompletedSuccessfully) return;
+                    _todayBaseSeconds = t.Result.Totals.FirstOrDefault(p => p.UsageDate == key)?.ActiveSeconds ?? 0;
+                    _appTodaySeconds = t.Result.PerApp.ToDictionary(d => d.AppKey, d => d.ActiveSeconds, StringComparer.OrdinalIgnoreCase);
+                    _baseLoaded = true;
+                    Tick(); // 数据到位后立即刷新本秒显示
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
+
+        if (!_baseLoaded) return;
 
         var segment = _app.Service.CurrentSegmentSeconds();
         TotalText.Text = Format.Duration(_todayBaseSeconds + segment);
@@ -88,10 +97,13 @@ public partial class FloatingWidgetWindow : Window
         var selfKey = Environment.ProcessPath?.ToLowerInvariant();
 
         if (current is not null
-            && !string.Equals(current.AppKey, selfKey, StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(current.AppKey, selfKey, StringComparison.OrdinalIgnoreCase)
+            && !_app.Settings.ExcludedAppKeys.Contains(current.AppKey, StringComparer.OrdinalIgnoreCase))
         {
+            // 与仪表盘口径一致：该应用今日累计 = 已落库部分 + 当前未闭合区间
+            var appSeconds = _appTodaySeconds.GetValueOrDefault(current.AppKey) + segment;
             CurrentAppText.Text = current.DisplayName;
-            CurrentAppSeconds.Text = Format.Duration(segment);
+            CurrentAppSeconds.Text = Format.Duration(appSeconds);
         }
         else
         {
