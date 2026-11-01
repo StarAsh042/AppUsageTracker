@@ -65,6 +65,7 @@ public sealed class TimelineView : FrameworkElement
         _scale.ZoomAt(FractionFromPixel(e.GetPosition(this).X), factor);
         InvalidateVisual();
         UpdateHoverTooltip(e.GetPosition(this).X);
+        e.Handled = true; // 阻止外层 ScrollViewer 抢滚轮
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)

@@ -23,6 +23,9 @@ public sealed class TrackerSettings
     /// <summary>排除统计的应用（AppKey，即小写 exe 全路径），每项一个。</summary>
     public List<string> ExcludedAppKeys { get; set; } = new();
 
+    /// <summary>前台为 Shell（桌面/explorer）时不计入活跃，因为那意味着没有真正使用任何软件。</summary>
+    public bool ExcludeShell { get; set; } = true;
+
     /// <summary>数据目录（存放 usage.db、日志、图标缓存等）。</summary>
     public string DataDirectory { get; set; } = DefaultDataDirectory();
 
@@ -182,6 +185,9 @@ public sealed class TrackerSettings
         CategoryRules ??= CreateDefaultCategoryRules();
         AppCategoryOverrides ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         CategoryDailyLimitMinutes ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // Shell（explorer）不计入前台活跃：在桌面无实际软件使用
+        if (!ExcludedAppKeys.Contains(@"c:\windows\explorer.exe", StringComparer.OrdinalIgnoreCase))
+            ExcludedAppKeys.Add(@"c:\windows\explorer.exe".ToLowerInvariant());
         // 旧版默认规则自动升级为新默认（用户自定义过则原样保留）
         if (MatchesLegacyDefaults(CategoryRules)) CategoryRules = CreateDefaultCategoryRules();
         if (Theme is not ("Auto" or "Dark" or "Light")) Theme = "Auto";

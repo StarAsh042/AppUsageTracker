@@ -35,6 +35,16 @@ public partial class DashboardWindow : Window
         // 主题切换（含跟随系统）时同步磨砂色调并重绘自绘控件
         ThemeManager.ThemeChanged += OnThemeChanged;
         Closed += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+
+        // 环形图点击下钻
+        DonutChartControl.SegmentClicked += category =>
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (DataContext is ViewModels.DashboardViewModel vm)
+                    vm.DrillIntoCommand.Execute(category);
+            });
+        };
     }
 
     /// <summary>排行行右键：按当前行应用构建分类菜单并显式打开（含全部规则分类与「未分类」）。</summary>

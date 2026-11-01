@@ -19,6 +19,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int _restReminderMinutes;
     [ObservableProperty] private int _retentionDays;
     [ObservableProperty] private bool _showFloatingWidget;
+    [ObservableProperty] private string _limitsText = "";
     [ObservableProperty] private bool _startWithWindows;
     [ObservableProperty] private string _excludedAppsText = "";
     [ObservableProperty] private string _categoryRulesText = "";
@@ -114,6 +115,7 @@ public partial class SettingsViewModel : ObservableObject
         updated.RestReminderMinutes = RestReminderMinutes;
         updated.RetentionDays = RetentionDays;
         updated.ShowFloatingWidget = ShowFloatingWidget;
+        updated.CategoryDailyLimitMinutes = ParseCategoryLimits(LimitsText);
         updated.CategoryRules = rules;
         updated.ExcludedAppKeys = excluded;
         updated.Theme = ThemeMode;
@@ -159,6 +161,7 @@ public partial class SettingsViewModel : ObservableObject
             RestReminderMinutes = source.RestReminderMinutes,
             RetentionDays = source.RetentionDays,
             ShowFloatingWidget = source.ShowFloatingWidget,
+            CategoryDailyLimitMinutes = new Dictionary<string, int>(source.CategoryDailyLimitMinutes),
             WidgetX = source.WidgetX,
             WidgetY = source.WidgetY,
             CategoryRules = source.CategoryRules.Select(r => new CategoryRule
@@ -195,6 +198,23 @@ public partial class SettingsViewModel : ObservableObject
 
         if (rules.Count == 0) throw new FormatException("至少保留一条分类规则");
         return rules;
+    }
+
+    internal static Dictionary<string, int> ParseCategoryLimits(string text)
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in text.Split(['', '
+'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (raw.Length == 0) continue;
+            var eq = raw.IndexOf('=');
+            if (eq <= 0) throw new FormatException($"「{raw}」缺少 = 号，应为 分类名=分钟");
+            var name = raw[..eq].Trim();
+            if (!int.TryParse(raw[(eq + 1)..].Trim(), out var minutes) || minutes < 0)
+                throw new FormatException($"「{name}」的分钟数无效");
+            result[name] = minutes;
+        }
+        return result;
     }
 
     private static IEnumerable<string> SplitLines(string text) =>

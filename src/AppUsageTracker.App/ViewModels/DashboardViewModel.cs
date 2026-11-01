@@ -92,6 +92,7 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<string> _availableCategories = new();
     [ObservableProperty] private string? _drillCategory;
     [ObservableProperty] private string _drillTitle = "分类占比（按活跃时长）";
+    [ObservableProperty] private bool _isDrilled;
     [ObservableProperty] private ObservableCollection<CategoryItem> _categories = new();
     [ObservableProperty] private IReadOnlyList<DonutSegment> _donutSegments = Array.Empty<DonutSegment>();
     [ObservableProperty] private IReadOnlyList<TimelineSegment> _timelineSegments = Array.Empty<TimelineSegment>();
@@ -477,6 +478,7 @@ public partial class DashboardViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(category) || category == DrillCategory) return;
         DrillCategory = category;
+        IsDrilled = true;
         RebuildDonut();
     }
 
@@ -485,6 +487,7 @@ public partial class DashboardViewModel : ObservableObject
     private void ExitDrill()
     {
         DrillCategory = null;
+        IsDrilled = false;
         RebuildDonut();
     }
 

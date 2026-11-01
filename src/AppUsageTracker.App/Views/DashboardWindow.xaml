@@ -192,7 +192,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <controls:DonutChart Width="150" Height="150" VerticalAlignment="Center"
+                                <controls:DonutChart x:Name="DonutChartControl" Width="150" Height="150" VerticalAlignment="Center"
                                                      Segments="{Binding DonutSegments}" CenterText="{Binding TotalActiveText}" />
                                 <ItemsControl Grid.Column="1" ItemsSource="{Binding Categories}" Margin="14,0,0,0"
                                               VerticalAlignment="Center">
