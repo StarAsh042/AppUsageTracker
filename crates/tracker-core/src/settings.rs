@@ -1,0 +1,65 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackerSettings {
+    pub idle_threshold_seconds: u32,
+    pub foreground_poll_ms: u64,
+    pub start_with_windows: bool,
+    pub excluded_app_keys: Vec<String>,
+    pub data_directory: String,
+    pub theme: String,
+    pub rest_reminder_minutes: u32,
+    pub retention_days: u32,
+    pub show_floating_widget: bool,
+    pub category_daily_limit_minutes: std::collections::HashMap<String, u32>,
+    pub app_category_overrides: std::collections::HashMap<String, String>,
+    pub category_rules: Vec<CategoryRuleDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryRuleDef {
+    pub name: String,
+    pub keywords: Vec<String>,
+}
+
+impl Default for TrackerSettings {
+    fn default() -> Self {
+        Self {
+            idle_threshold_seconds: 180,
+            foreground_poll_ms: 1000,
+            start_with_windows: false,
+            excluded_app_keys: vec![r"c:\windows\explorer.exe".to_string()],
+            data_directory: default_data_dir(),
+            theme: "auto".to_string(),
+            rest_reminder_minutes: 60,
+            retention_days: 365,
+            show_floating_widget: true,
+            category_daily_limit_minutes: Default::default(),
+            app_category_overrides: Default::default(),
+            category_rules: default_category_rules(),
+        }
+    }
+}
+
+fn default_data_dir() -> String {
+    dirs::data_local_dir()
+        .map(|d| d.join("AppUsageTracker").to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string())
+}
+
+fn rule(name: &str, keywords: &[&str]) -> CategoryRuleDef {
+    CategoryRuleDef { name: name.to_string(), keywords: keywords.iter().map(|s| s.to_string()).collect() }
+}
+
+fn default_category_rules() -> Vec<CategoryRuleDef> {
+    vec![
+        rule("开发", &["code", "visual studio", "vscode", "devenv", "cursor", "git", "github", "bash", "cmd", "powershell", "terminal", "idea", "pycharm", "rider", "dotnet", "node", "npm", "python", "sublime", "notepad++", "postman", "docker", "sql", "ssms", "wireshark", "nmap", "zcode", "dsh", "deepseek", "harness", "chatgpt", "openai", "claude", "copilot", "ollama", "qoder", "opencode", "workbuddy", "tortoisegit", "mathematica", "obsidian", "typora"]),
+        rule("浏览器", &["chrome", "chromium", "edge", "msedge", "webview2", "firefox", "browser", "浏览器", "opera", "brave", "vivaldi", "safari", "arc", "360se", "qqbrowser", "夸克"]),
+        rule("办公", &["word", "excel", "powerpoint", "outlook", "onenote", "wps", "office", "notepad", "acrobat", "pdf", "xmind", "visio", "ppt", "libreoffice", "onlyoffice", "有道云", "obsidian"]),
+        rule("沟通", &["wechat", "weixin", "微信", "qq", "tim", "dingtalk", "钉钉", "feishu", "lark", "飞书", "slack", "teams", "telegram", "discord", "zoom", "腾讯会议", "mail", "邮箱", "thunderbird", "foxmail"]),
+        rule("设计", &["photoshop", "illustrator", "indesign", "lightroom", "premiere", "after effects", "figma", "sketch", "blender", "davinci", "剪映", "affinity", "inkscape", "canva", "gimp", "krita", "stablediffusion", "comfyui", "aigc", "daz ", "marmoset", "speedtree", "worldcreator", "gaea", "pmxeditor", "mikumikudance", "kingdraw", "billfish", "pureref", "booru", "naiprompt"]),
+        rule("娱乐", &["game", "steam", "epic games", "battle.net", "战网", "wegame", "minecraft", "原神", "genshin", "lol", "英雄联盟", "cs2", "valorant", "dota", "yuzu", "mumu", "ldplayer", "nox", "bluestacks", "cloudmusic", "网易云", "spotify", "qqmusic", "kugou", "bilibili", "哔哩哔哩", "iqiyi", "爱奇艺", "优酷", "芒果tv", "腾讯视频", "youtube", "netflix", "douyu", "斗鱼", "huya", "虎牙", "douyin", "抖音", "potplayer", "vlc", "fl studio", "kontakt", "pianoteq", "ace studio", "everyonepiano", "bodian", "斗罗", "dldl", "hollow knight", "honeyselect", "oxygen not included", "pal7", "sword and fairy", "warframe", "modmanager", "米喵"]),
+        rule("工具", &["everything", "listary", "utools", "quicker", "snipaste", "pixpin", "sharex", "7-zip", "winrar", "bandizip", "motrix", "idm", "clash", "v2ray", "mihomo", "vpn", "proxy", "deskbox", "netlimiter", "defraggler", "formatfactory", "screentogif", "小丸", "按键精灵", "程序窗口控制", "synctrayzor", "syncthing", "baidunetdisk", "百度网盘", "adrive", "阿里云盘", "cheat engine", "ghostcat", "dev-sidecar"]),
+        rule("系统", &["explorer", "资源管理器", "windows", "task manager", "任务管理器", "regedit", "注册表", "控制面板", "settings", "store", "shell", "host", "widget", "runtime broker", "csrss", "dwm", "conhost", "ime", "输入法", "ctfmon", "sihost", "security", "defender", "smartscreen", "svchost", "svc", "services", "服务", "打印", "print", "audio", "音频", "登录应用", "启动应用", "会话管理器", "桌面窗口管理器", "后台处理", "winlogon", "lsass", "fontdrvhost", "driverstore", "lamparray", "livecaptions", "voiceaccess", "oobe", "wudfhost", "unsecapp", "wmiprvse"]),
+    ]
+}

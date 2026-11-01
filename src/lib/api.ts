@@ -1,0 +1,120 @@
+import { invoke } from '@tauri-apps/api/core';
+
+export interface AppIdentity {
+  app_key: string;
+  process_name: string;
+  display_name: string;
+  exe_path: string;
+}
+
+export interface CategoryRule {
+  name: string;
+  keywords: string[];
+}
+
+export interface TrackerSettings {
+  idle_threshold_seconds: number;
+  foreground_poll_ms: number;
+  start_with_windows: boolean;
+  excluded_app_keys: string[];
+  data_directory: string;
+  theme: string;
+  rest_reminder_minutes: number;
+  retention_days: number;
+  show_floating_widget: boolean;
+  category_daily_limit_minutes: Record<string, number>;
+  app_category_overrides: Record<string, string>;
+  category_rules: CategoryRule[];
+}
+
+export interface LiveTopApp {
+  display_name: string;
+  category: string;
+  active_seconds: number;
+}
+
+export interface LiveStatus {
+  state: string;
+  current_app: AppIdentity | null;
+  current_category: string | null;
+  current_seconds: number;
+  today_total_seconds: number;
+  top_apps: LiveTopApp[];
+}
+
+export interface DashboardApp {
+  app_key: string;
+  display_name: string;
+  process_name: string;
+  exe_path: string;
+  category: string;
+  active_seconds: number;
+  percent: number;
+}
+
+export interface DashboardCategory {
+  name: string;
+  seconds: number;
+  percent: number;
+}
+
+export interface DashboardTrendPoint {
+  date: string;
+  seconds: number;
+}
+
+export interface DashboardData {
+  from: string;
+  to: string;
+  total_active_seconds: number;
+  top_app: string | null;
+  apps: DashboardApp[];
+  categories: DashboardCategory[];
+  trend: DashboardTrendPoint[];
+}
+
+export const api = {
+  getLiveStatus: () => invoke<LiveStatus>('get_live_status'),
+  getDashboard: (from: string, to: string) => invoke<DashboardData>('get_dashboard', { from, to }),
+  getSettings: () => invoke<TrackerSettings>('get_settings'),
+  saveSettings: (settings: TrackerSettings) => invoke<void>('save_settings', { settings }),
+  setPaused: (paused: boolean) => invoke<void>('set_paused', { paused }),
+  setAppCategory: (appKey: string, category: string) =>
+    invoke<void>('set_app_category', { appKey, category }),
+  saveCategoryRules: (rules: CategoryRule[]) => invoke<void>('save_category_rules', { rules }),
+  exportCsv: (from: string, to: string) => invoke<string>('export_csv', { from, to }),
+  clearAllData: () => invoke<void>('clear_all_data'),
+  listCategories: () => invoke<string[]>('list_available_categories'),
+  openPath: (path: string) => invoke<void>('open_path', { path }),
+  getVersion: () => invoke<string>('get_app_version'),
+};
+
+export const UNCATEGORIZED = '未分类';
+
+export function fmtDuration(sec: number): string {
+  const t = Math.floor(sec);
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  if (h > 0) return `${h}小时${m}分`;
+  if (m > 0) return `${m}分${s}秒`;
+  return `${s}秒`;
+}
+
+export function stateLabel(state: string): string {
+  const map: Record<string, string> = {
+    Active: '统计中',
+    Idle: '空闲',
+    Locked: '已锁定',
+    Suspended: '系统挂起',
+    Paused: '已暂停',
+  };
+  return map[state] ?? state;
+}
+
+export function localDateKey(offset = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}

@@ -1,0 +1,46 @@
+:root {
+  color-scheme: dark;
+  --bg: #14151a;
+  --card: #1e2027;
+  --card2: #262932;
+  --border: #2f3340;
+  --text: #e8eaf0;
+  --text-dim: #9aa1b0;
+  --accent: #4f8cff;
+  --ok: #3ecf8e;
+  --warn: #f5a623;
+  --danger: #ff5f5f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+body {
+  font-family: 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  color: var(--text);
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  height: 100vh;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
