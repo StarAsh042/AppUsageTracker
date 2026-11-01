@@ -69,26 +69,19 @@
         <Border DockPanel.Dock="Top" Style="{StaticResource CardBorder}" Padding="14,10" Margin="0,0,0,12">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                    <Button Style="{StaticResource StepperButton}" Content="◀" ToolTip="开始日期前移一天"
-                            Command="{Binding ShiftDateCommand}" CommandParameter="start:-1" />
+                    <Button Style="{StaticResource StepperButton}" Content="◀" ToolTip="前一天"
+                            Command="{Binding ShiftDateCommand}" CommandParameter="-1" />
                     <TextBlock Text="{Binding RangeTitle}" FontSize="14" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" Margin="10,0,10,0"
                                VerticalAlignment="Center" MinWidth="120" TextAlignment="Center" />
-                    <Button Style="{StaticResource StepperButton}" Content="▶" ToolTip="开始日期后移一天"
-                            Command="{Binding ShiftDateCommand}" CommandParameter="start:1" />
+                    <Button Style="{StaticResource StepperButton}" Content="▶" ToolTip="后一天"
+                            Command="{Binding ShiftDateCommand}" CommandParameter="1" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button Style="{StaticResource SegmentButton}" Content="今天" Command="{Binding SetRangeCommand}" CommandParameter="today" />
                     <Button Style="{StaticResource SegmentButton}" Content="昨天" Command="{Binding SetRangeCommand}" CommandParameter="yesterday" />
                     <Button Style="{StaticResource SegmentButton}" Content="本周" Command="{Binding SetRangeCommand}" CommandParameter="week" />
                     <Button Style="{StaticResource SegmentButton}" Content="本月" Command="{Binding SetRangeCommand}" CommandParameter="month" />
-                    <Button Style="{StaticResource StepperButton}" Content="◀" ToolTip="结束日期前移一天" Margin="12,0,0,0"
-                            Command="{Binding ShiftDateCommand}" CommandParameter="end:-1" />
-                    <TextBlock Text="{Binding EndDate, StringFormat=至 {0:M月d日}}" FontSize="13" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextPrimaryBrush}" Margin="10,0,10,0"
-                               VerticalAlignment="Center" MinWidth="76" TextAlignment="Center" />
-                    <Button Style="{StaticResource StepperButton}" Content="▶" ToolTip="结束日期后移一天"
-                            Command="{Binding ShiftDateCommand}" CommandParameter="end:1" />
                     <Button Style="{StaticResource GhostButton}" Content="导出 CSV" Margin="12,0,0,0" Command="{Binding ExportCsvCommand}" />
                     <Button Style="{StaticResource GhostButton}" Content="刷新" Margin="8,0,0,0" Command="{Binding RefreshCommand}" />
                     <Button Style="{StaticResource GhostButton}" Content="⚙ 设置" Margin="8,0,0,0" Command="{Binding OpenSettingsCommand}" />
