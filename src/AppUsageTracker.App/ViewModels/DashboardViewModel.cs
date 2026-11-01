@@ -54,6 +54,9 @@ public sealed class TrendItem
     public SolidColorBrush BarBrush { get; init; } = null!;
 }
 
+/// <summary>排行/下钻共用的单应用聚合行。</summary>
+public sealed record RankRow(DailyAppUsage App, string Category, double Active);
+
 /// <summary>仪表盘视图模型：日期范围查询、排行、分类占比、单日时间线、趋势、洞察、导出。</summary>
 public partial class DashboardViewModel : ObservableObject
 {
@@ -87,6 +90,8 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private SolidColorBrush _stateBrush = null!;
     [ObservableProperty] private ObservableCollection<RankItem> _ranking = new();
     [ObservableProperty] private ObservableCollection<string> _availableCategories = new();
+    [ObservableProperty] private string? _drillCategory;
+    [ObservableProperty] private string _drillTitle = "分类占比（按活跃时长）";
     [ObservableProperty] private ObservableCollection<CategoryItem> _categories = new();
     [ObservableProperty] private IReadOnlyList<DonutSegment> _donutSegments = Array.Empty<DonutSegment>();
     [ObservableProperty] private IReadOnlyList<TimelineSegment> _timelineSegments = Array.Empty<TimelineSegment>();
@@ -273,12 +278,10 @@ public partial class DashboardViewModel : ObservableObject
             .Select(g =>
             {
                 var best = g.OrderByDescending(r => r.ActiveSeconds).First();
-                return new
-                {
-                    App = best,
-                    Category = resolver.Resolve(best.DisplayName, best.ProcessName, best.ExePath),
-                    Active = g.Sum(r => r.ActiveSeconds),
-                };
+                return new RankRow(
+                    best,
+                    resolver.Resolve(best.DisplayName, best.ProcessName, best.ExePath),
+                    g.Sum(r => r.ActiveSeconds));
             })
             .Where(x => x.Active > 0) // 不显示 0 秒的应用（历史遗留的无活跃记录）
             .OrderByDescending(x => x.Active)
@@ -297,12 +300,13 @@ public partial class DashboardViewModel : ObservableObject
         // 分类配色：按首次出现顺序稳定取色，同分类恒定、相邻分类不撞色
         SolidColorBrush CategoryBrush(string name) => ThemeManager.StableBrush(name);
 
+
         Ranking = new ObservableCollection<RankItem>(grouped.Select((x, i) => new RankItem
         {
             Index = i + 1,
             DisplayName = x.App.DisplayName,
             Category = x.Category,
-            CategoryBrush = CategoryBrush(x.Category),
+            CategoryBrush = ThemeManager.StableBrush(x.Category),
             AppKey = x.App.AppKey,
             ExePath = x.App.ExePath,
             Icon = AppIconCache.GetIcon(x.App.ExePath),
@@ -311,29 +315,7 @@ public partial class DashboardViewModel : ObservableObject
             Percent = totalActive > 0 ? Math.Round(x.Active / totalActive * 100, 1) : 0,
         }));
 
-        // 分类占比（环形图 + 图例）
-        var byCategory = grouped
-            .Where(x => x.Active > 0)
-            .GroupBy(x => x.Category, StringComparer.Ordinal)
-            .Select(g => new { Name = g.Key, Active = g.Sum(x => x.Active) })
-            .OrderByDescending(x => x.Active)
-            .ToList();
-
-        TopCategoryText = byCategory.Count > 0
-            ? $"{byCategory[0].Name} · {Format.Duration(byCategory[0].Active)}"
-            : "暂无数据";
-
-        Categories = new ObservableCollection<CategoryItem>(byCategory.Select(x => new CategoryItem
-        {
-            Name = x.Name,
-            DurationText = Format.Duration(x.Active),
-            PercentText = totalActive > 0 ? $"{x.Active / totalActive * 100:0.0}%" : "0%",
-            Brush = CategoryBrush(x.Name),
-        }));
-
-        DonutSegments = byCategory
-            .Select(x => new DonutSegment { Value = x.Active, Brush = CategoryBrush(x.Name), Label = x.Name })
-            .ToList();
+        RebuildDonutViews(grouped, totalActive);
 
         await LoadTimelineAsync(resolver);
         await LoadTrendAsync();
@@ -356,6 +338,52 @@ public partial class DashboardViewModel : ObservableObject
         CompareBrush = change >= 0
             ? (SolidColorBrush)Application.Current.Resources["WarnBrush"]
             : (SolidColorBrush)Application.Current.Resources["OkBrush"];
+    }
+
+    /// <summary>按当前下钻状态重建环形图与图例：全分类 或 某分类的应用构成。</summary>
+    private void RebuildDonutViews(
+        List<RankRow> grouped, double totalActive)
+    {
+        var byCategory = grouped
+            .Where(x => x.Active > 0)
+            .GroupBy(x => x.Category, StringComparer.Ordinal)
+            .Select(g => new { Name = g.Key, Active = g.Sum(x => x.Active) })
+            .OrderByDescending(x => x.Active)
+            .ToList();
+
+        TopCategoryText = byCategory.Count > 0
+            ? $"{byCategory[0].Name} · {Format.Duration(byCategory[0].Active)}"
+            : "暂无数据";
+
+        if (DrillCategory is null)
+        {
+            Categories = new ObservableCollection<CategoryItem>(byCategory.Select(x => new CategoryItem
+            {
+                Name = x.Name,
+                DurationText = Format.Duration(x.Active),
+                PercentText = totalActive > 0 ? $"{x.Active / totalActive * 100:0.0}%" : "0%",
+                Brush = ThemeManager.StableBrush(x.Name),
+            }));
+            DonutSegments = byCategory
+                .Select(x => new DonutSegment { Value = x.Active, Brush = ThemeManager.StableBrush(x.Name), Label = x.Name })
+                .ToList();
+            DrillTitle = "分类占比（按活跃时长）";
+            return;
+        }
+
+        // 下钻：显示该分类下的应用构成
+        var inCat = grouped.Where(x => x.Category == DrillCategory).ToList();
+        Categories = new ObservableCollection<CategoryItem>(inCat.Select(x => new CategoryItem
+        {
+            Name = x.App.DisplayName,
+            DurationText = Format.Duration(x.Active),
+            PercentText = totalActive > 0 ? $"{x.Active / totalActive * 100:0.0}%" : "0%",
+            Brush = ThemeManager.StableBrush(x.Category),
+        }));
+        DonutSegments = inCat
+            .Select(x => new DonutSegment { Value = x.Active, Brush = ThemeManager.StableBrush(x.Category), Label = x.App.DisplayName })
+            .ToList();
+        DrillTitle = $"分类「{DrillCategory}」应用构成（点击图例返回）";
     }
 
     private async Task LoadTimelineAsync(CategoryResolver resolver)
@@ -442,6 +470,89 @@ public partial class DashboardViewModel : ObservableObject
     private static SolidColorBrush OkBrush() => (SolidColorBrush)Application.Current.Resources["OkBrush"];
     private static SolidColorBrush WarnBrush() => (SolidColorBrush)Application.Current.Resources["WarnBrush"];
     private static SolidColorBrush StoppedBrush() => (SolidColorBrush)Application.Current.Resources["StoppedBrush"];
+
+    /// <summary>下钻：环形图切换为该分类内的应用构成。</summary>
+    [RelayCommand]
+    private void DrillInto(string? category)
+    {
+        if (string.IsNullOrEmpty(category) || category == DrillCategory) return;
+        DrillCategory = category;
+        RebuildDonut();
+    }
+
+    /// <summary>返回全分类视图。</summary>
+    [RelayCommand]
+    private void ExitDrill()
+    {
+        DrillCategory = null;
+        RebuildDonut();
+    }
+
+    /// <summary>按当前下钻状态重建环形图与图例数据。</summary>
+    private void RebuildDonut()
+    {
+        var from = Format.DateKey(StartDate);
+        var to = Format.DateKey(EndDate);
+        var resolver = new CategoryResolver(_settings.CategoryRules, _settings.AppCategoryOverrides);
+        var rows = System.Threading.Tasks.Task.Run(() => _store.QueryDaily(from, to)).GetAwaiter().GetResult();
+
+        var perApp = rows
+            .GroupBy(r => r.AppKey, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var best = g.OrderByDescending(r => r.ActiveSeconds).First();
+                return new
+                {
+                    App = best,
+                    Category = resolver.Resolve(best.DisplayName, best.ProcessName, best.ExePath),
+                    Active = g.Sum(r => r.ActiveSeconds),
+                };
+            })
+            .Where(x => DrillCategory is null || x.Category == DrillCategory)
+            .Where(x => x.Active > 0)
+            .OrderByDescending(x => x.Active)
+            .ToList();
+
+        var total = perApp.Sum(x => x.Active);
+        var brushFor = new Func<string, SolidColorBrush>(name =>
+        {
+            var idx = Math.Abs(name.GetHashCode(StringComparison.Ordinal)) % ThemeManager.SeriesColors.Length;
+            return ThemeManager.SeriesBrush(idx);
+        });
+
+        if (DrillCategory is null)
+        {
+            var byCategory = perApp
+                .GroupBy(x => x.Category, StringComparer.Ordinal)
+                .Select(g => new { Name = g.Key, Active = g.Sum(x => x.Active) })
+                .OrderByDescending(x => x.Active)
+                .ToList();
+            DonutSegments = byCategory.Select(x => new DonutSegment { Value = x.Active, Brush = brushFor(x.Name), Label = x.Name }).ToList();
+            Categories = new ObservableCollection<CategoryItem>(byCategory.Select(x => new CategoryItem
+            {
+                Name = x.Name,
+                DurationText = Format.Duration(x.Active),
+                PercentText = total > 0 ? $"{x.Active / total * 100:0.0}%" : "0%",
+                Brush = brushFor(x.Name),
+            }));
+            DrillTitle = "分类占比（按活跃时长）";
+        }
+        else
+        {
+            DonutSegments = perApp
+                .Where(x => x.Category == DrillCategory)
+                .Select(x => new DonutSegment { Value = x.Active, Brush = brushFor(x.App.DisplayName), Label = x.App.DisplayName })
+                .ToList();
+            Categories = new ObservableCollection<CategoryItem>(perApp.Select(x => new CategoryItem
+            {
+                Name = x.App.DisplayName,
+                DurationText = Format.Duration(x.Active),
+                PercentText = total > 0 ? $"{x.Active / total * 100:0.0}%" : "0%",
+                Brush = brushFor(x.App.DisplayName),
+            }));
+            DrillTitle = $"分类「{DrillCategory}」应用构成（点图例返回）";
+        }
+    }
 
     /// <summary>右键排行行设置分类：写入按应用覆盖并持久化（未分类 = 清除覆盖，回落规则）。</summary>
     [RelayCommand]

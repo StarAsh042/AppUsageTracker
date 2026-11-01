@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using Brushes = System.Windows.Media.Brushes;
 using FlowDirection = System.Windows.FlowDirection;
@@ -38,6 +39,32 @@ public sealed class DonutChart : FrameworkElement
     {
         get => (string)GetValue(CenterTextProperty);
         set => SetValue(CenterTextProperty, value);
+    }
+
+    /// <summary>点击扇区时触发（Label = 分类名）。</summary>
+    public event Action<string>? SegmentClicked;
+
+    private void OnClick(object sender, MouseButtonEventArgs e)
+    {
+        var total = Segments?.Sum(s => s.Value) ?? 0;
+        if (total <= 0 || Segments is null) return;
+        var center = new Point(ActualWidth / 2, ActualHeight / 2);
+        var radius = Math.Min(ActualWidth, ActualHeight) / 2 - 4;
+        var pos = e.GetPosition(this);
+        var dx = pos.X - center.X; var dy = pos.Y - center.Y;
+        var dist = Math.Sqrt(dx * dx + dy * dy);
+        var inner = radius * 0.5; // 环内缘约半径一半
+        if (dist < inner || dist > radius) return;
+
+        var angle = (Math.Atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+        var acc = 0.0;
+        foreach (var segment in Segments)
+        {
+            if (segment.Value <= 0) continue;
+            var sweep = segment.Value / total * 360.0;
+            if (angle >= acc && angle < acc + sweep) { SegmentClicked?.Invoke(segment.Label); return; }
+            acc += sweep;
+        }
     }
 
     protected override void OnRender(DrawingContext dc)
