@@ -138,14 +138,14 @@
 
                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
                     <DockPanel>
-                        <TextBlock Style="{StaticResource H2}" Text="数据备份" VerticalAlignment="Center" />
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <TextBlock Style="{StaticResource H2}" Text="数据备份" VerticalAlignment="Center" DockPanel.Dock="Top" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Top">
                             <Button Style="{StaticResource GhostButton}" Content="导出 JSON" Margin="0,0,8,0" x:Name="ExportJsonBtn" Click="OnExportJsonClick" />
                             <Button Style="{StaticResource GhostButton}" Content="导入 JSON" Margin="8,0,0,0" x:Name="ImportJsonBtn" Click="OnImportJsonClick" />
                         </StackPanel>
+                        <TextBlock Style="{StaticResource MutedText}" Margin="0,6,0,0" TextWrapping="Wrap" DockPanel.Dock="Bottom"
+                                   Text="导出全部聚合与明细为 JSON。导入支持合并（跳过已有）或替换（清空后导入）。" />
                     </DockPanel>
-                    <TextBlock Style="{StaticResource MutedText}" Margin="0,6,0,0" TextWrapping="Wrap"
-                               Text="导出全部聚合与明细为 JSON。导入支持合并（跳过已有）或替换（清空后导入）。" />
                 </Border>
 
                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">

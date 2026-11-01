@@ -46,6 +46,8 @@ public partial class SettingsViewModel : ObservableObject
         RestReminderMinutes = settings.RestReminderMinutes;
         RetentionDays = settings.RetentionDays;
         ShowFloatingWidget = settings.ShowFloatingWidget;
+        LimitsText = string.Join(Environment.NewLine,
+            settings.CategoryDailyLimitMinutes.Select(kv => $"{kv.Key}={kv.Value}"));
         StartWithWindows = AutoStartManager.IsEnabled();
         ThemeMode = settings.Theme is "Dark" or "Light" ? settings.Theme : "Auto";
         DataDirectory = settings.DataDirectory;
@@ -200,23 +202,23 @@ public partial class SettingsViewModel : ObservableObject
         return rules;
     }
 
+    private static IEnumerable<string> SplitLines(string text) =>
+        text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     internal static Dictionary<string, int> ParseCategoryLimits(string text)
     {
         var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var raw in text.Split(['', '
-'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var separators = new[] { "\r\n", "\r", "\n" };
+        foreach (var raw in text.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (raw.Length == 0) continue;
             var eq = raw.IndexOf('=');
-            if (eq <= 0) throw new FormatException($"「{raw}」缺少 = 号，应为 分类名=分钟");
+            if (eq <= 0) throw new FormatException("每行格式：分类名=分钟");
             var name = raw[..eq].Trim();
             if (!int.TryParse(raw[(eq + 1)..].Trim(), out var minutes) || minutes < 0)
-                throw new FormatException($"「{name}」的分钟数无效");
+                throw new FormatException("分钟数无效");
             result[name] = minutes;
         }
         return result;
     }
-
-    private static IEnumerable<string> SplitLines(string text) =>
-        text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
