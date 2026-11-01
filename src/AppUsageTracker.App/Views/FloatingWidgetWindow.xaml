@@ -38,6 +38,21 @@
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <ItemsControl x:Name="Sparkline" ItemsSource="{Binding}" Height="14"
+                          VerticalAlignment="Center" Margin="0,0,6,0">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Rectangle Width="3" Height="{Binding}" RadiusX="1" RadiusY="1"
+                                   Margin="0.5,0" VerticalAlignment="Bottom"
+                                   Fill="#5B8DEF" Opacity="0.6" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <TextBlock x:Name="CurrentAppText" Text="等待前台应用…" FontSize="11"
                        Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                        MaxWidth="150" VerticalAlignment="Center" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
