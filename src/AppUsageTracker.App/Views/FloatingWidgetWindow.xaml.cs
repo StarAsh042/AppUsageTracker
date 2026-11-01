@@ -23,6 +23,7 @@ public partial class FloatingWidgetWindow : Window
 
     /// <summary>今日已落库的总活跃秒数与按应用的活跃秒数缓存（每秒直读数据库刷新）。</summary>
     private double _todayBaseSeconds;
+    private List<double> _hourlySeconds = new(new double[24]);
     private Dictionary<string, double> _appTodaySeconds = new(StringComparer.OrdinalIgnoreCase);
     private bool _baseLoaded;
     private bool _fetching;
@@ -91,15 +92,24 @@ public partial class FloatingWidgetWindow : Window
         {
             _fetching = true;
             var key = Format.DateKey(DateTime.Today);
-            _ = Task.Run(() => (Totals: _app.Store.QueryDailyTotals(key, key), PerApp: _app.Store.QueryDaily(key, key)))
+            _ = Task.Run(() => (Totals: _app.Store.QueryDailyTotals(key, key),
+                                PerApp: _app.Store.QueryDaily(key, key),
+                                Intervals: _app.Store.QueryIntervals(key, key)))
                 .ContinueWith(t =>
                 {
                     _fetching = false;
                     if (!t.IsCompletedSuccessfully) return;
                     _todayBaseSeconds = t.Result.Totals.FirstOrDefault(p => p.UsageDate == key)?.ActiveSeconds ?? 0;
                     _appTodaySeconds = t.Result.PerApp.ToDictionary(d => d.AppKey, d => d.ActiveSeconds, StringComparer.OrdinalIgnoreCase);
+                    var hourly = new double[24];
+                    foreach (var iv in t.Result.Intervals)
+                    {
+                        var h = Math.Clamp((int)(iv.StartTime - DateTime.Today).TotalHours, 0, 23);
+                        hourly[h] += iv.DurationSeconds;
+                    }
+                    _hourlySeconds = new List<double>(hourly);
                     _baseLoaded = true;
-                    Tick(); // 数据到位后立即刷新本秒显示
+                    Tick();
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
@@ -125,6 +135,11 @@ public partial class FloatingWidgetWindow : Window
             CurrentAppText.Text = _app.Service.State == Core.Models.TrackingState.Idle ? "空闲中" : "当前无可统计应用";
             CurrentAppSeconds.Text = "";
         }
+
+        // 迷你柱状
+        var maxHourly = _hourlySeconds.Count > 0 ? _hourlySeconds.Max() : 0;
+        Sparkline.ItemsSource = _hourlySeconds.Select(s =>
+            (object)(maxHourly > 0 ? Math.Max(2, 16.0 * s / maxHourly) : 2)).ToList();
     }
 
     private void OnDragMove(object sender, MouseButtonEventArgs e)
