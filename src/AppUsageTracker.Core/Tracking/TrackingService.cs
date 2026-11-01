@@ -264,6 +264,12 @@ public sealed class TrackingService : IDisposable
         }
     }
 
+    /// <summary>清空全部数据（JSON 替换导入前调用）。先落盘刷新内存，再由调用方清库。</summary>
+    public void PrepareForReplaceImport()
+    {
+        lock (_gate) _aggregator = CreateAggregator(_settings);
+    }
+
     /// <summary>按保留天数清理过期数据。</summary>
     private void CleanupRetention()
     {

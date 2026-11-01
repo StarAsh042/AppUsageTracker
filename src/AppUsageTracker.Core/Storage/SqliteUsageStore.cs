@@ -266,6 +266,17 @@ public sealed class SqliteUsageStore : IUsageStore
         }
     }
 
+    public void ClearAll()
+    {
+        lock (_writeGate)
+        {
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction();
+            Execute(connection, "DELETE FROM ForegroundIntervals; DELETE FROM DailyAppUsage;");
+            transaction.Commit();
+        }
+    }
+
     private static SqliteParameter AddParameter(SqliteCommand command, string name)
     {
         var parameter = command.CreateParameter();

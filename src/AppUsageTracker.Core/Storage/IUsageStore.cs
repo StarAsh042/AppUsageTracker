@@ -27,4 +27,7 @@ public interface IUsageStore : IDisposable
 
     /// <summary>删除截止日（含）之前的所有明细与聚合数据，返回删除行数。</summary>
     (long Intervals, long Daily) CleanupBefore(string toDateInclusive);
+
+    /// <summary>清空全部数据（JSON 替换导入前调用）。</summary>
+    void ClearAll();
 }
