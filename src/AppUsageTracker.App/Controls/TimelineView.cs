@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using AppUsageTracker.Core.Timeline;
 using Brushes = System.Windows.Media.Brushes;
 using FlowDirection = System.Windows.FlowDirection;
 using FontFamily = System.Windows.Media.FontFamily;
@@ -21,14 +22,18 @@ public sealed class TimelineSegment
 }
 
 /// <summary>
-/// 自绘 24 小时单日时间线（借鉴 ActivityWatch 的 timeline 视图）：
-/// 底部轨道 + 整点刻度 + 使用片段色块，鼠标悬停显示「应用 起止（时长）」。
+/// 自绘交互式时间线（借鉴 ActivityWatch 的 timeline 视图）：
+/// 底部轨道 + 刻度 + 使用片段色块，滚轮以光标为锚缩放、左键拖拽平移、
+/// 悬停显示「应用 起止（时长）」；缩放/平移数学在 Core.Timeline.TimelineScale（可单测）。
 /// </summary>
 public sealed class TimelineView : FrameworkElement
 {
+    private TimelineScale _scale = new();
+
     public static readonly DependencyProperty SegmentsProperty = DependencyProperty.Register(
         nameof(Segments), typeof(IReadOnlyList<TimelineSegment>), typeof(TimelineView),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender,
+            (d, _) => ((TimelineView)d).ResetScale()));
 
     public IReadOnlyList<TimelineSegment> Segments
     {
@@ -38,9 +43,62 @@ public sealed class TimelineView : FrameworkElement
 
     public TimelineView()
     {
+        ClipToBounds = true;
+        MouseWheel += OnMouseWheel;
+        MouseLeftButtonDown += (_, e) =>
+        {
+            if (!IsLoaded) return;
+            CaptureMouse();
+            _panLastFraction = FractionFromPixel(e.GetPosition(this).X);
+            e.Handled = true;
+        };
+        MouseLeftButtonUp += (_, _) => ReleaseMouseCapture();
+        MouseLeave += (_, _) => { ReleaseMouseCapture(); ToolTip = null; };
         MouseMove += OnMouseMove;
-        MouseLeave += (_, _) => ToolTip = null;
     }
+
+    private double _panLastFraction;
+
+    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var factor = e.Delta > 0 ? 1.4 : 1 / 1.4;
+        _scale.ZoomAt(FractionFromPixel(e.GetPosition(this).X), factor);
+        InvalidateVisual();
+        UpdateHoverTooltip(e.GetPosition(this).X);
+    }
+
+    private void OnMouseMove(object sender, MouseEventArgs e)
+    {
+        var pos = e.GetPosition(this);
+        if (e.LeftButton == MouseButtonState.Pressed && IsMouseCaptured)
+        {
+            var f = FractionFromPixel(pos.X);
+            _scale.Pan(_panLastFraction - f);
+            _panLastFraction = f;
+            InvalidateVisual();
+            return;
+        }
+        UpdateHoverTooltip(pos.X);
+    }
+
+    private void UpdateHoverTooltip(double pixelX)
+    {
+        var f = ActualWidth <= 0 ? -1 : pixelX / ActualWidth;
+        foreach (var segment in Segments ?? Array.Empty<TimelineSegment>())
+        {
+            if (f >= segment.StartFraction && f <= segment.StartFraction + segment.WidthFraction)
+            {
+                ToolTip = segment.Tooltip;
+                return;
+            }
+        }
+        ToolTip = null;
+    }
+
+    private double FractionFromPixel(double pixelX) =>
+        ActualWidth <= 0 ? 0 : Math.Clamp(pixelX / ActualWidth, 0.0, 1.0);
+
+    private void ResetScale() => _scale = new TimelineScale();
 
     protected override void OnRender(DrawingContext dc)
     {
@@ -56,51 +114,39 @@ public sealed class TimelineView : FrameworkElement
 
         const double trackHeight = 34;
         var trackY = (height - trackHeight) / 2 - 6;
-        var trackRect = new Rect(0, trackY, width, trackHeight);
-        dc.DrawRoundedRectangle(track, null, trackRect, 6, 6);
+        dc.DrawRoundedRectangle(track, null, new Rect(0, trackY, width, trackHeight), 6, 6);
 
-        var segments = Segments ?? Array.Empty<TimelineSegment>();
-        foreach (var segment in segments)
-        {
-            if (segment.WidthFraction <= 0) continue;
-            var rect = new Rect(
-                segment.StartFraction * width,
-                trackY + 6,
-                Math.Max(1.5, segment.WidthFraction * width),
-                trackHeight - 12);
-            dc.DrawRoundedRectangle(segment.Brush, null, rect, 3, 3);
-        }
-
-        // 整点刻度与标签（每 3 小时）
-        for (var hour = 0; hour <= 24; hour += 3)
-        {
-            var x = hour / 24.0 * width;
-            if (hour is > 0 and < 24)
-            {
-                dc.DrawLine(new Pen(grid, 1) { DashStyle = DashStyles.Dash }, new Point(x, 2), new Point(x, trackY + trackHeight + 2));
-            }
-
-            var label = new FormattedText($"{hour:00}:00", CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                labelTypeface, 10, text, dpi);
-            dc.DrawText(label, new Point(Math.Min(x, width - label.Width), trackY + trackHeight + 4));
-        }
-    }
-
-    private void OnMouseMove(object sender, MouseEventArgs e)
-    {
-        var pos = e.GetPosition(this);
-        if (ActualWidth <= 0) return;
-        var fraction = pos.X / ActualWidth;
+        var span = _scale.Span;
+        var start = _scale.VisibleStart;
 
         foreach (var segment in Segments ?? Array.Empty<TimelineSegment>())
         {
-            if (fraction >= segment.StartFraction && fraction <= segment.StartFraction + segment.WidthFraction)
-            {
-                ToolTip = segment.Tooltip;
-                return;
-            }
+            if (segment.WidthFraction <= 0) continue;
+            var segStart = segment.StartFraction;
+            var segEnd = segStart + segment.WidthFraction;
+            if (segEnd <= start || segStart >= start + span) continue; // 可见窗口外
+
+            var sx = (Math.Max(segStart, start) - start) / span * width;
+            var ex = (Math.Min(segEnd, start + span) - start) / span * width;
+            var rect = new Rect(sx, trackY + 6, Math.Max(1.5, ex - sx), trackHeight - 12);
+            dc.DrawRoundedRectangle(segment.Brush, null, rect, 3, 3);
         }
-        ToolTip = null;
+
+        // 整小时刻度与标签（仅可见窗口内，步长随跨度自适应）
+        var firstHour = (int)Math.Ceiling(start * 24);
+        var lastHour = (int)Math.Floor((start + span) * 24);
+        var step = Math.Max(1, Core.Timeline.TimelineScale.TickStepHours(span));
+        for (var hour = firstHour; hour <= lastHour; hour++)
+        {
+            if (hour % step != 0) continue;
+            var fx = (hour / 24.0 - start) / span * width;
+            if (hour > 0 && hour < 24)
+                dc.DrawLine(new Pen(grid, 1) { DashStyle = DashStyles.Dash }, new Point(fx, 2), new Point(fx, trackY + trackHeight + 2));
+
+            var label = new FormattedText($"{hour:00}:00", CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                labelTypeface, 10, text, dpi);
+            dc.DrawText(label, new Point(Math.Min(Math.Max(fx - label.Width / 2, 0), Math.Max(width - label.Width, 0)), trackY + trackHeight + 4));
+        }
     }
 
     private static readonly string TrackBrushKey = "TrackBrush";
