@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore AppUsageTracker.sln
+      - name: Build
+        run: dotnet build AppUsageTracker.sln -c Release --no-restore
+
+  test:
+    name: test
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet test AppUsageTracker.sln -c Release
+
+  security:
+    name: security
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore AppUsageTracker.sln
+      - name: Vulnerable package scan
+        shell: pwsh
+        run: |
+          $out = dotnet list AppUsageTracker.sln package --vulnerable --include-transitive
+          $out | Write-Host
+          if ($out -match 'has the following vulnerable| Severely| Critical| High') { exit 1 }
+
+  ci:
+    name: ci
+    if: always()
+    needs: [build, test, security]
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all jobs
+        shell: pwsh
+        run: |
+          set -euo pipefail
+          test "${{ needs.build.result }}" = "success"
+          test "${{ needs.test.result }}" = "success"
+          test "${{ needs.security.result }}" = "success"
