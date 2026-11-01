@@ -28,6 +28,8 @@ public partial class FloatingWidgetWindow : Window
     private bool _baseLoaded;
     private bool _fetching;
 
+    public IntPtr Hwnd => new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+
     public FloatingWidgetWindow(App app)
     {
         InitializeComponent();

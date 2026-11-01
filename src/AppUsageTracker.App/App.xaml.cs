@@ -38,6 +38,7 @@ public partial class App : Application
     private DashboardWindow? _dashboard;
     private SettingsWindow? _settingsWindow;
     private FloatingWidgetWindow? _widget;
+    private Services.GlobalHotkeyManager? _hotkeys;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -99,8 +100,25 @@ public partial class App : Application
         // 默认只开悬浮窗，主界面由托盘双击/菜单唤起；关闭悬浮窗则纯托盘运行
         if (Settings.ShowFloatingWidget)
         {
-            Dispatcher.BeginInvoke(ShowWidget);
+            Dispatcher.BeginInvoke(() =>
+            {
+                ShowWidget();
+                // 全局快捷键在悬浮窗句柄上注册（悬浮窗始终存在）
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_widget is not null && _widget.IsLoaded)
+                        RegisterHotkeys(_widget);
+                }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            });
         }
+    }
+
+    private Services.GlobalHotkeyManager? _hotkeyManager;
+    private void RegisterHotkeys(FloatingWidgetWindow anchor)
+    {
+        _hotkeyManager?.Dispose();
+        _hotkeyManager = new Services.GlobalHotkeyManager(this);
+        _hotkeyManager.Register(anchor.Hwnd);
     }
 
     /// <summary>显示/创建悬浮窗。</summary>
