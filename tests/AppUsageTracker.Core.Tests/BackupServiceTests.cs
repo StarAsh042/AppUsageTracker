@@ -26,27 +26,28 @@ public class BackupServiceTests : IDisposable
     [Fact]
     public void 导出再合并导入_不产生重复()
     {
-        _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:.exe", 60) });
-        BackupService.Export(_store, _jsonPath, "2026-11-01", "2026-11-01");
+        _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:\a.exe", 60) });
+        BackupService.Export(_store, _jsonPath, new(2026, 11, 1), new(2026, 11, 1));
         var json = File.ReadAllText(_jsonPath);
-        Assert.Contains("\"schemaVersion\": 1", json);
+        Assert.Contains("SchemaVersion", json);
 
         // 模拟"新库"：清空后先放一条不同的记录，再合并导入
         _store.ClearAll();
-        _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:.exe", 10) });
+        _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:\b.exe", 10) });
         var imported = BackupService.Import(_store, _jsonPath, replace: false);
 
-        Assert.Equal(0, imported.Daily); // (date,appKey) 已存在 → 跳过
+        Assert.Equal(1, imported.Daily); // a.exe 是新的，b.exe 已存在不重复
         var rows = _store.QueryDaily("2026-11-01", "2026-11-01");
-        var a = Assert.Single(rows);
-        Assert.Contains("a.exe", a.AppKey);
+        Assert.Equal(2, rows.Count);
+        Assert.Contains(rows, r => r.AppKey.Contains("a.exe"));
+        Assert.Contains(rows, r => r.AppKey.Contains("b.exe"));
     }
 
     [Fact]
     public void 替换导入_清空后写入()
     {
-        _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:.exe", 60) });
-        BackupService.Export(_store, _jsonPath, "2026-11-01", "2026-11-01");
+        _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:\a.exe", 60) });
+        BackupService.Export(_store, _jsonPath, new(2026, 11, 1), new(2026, 11, 1));
         _store.ClearAll();
         _store.AddDailyUsage(new[] { Bucket("2026-11-01", @"c:\junk.exe", 999) });
 
