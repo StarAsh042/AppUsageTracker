@@ -18,6 +18,8 @@ public sealed class TrackingService : IDisposable
     private ForegroundMonitor? _foregroundMonitor;
     private SessionEventSource? _sessionEvents;
     private System.Threading.Timer? _flushTimer;
+    private readonly System.Collections.Generic.HashSet<string> _notifiedCategoriesToday = new(StringComparer.Ordinal);
+    private System.Threading.Timer? _limitTimer;
     private int _flushing;
     private bool _started;
 
@@ -26,6 +28,9 @@ public sealed class TrackingService : IDisposable
 
     /// <summary>久坐提醒：连续活跃使用达到设定分钟数时触发（参数为连续时长）。</summary>
     public event Action<TimeSpan>? RestReminderDue;
+
+    /// <summary>分类日限额达到时触发（参数：分类名）。</summary>
+    public event Action<string>? CategoryLimitReached;
 
     /// <summary>当前连续活跃使用的起点；null 表示当前不处于活跃状态。</summary>
     private DateTime? _activeSince;
@@ -67,6 +72,7 @@ public sealed class TrackingService : IDisposable
             _sessionEvents.Resumed += () => { lock (_gate) _aggregator.OnResume(CurrentForegroundUnsafe(), DateTime.Now); RaiseStateChanged(); };
 
             _flushTimer = new System.Threading.Timer(_ => FlushNow(), null, 30_000, 30_000);
+            _limitTimer = new System.Threading.Timer(_ => CheckCategoryLimits(), null, 60_000, 60_000);
         }
 
         CleanupRetention();
@@ -83,6 +89,8 @@ public sealed class TrackingService : IDisposable
 
             _flushTimer?.Dispose();
             _flushTimer = null;
+            _limitTimer?.Dispose();
+            _limitTimer = null;
             _sessionEvents?.Dispose();
             _sessionEvents = null;
             _foregroundMonitor?.Dispose();
@@ -128,6 +136,7 @@ public sealed class TrackingService : IDisposable
             _settings.RestReminderMinutes = newSettings.RestReminderMinutes;
             _settings.RetentionDays = newSettings.RetentionDays;
             _settings.ShowFloatingWidget = newSettings.ShowFloatingWidget;
+            _notifiedCategoriesToday.Clear();
             _settings.CategoryRules = new List<CategoryRule>(newSettings.CategoryRules);
             _settings.ExcludedAppKeys = new List<string>(newSettings.ExcludedAppKeys);
             _activeSince = null;
@@ -218,6 +227,40 @@ public sealed class TrackingService : IDisposable
             var handler = RestReminderDue;
             try { handler?.Invoke(continuous); }
             catch (Exception ex) { Logger.Error("久坐提醒订阅者异常", ex); }
+        }
+    }
+
+    /// <summary>每分钟检查各分类日限额，达到时触发一次通知（当日去重）。</summary>
+    private void CheckCategoryLimits()
+    {
+        try
+        {
+            if (_settings.CategoryDailyLimitMinutes.Count == 0) return;
+            var resolver = new Monitoring.CategoryResolver(_settings.CategoryRules);
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var perApp = _store.QueryDaily(today, today);
+            var perCategory = new System.Collections.Generic.Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (var row in perApp)
+            {
+                var cat = resolver.Resolve(row.DisplayName, row.ProcessName, row.ExePath);
+                perCategory.TryGetValue(cat, out var sec);
+                perCategory[cat] = sec + row.ActiveSeconds;
+            }
+            var toNotify = Tracking.CategoryLimitChecker.CategoriesToNotify(
+                perCategory,
+                _settings.CategoryDailyLimitMinutes,
+                _notifiedCategoriesToday);
+            foreach (var cat in toNotify)
+            {
+                _notifiedCategoriesToday.Add(cat);
+                var handler = CategoryLimitReached;
+                try { handler?.Invoke(cat); }
+                catch (Exception ex) { Logger.Error("限额通知订阅者异常", ex); }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("分类限额检查失败", ex);
         }
     }
 

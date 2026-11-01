@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using AppUsageTracker.App.Services;
 using AppUsageTracker.App.Utils;
 using AppUsageTracker.Core.Storage;
+using System.Linq;
 using ContextMenu = System.Windows.Controls.ContextMenu;
 using MenuItem = System.Windows.Controls.MenuItem;
 
@@ -64,6 +65,22 @@ public partial class FloatingWidgetWindow : Window
         var maxTop = Math.Max(0, area.Bottom - ActualHeight);
         Left = Math.Clamp(x, 0, maxLeft);
         Top = Math.Clamp(y, 0, maxTop);
+    }
+
+    /// <summary>有分类达到日限额时把状态点亮为警示色（用户选择的变色提醒）。</summary>
+    private void RefreshLimitState(string todayKey)
+    {
+        try
+        {
+            var resolver = new Core.Monitoring.CategoryResolver(_app.Settings.CategoryRules);
+            var over = _app.Store.QueryDaily(todayKey, todayKey)
+                .Any(row => _app.Settings.CategoryDailyLimitMinutes.TryGetValue(
+                               resolver.Resolve(row.DisplayName, row.ProcessName, row.ExePath), out var m)
+                           && m > 0 && row.ActiveSeconds >= m * 60.0);
+            LiveDot.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+                over ? "WarnBrush" : "OkBrush");
+        }
+        catch { }
     }
 
     private void Tick()

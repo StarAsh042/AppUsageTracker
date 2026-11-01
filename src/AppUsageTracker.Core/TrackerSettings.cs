@@ -48,6 +48,9 @@ public sealed class TrackerSettings
     /// <summary>按 AppKey（小写 exe 路径）指定的分类覆盖，优先于规则匹配。</summary>
     public Dictionary<string, string> AppCategoryOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>分类每日限额（分钟），0 或缺省 = 不限。</summary>
+    public Dictionary<string, int> CategoryDailyLimitMinutes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     [JsonIgnore]
     public string SettingsPath { get; set; } = DefaultSettingsPath;
 
@@ -178,6 +181,7 @@ public sealed class TrackerSettings
         ExcludedAppKeys ??= new List<string>();
         CategoryRules ??= CreateDefaultCategoryRules();
         AppCategoryOverrides ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        CategoryDailyLimitMinutes ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         // 旧版默认规则自动升级为新默认（用户自定义过则原样保留）
         if (MatchesLegacyDefaults(CategoryRules)) CategoryRules = CreateDefaultCategoryRules();
         if (Theme is not ("Auto" or "Dark" or "Light")) Theme = "Auto";
