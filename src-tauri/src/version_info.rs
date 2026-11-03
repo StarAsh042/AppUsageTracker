@@ -17,7 +17,7 @@ pub fn file_description(exe_path: &str) -> Option<String> {
             return None;
         }
         let mut data = vec![0u8; size as usize];
-        if !GetFileVersionInfoW(file, 0, size, data.as_mut_ptr() as *mut _).as_bool() {
+        if GetFileVersionInfoW(file, 0, size, data.as_mut_ptr() as *mut _).is_err() {
             return None;
         }
 

@@ -2,7 +2,6 @@
 #![allow(non_snake_case)]
 
 use windows::core::PWSTR;
-use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -66,8 +65,10 @@ pub fn get_process_image_name(pid: u32) -> Option<String> {
 /// 输入桌面是否可用（锁屏/安全桌面时返回 false）。
 pub fn is_input_desktop_available() -> bool {
     unsafe {
-        use windows::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop, DESKTOP_READOBJECTS};
-        let desktop = OpenInputDesktop(0, false, DESKTOP_READOBJECTS);
+        use windows::Win32::System::StationsAndDesktops::{
+            CloseDesktop, OpenInputDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_READOBJECTS,
+        };
+        let desktop = OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_READOBJECTS);
         let ok = desktop.is_ok();
         if let Ok(d) = desktop {
             let _ = CloseDesktop(d);

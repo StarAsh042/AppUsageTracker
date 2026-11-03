@@ -144,7 +144,8 @@ pub fn run() {
 
             let show_widget = {
                 let st = handle.state::<AppState>();
-                st.settings.lock().unwrap().show_floating_widget
+                let v = st.settings.lock().unwrap().show_floating_widget;
+                v
             };
             if show_widget {
                 create_widget_window(&handle)?;
@@ -262,13 +263,13 @@ fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
 fn setup_widget_clamp(app: &AppHandle) {
     let Some(w) = app.get_webview_window("widget") else { return };
     let h = app.clone();
-    let mut last_clamp = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    let last_clamp = std::cell::Cell::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
     w.on_window_event(move |e| {
         if let WindowEvent::Moved(_) = e {
-            if last_clamp.elapsed() < std::time::Duration::from_millis(120) {
+            if last_clamp.get().elapsed() < std::time::Duration::from_millis(120) {
                 return;
             }
-            last_clamp = std::time::Instant::now();
+            last_clamp.set(std::time::Instant::now());
             if let Some(w) = h.get_webview_window("widget") {
                 clamp_widget_pos(&w);
             }
@@ -291,8 +292,8 @@ fn clamp_widget_pos(w: &WebviewWindow) {
     };
     let mp = mon.position();
     let ms = mon.size();
-    let max_x = mp.x + ms.width as i32 - size.width;
-    let max_y = mp.y + ms.height as i32 - size.height;
+    let max_x = mp.x + ms.width as i32 - size.width as i32;
+    let max_y = mp.y + ms.height as i32 - size.height as i32;
     let x = pos.x.clamp(mp.x, max_x.max(mp.x));
     let y = pos.y.clamp(mp.y, max_y.max(mp.y));
     if x != pos.x || y != pos.y {
@@ -331,7 +332,8 @@ fn spawn_monitor(app: AppHandle) {
         loop {
             let poll_ms = {
                 let st = app.state::<AppState>();
-                st.settings.lock().unwrap().foreground_poll_ms.clamp(250, 10_000)
+                let v = st.settings.lock().unwrap().foreground_poll_ms;
+                v.clamp(250, 10_000)
             };
             std::thread::sleep(std::time::Duration::from_millis(poll_ms));
 
@@ -571,7 +573,7 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
         // 今日内存实时数据覆盖库中同键数据
         let agg = state.aggregator.lock().unwrap();
         for (k, v) in &agg.daily {
-            if v.usage_date >= from && v.usage_date <= to {
+            if v.usage_date.as_str() >= from && v.usage_date.as_str() <= to {
                 by_key.insert(k.clone(), v.clone());
             }
         }

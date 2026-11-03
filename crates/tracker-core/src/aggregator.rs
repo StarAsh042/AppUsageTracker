@@ -182,3 +182,157 @@ fn same_app(a: &Option<AppIdentity>, b: &Option<AppIdentity>) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // 聚合器状态机单元测试：区间闭合 / 空闲 / 锁定 / 跨午夜 / 排除应用
+    use crate::aggregator::UsageAggregator;
+    use crate::models::{AppIdentity, TrackingState};
+    use chrono::{Local, TimeZone};
+    use std::collections::HashSet;
+    
+    fn identity(name: &str) -> AppIdentity {
+        AppIdentity {
+            app_key: format!("c:\\apps\\{}.exe", name.to_lowercase()),
+            process_name: name.to_string(),
+            display_name: name.to_string(),
+            exe_path: format!("C:\\apps\\{}.exe", name),
+        }
+    }
+    
+    fn at(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32) -> chrono::DateTime<Local> {
+        Local.with_ymd_and_hms(y, m, d, h, min, s).unwrap()
+    }
+    
+    fn agg() -> UsageAggregator {
+        UsageAggregator::new(180.0, HashSet::new())
+    }
+    
+    #[test]
+    fn 前台切换闭合区间并累计() {
+        let mut a = agg();
+        a.on_tick(Some(identity("Chrome")), 0.0, at(2026, 11, 1, 10, 0, 0));
+        a.on_tick(Some(identity("Chrome")), 0.0, at(2026, 11, 1, 10, 0, 30));
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 10, 2, 0));
+        assert_eq!(a.state, TrackingState::Active);
+        let chrome = a
+            .daily
+            .values()
+            .find(|d| d.app_key.contains("chrome"))
+            .expect("chrome row");
+        assert!((chrome.active_seconds - 120.0).abs() < 0.001, "got {}", chrome.active_seconds);
+        assert_eq!(a.pending_intervals.len(), 1);
+        assert_eq!(a.pending_intervals[0].duration_seconds, 120.0);
+    }
+    
+    #[test]
+    fn 空闲超阈值暂停且扣除空闲前未计入部分() {
+        let mut a = agg();
+        let start = at(2026, 11, 1, 10, 0, 0);
+        a.on_tick(Some(identity("Chrome")), 0.0, start);
+        // 10:10 检测到空闲 200 秒 → 活动止于 10:06:40
+        a.on_tick(Some(identity("Chrome")), 200.0, at(2026, 11, 1, 10, 10, 0));
+        assert_eq!(a.state, TrackingState::Idle);
+        let chrome = a.daily.values().find(|d| d.app_key.contains("chrome")).unwrap();
+        assert!((chrome.active_seconds - 400.0).abs() < 0.001, "got {}", chrome.active_seconds);
+    
+        // 空闲期间不累计
+        a.on_tick(Some(identity("Chrome")), 300.0, at(2026, 11, 1, 10, 12, 0));
+        let chrome = a.daily.values().find(|d| d.app_key.contains("chrome")).unwrap();
+        assert!((chrome.active_seconds - 400.0).abs() < 0.001);
+    
+        // 输入恢复 → 重新活跃
+        a.on_tick(Some(identity("Chrome")), 0.0, at(2026, 11, 1, 10, 13, 0));
+        assert_eq!(a.state, TrackingState::Active);
+    }
+    
+    #[test]
+    fn 锁屏闭合区间解锁恢复() {
+        let mut a = agg();
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 22, 0, 0));
+        a.on_locked(at(2026, 11, 1, 23, 0, 0));
+        assert_eq!(a.state, TrackingState::Locked);
+        let code = a.daily.values().find(|d| d.app_key.contains("code")).unwrap();
+        assert!((code.active_seconds - 3600.0).abs() < 0.001);
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 23, 5, 0));
+        assert_eq!(a.state, TrackingState::Locked, "锁定期间 tick 不应计时");
+        a.on_unlocked(Some(identity("Code")), at(2026, 11, 1, 23, 5, 0));
+        assert_eq!(a.state, TrackingState::Active);
+    }
+    
+    #[test]
+    fn 跨午夜按天切分() {
+        let mut a = agg();
+        a.on_tick(Some(identity("Steam")), 0.0, at(2026, 10, 31, 23, 50, 0));
+        a.on_tick(Some(identity("Steam")), 0.0, at(2026, 11, 1, 0, 10, 0));
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 0, 15, 0));
+        let keys: Vec<&str> = a.daily.keys().map(|k| k.as_str()).collect();
+        assert!(
+            keys.contains(&"2026-10-31|c:\\apps\\steam.exe") && keys.contains(&"2026-11-01|c:\\apps\\steam.exe"),
+            "days: {keys:?}"
+        );
+        let steam_1031 = a.daily.values().find(|d| d.usage_date == "2026-10-31").unwrap();
+        assert!((steam_1031.active_seconds - 600.0).abs() < 0.001);
+    }
+    
+    #[test]
+    fn 排除应用不计入() {
+        let mut excluded = HashSet::new();
+        excluded.insert("c:\\windows\\explorer.exe".to_string());
+        let mut a = UsageAggregator::new(180.0, excluded);
+        let explorer = AppIdentity {
+            app_key: "c:\\windows\\explorer.exe".to_string(),
+            process_name: "explorer".to_string(),
+            display_name: "explorer".to_string(),
+            exe_path: "C:\\windows\\explorer.exe".to_string(),
+        };
+        a.on_tick(Some(explorer), 0.0, at(2026, 11, 1, 10, 0, 0));
+        a.on_tick(Some(identity("Chrome")), 0.0, at(2026, 11, 1, 10, 1, 0));
+        assert!(a.daily.is_empty(), "explorer 不应产生记录");
+        assert_eq!(a.current_segment_seconds(at(2026, 11, 1, 10, 2, 0)), 60.0);
+    }
+    
+    #[test]
+    fn 暂停与恢复() {
+        let mut a = agg();
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 10, 0, 0));
+        a.pause(at(2026, 11, 1, 10, 10, 0));
+        assert_eq!(a.state, TrackingState::Paused);
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 10, 20, 0));
+        assert_eq!(a.state, TrackingState::Paused, "暂停期间 tick 不应恢复");
+        let code = a.daily.values().find(|d| d.app_key.contains("code")).unwrap();
+        assert!((code.active_seconds - 600.0).abs() < 0.001);
+        a.resume(Some(identity("Code")), at(2026, 11, 1, 10, 21, 0));
+        assert_eq!(a.state, TrackingState::Active);
+    }
+    
+    #[test]
+    fn 睡眠恢复重新活跃() {
+        let mut a = agg();
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 12, 0, 0));
+        a.on_suspend(at(2026, 11, 1, 12, 30, 0));
+        assert_eq!(a.state, TrackingState::Suspended);
+        a.on_resume(Some(identity("Code")), at(2026, 11, 1, 13, 0, 0));
+        assert_eq!(a.state, TrackingState::Active);
+        let code = a.daily.values().find(|d| d.app_key.contains("code")).unwrap();
+        assert!((code.active_seconds - 1800.0).abs() < 0.001);
+    }
+    
+    #[test]
+    fn 短于半秒的区间被丢弃() {
+        let mut a = agg();
+        a.on_tick(Some(identity("Code")), 0.0, at(2026, 11, 1, 10, 0, 0));
+        a.on_tick(Some(identity("Chrome")), 0.0, at(2026, 11, 1, 10, 0, 0).chrono_plus(0.2));
+        assert!(a.daily.is_empty());
+    }
+    
+    trait ChronoPlus {
+        fn chrono_plus(&self, secs: f64) -> chrono::DateTime<Local>;
+    }
+    
+    impl ChronoPlus for chrono::DateTime<Local> {
+        fn chrono_plus(&self, secs: f64) -> chrono::DateTime<Local> {
+            *self + chrono::Duration::milliseconds((secs * 1000.0) as i64)
+        }
+    }
+}

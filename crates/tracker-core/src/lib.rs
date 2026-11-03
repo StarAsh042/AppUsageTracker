@@ -2,7 +2,6 @@ pub mod aggregator;
 pub mod category;
 pub mod limits;
 pub mod models;
-pub mod monitor;
 pub mod settings;
 pub mod store;
 pub mod win32;
