@@ -95,7 +95,7 @@
   }
 
   function trendMax(points: { seconds: number }[]): number {
-    return Math.max(1, ...points.map((p) => p.seconds));
+    return Math.max(1, ...points.map((p) => p.seconds)) * 1.08;
   }
 </script>
 
@@ -499,8 +499,9 @@
   .t-fill {
     width: 100%;
     background: linear-gradient(180deg, #4f8cff, #3566cc);
-    border-radius: 4px 4px 0 0;
+    border-radius: 6px 6px 0 0;
     min-height: 2px;
+    box-shadow: 0 0 12px rgba(79, 140, 255, 0.35);
   }
 
   .t-label {

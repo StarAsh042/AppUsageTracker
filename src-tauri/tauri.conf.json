@@ -20,7 +20,7 @@
         "minHeight": 580,
         "center": true,
         "visible": false,
-        "theme": "dark"
+        "theme": "Dark"
       }
     ],
     "security": {
