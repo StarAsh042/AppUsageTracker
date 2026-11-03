@@ -14,6 +14,35 @@ pub struct TrackerSettings {
     pub category_daily_limit_minutes: std::collections::HashMap<String, u32>,
     pub app_category_overrides: std::collections::HashMap<String, String>,
     pub category_rules: Vec<CategoryRuleDef>,
+    #[serde(default)]
+    pub widget: WidgetPrefs,
+}
+
+/// 悬浮窗偏好（右键菜单可调：置顶/锁定/贴边/缩略/透明度/配色）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WidgetPrefs {
+    pub always_on_top: bool,
+    pub locked: bool,
+    pub edge_snap: bool,
+    pub compact: bool,
+    /// 内容底色不透明度百分比（40–100）。
+    pub opacity: u8,
+    /// 配色预设 key：blue/cyan/violet/green/orange/pink。
+    pub accent: String,
+}
+
+impl Default for WidgetPrefs {
+    fn default() -> Self {
+        Self {
+            always_on_top: true,
+            locked: false,
+            edge_snap: false,
+            compact: false,
+            opacity: 85,
+            accent: "blue".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +66,7 @@ impl Default for TrackerSettings {
             category_daily_limit_minutes: Default::default(),
             app_category_overrides: Default::default(),
             category_rules: default_category_rules(),
+            widget: Default::default(),
         }
     }
 }

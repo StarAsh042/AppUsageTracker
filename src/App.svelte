@@ -18,9 +18,13 @@
     const un2 = listen<string>('ui://navigate', (e) => {
       view = e.payload === 'settings' ? 'settings' : 'dashboard';
     });
+    // 禁用 WebView 默认右键菜单（排行右键分类等自定义菜单不受影响）
+    const prevent = (e: Event) => e.preventDefault();
+    window.addEventListener('contextmenu', prevent);
     return () => {
       un1.then((f) => f());
       un2.then((f) => f());
+      window.removeEventListener('contextmenu', prevent);
     };
   });
 

@@ -1,46 +1,109 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, stateLabel, type LiveStatus } from './lib/api';
+  import {
+    api,
+    fmtDuration,
+    stateLabel,
+    WIDGET_ACCENTS,
+    type LiveStatus,
+    type WidgetPrefs,
+  } from './lib/api';
 
   let live = $state<LiveStatus | null>(null);
+  let prefs = $state<WidgetPrefs | null>(null);
+  let hovering = $state(false);
+
+  const collapsed = $derived(prefs?.edge_snap === true && !hovering);
+  const accent = $derived(WIDGET_ACCENTS[prefs?.accent ?? 'blue'] ?? '#4f8cff');
+  const bgAlpha = $derived(((prefs?.opacity ?? 85) / 100).toFixed(2));
 
   $effect(() => {
+    api.getSettings().then((s) => (prefs = s.widget));
     api.getLiveStatus().then((l) => (live = l));
-    const un = listen<LiveStatus>('usage://tick', (e) => (live = e.payload));
+    const un1 = listen<LiveStatus>('usage://tick', (e) => (live = e.payload));
+    const un2 = listen<WidgetPrefs>('widget://prefs', (e) => (prefs = e.payload));
+    // 禁用 WebView 默认右键菜单（右键由原生菜单接管）
+    const prevent = (e: Event) => e.preventDefault();
+    window.addEventListener('contextmenu', prevent);
     return () => {
-      un.then((f) => f());
+      un1.then((f) => f());
+      un2.then((f) => f());
+      window.removeEventListener('contextmenu', prevent);
     };
   });
+
+  function openMenu(e: MouseEvent) {
+    e.preventDefault();
+    api.showWidgetMenu();
+  }
+
+  function onEnter() {
+    hovering = true;
+    if (prefs?.edge_snap) api.setWidgetCollapsed(false);
+  }
+
+  function onLeave() {
+    hovering = false;
+    if (prefs?.edge_snap) api.setWidgetCollapsed(true);
+  }
+
+  const drag = $derived(prefs?.locked ? undefined : true);
 </script>
 
-<div class="widget" data-tauri-drag-region>
-  <div class="row top" data-tauri-drag-region>
-    <span class="dot {live?.state.toLowerCase() ?? ''}"></span>
-    <span class="state" data-tauri-drag-region>{live ? stateLabel(live.state) : '…'}</span>
-    <span class="today" data-tauri-drag-region>今日 {live ? fmtDuration(live.today_total_seconds) : '--'}</span>
-  </div>
+<div
+  class="widget"
+  class:compact={prefs?.compact === true}
+  class:collapsed
+  style="--ac:{accent}; --wa:{bgAlpha}"
+  data-tauri-drag-region={drag}
+  oncontextmenu={openMenu}
+  onmouseenter={onEnter}
+  onmouseleave={onLeave}
+>
+  {#if collapsed}
+    <div class="pill" title="使用时长悬浮窗">
+      <span class="pill-icon">⏱</span>
+      <span class="pill-text" data-tauri-drag-region={drag}>
+        {live ? fmtDuration(live.today_total_seconds) : '--'}
+      </span>
+    </div>
+  {:else}
+    <div class="row top" data-tauri-drag-region={drag}>
+      <span class="dot {live?.state.toLowerCase() ?? ''}"></span>
+      <span class="state" data-tauri-drag-region={drag}>{live ? stateLabel(live.state) : '…'}</span>
+      <span class="today" data-tauri-drag-region={drag}>
+        今日 {live ? fmtDuration(live.today_total_seconds) : '--'}
+      </span>
+    </div>
 
-  <div class="current" data-tauri-drag-region>
-    {#if live?.current_app}
-      <div class="app-name" data-tauri-drag-region>{live.current_app.display_name}</div>
-      <div class="app-meta" data-tauri-drag-region>
-        {live.current_category} · 本轮 {fmtDuration(live.current_seconds)}
+    <div class="current" data-tauri-drag-region={drag}>
+      {#if live?.current_app}
+        <div class="app-name" data-tauri-drag-region={drag}>{live.current_app.display_name}</div>
+        <div class="app-meta" data-tauri-drag-region={drag}>
+          {live.current_category} · 本轮 {fmtDuration(live.current_seconds)}
+        </div>
+      {:else}
+        <div class="app-name muted" data-tauri-drag-region={drag}>当前无前台应用</div>
+      {/if}
+    </div>
+
+    {#if prefs?.compact !== true}
+      <div class="tops" data-tauri-drag-region={drag}>
+        {#each live?.top_apps ?? [] as t, i (t.display_name + i)}
+          <div class="top-row">
+            <span class="rank">{i + 1}</span>
+            <span class="name">{t.display_name}</span>
+            <span class="cat">{t.category}</span>
+            <span class="dur">{fmtDuration(t.active_seconds)}</span>
+          </div>
+        {/each}
       </div>
-    {:else}
-      <div class="app-name muted" data-tauri-drag-region>当前无前台应用</div>
     {/if}
-  </div>
+  {/if}
 
-  <div class="tops" data-tauri-drag-region>
-    {#each live?.top_apps ?? [] as t, i (t.display_name + i)}
-      <div class="top-row">
-        <span class="rank">{i + 1}</span>
-        <span class="name">{t.display_name}</span>
-        <span class="cat">{t.category}</span>
-        <span class="dur">{fmtDuration(t.active_seconds)}</span>
-      </div>
-    {/each}
-  </div>
+  {#if prefs?.locked === true}
+    <span class="lock-badge">🔒</span>
+  {/if}
 </div>
 
 <style>
@@ -51,10 +114,30 @@
     gap: 8px;
     padding: 12px 14px;
     border-radius: 14px;
-    background: rgba(16, 18, 24, 0.35);
+    background: rgba(16, 18, 24, var(--wa, 0.85));
+    border: 1px solid color-mix(in srgb, var(--ac, #4f8cff) 32%, transparent);
     color: #ecf0f8;
     font-size: 12px;
     overflow: hidden;
+    position: relative;
+  }
+
+  .widget.compact {
+    gap: 4px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .widget.compact .current {
+    padding: 4px 8px;
+  }
+
+  .widget.compact .app-name {
+    font-size: 12px;
+  }
+
+  .widget.collapsed {
+    padding: 5px;
   }
 
   .row {
@@ -93,6 +176,7 @@
   .current {
     padding: 6px 10px;
     background: rgba(255, 255, 255, 0.06);
+    border-left: 2px solid var(--ac, #4f8cff);
     border-radius: 10px;
   }
 
@@ -137,8 +221,9 @@
   }
 
   .rank {
-    color: #8b93a5;
+    color: var(--ac, #4f8cff);
     font-size: 11px;
+    font-weight: 700;
   }
 
   .name {
@@ -148,7 +233,7 @@
   }
 
   .cat {
-    color: #7aa8ff;
+    color: var(--ac, #4f8cff);
     font-size: 11px;
   }
 
@@ -156,5 +241,39 @@
     color: #aeb6c8;
     font-variant-numeric: tabular-nums;
     font-size: 11px;
+  }
+
+  .pill {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .pill-icon {
+    font-size: 15px;
+  }
+
+  .pill-text {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+    font-size: 11px;
+    color: #aeb6c8;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+    max-height: 100px;
+    overflow: hidden;
+  }
+
+  .lock-badge {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-size: 10px;
+    opacity: 0.75;
+    pointer-events: none;
   }
 </style>

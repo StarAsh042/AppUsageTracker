@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use chrono::Local;
 use serde::Serialize;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
@@ -15,8 +15,13 @@ use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
 use tracker_core::limits::categories_to_notify;
 use tracker_core::models::{AppIdentity, DailyUsage, ForegroundInterval, TrackingState};
-use tracker_core::settings::{CategoryRuleDef, TrackerSettings};
+use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
+
+/// 悬浮窗三种形态（逻辑像素）。
+const WIDGET_NORMAL: (f64, f64) = (300.0, 216.0);
+const WIDGET_COMPACT: (f64, f64) = (200.0, 76.0);
+const WIDGET_COLLAPSED: (f64, f64) = (44.0, 150.0);
 
 /// 全局应用状态（Tauri managed state）。
 struct AppState {
@@ -111,6 +116,9 @@ pub fn run() {
             list_available_categories,
             open_path,
             get_app_version,
+            show_widget_menu,
+            set_widget_collapsed,
+            update_widget_settings,
         ])
         .setup(|app| {
             let settings = load_settings();
@@ -245,12 +253,14 @@ fn setup_main_window(app: &AppHandle) {
 }
 
 fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
+    let prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    let (w, h) = if prefs.compact { WIDGET_COMPACT } else { WIDGET_NORMAL };
     let win = tauri::WebviewWindowBuilder::new(app, "widget", WebviewUrl::App("widget.html".into()))
         .title("使用时长悬浮窗")
-        .inner_size(300.0, 216.0)
+        .inner_size(w, h)
         .decorations(false)
         .transparent(true)
-        .always_on_top(true)
+        .always_on_top(prefs.always_on_top)
         .skip_taskbar(true)
         .resizable(false)
         .shadow(false)
@@ -261,7 +271,36 @@ fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
     if window_vibrancy::apply_acrylic(&win, Some((18, 18, 24, 110))).is_err() {
         let _ = window_vibrancy::apply_mica(&win, None);
     }
+    apply_rounded_corners(&win);
+    // 悬浮窗右键原生菜单（事件处理器只在创建时注册一次）
+    let h = app.clone();
+    win.on_menu_event(move |_win, event| handle_widget_menu_event(&h, event.id().as_ref()));
     Ok(())
+}
+
+/// DWM 系统圆角（Win11），让亚克力背板一起被裁圆。
+fn apply_rounded_corners(win: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWM_WINDOW_CORNER_PREFERENCE,
+            DWMWCP_ROUND,
+        };
+        if let Ok(hwnd) = win.hwnd() {
+            let pref = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_ROUND.0);
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    HWND(hwnd.0),
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    &pref as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+                );
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = win;
 }
 
 fn setup_widget_clamp(app: &AppHandle) {
@@ -303,6 +342,92 @@ fn clamp_widget_pos(w: &WebviewWindow) {
     if x != pos.x || y != pos.y {
         let _ = w.set_position(PhysicalPosition::new(x, y));
     }
+}
+
+/// 贴边收起：把悬浮窗缩成小条并吸附到最近的屏幕边缘。
+fn collapse_widget(win: &WebviewWindow) {
+    let (pos, mon, _size, sf) = match (
+        win.outer_position(),
+        win.current_monitor(),
+        win.outer_size(),
+        win.scale_factor(),
+    ) {
+        (Ok(p), Ok(Some(m)), Ok(s), Ok(f)) => (p, m, s, f),
+        _ => return,
+    };
+    let mp = mon.position();
+    let ms = mon.size();
+    let cx = pos.x + _size.width as i32 / 2;
+    let cy = pos.y + _size.height as i32 / 2;
+    let (w, h) = ((WIDGET_COLLAPSED.0 * sf) as i32, (WIDGET_COLLAPSED.1 * sf) as i32);
+    let dl = cx - mp.x;
+    let dr = mp.x + ms.width as i32 - cx;
+    let dt = cy - mp.y;
+    let db = mp.y + ms.height as i32 - cy;
+    let min = dl.min(dr).min(dt).min(db);
+    let (x, y) = if min == dl {
+        (mp.x, cy - h / 2)
+    } else if min == dr {
+        (mp.x + ms.width as i32 - w, cy - h / 2)
+    } else if min == dt {
+        (cx - w / 2, mp.y)
+    } else {
+        (cx - w / 2, mp.y + ms.height as i32 - h)
+    };
+    let _ = win.set_size(tauri::LogicalSize::new(WIDGET_COLLAPSED.0, WIDGET_COLLAPSED.1));
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+}
+
+/// 展开悬浮窗（正常 / 缩略），并钳回屏幕内。
+fn expand_widget(win: &WebviewWindow, compact: bool) {
+    let (w, h) = if compact { WIDGET_COMPACT } else { WIDGET_NORMAL };
+    let _ = win.set_size(tauri::LogicalSize::new(w, h));
+    clamp_widget_pos(win);
+}
+
+/// 应用悬浮窗偏好：持久化 + 窗口行为 + 通知前端。
+fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
+    {
+        let state = app.state::<AppState>();
+        let mut s = state.settings.lock().unwrap();
+        s.widget = prefs.clone();
+    }
+    save_settings_file(app);
+    if let Some(win) = app.get_webview_window("widget") {
+        let _ = win.set_always_on_top(prefs.always_on_top);
+        if prefs.edge_snap {
+            collapse_widget(&win);
+        } else {
+            expand_widget(&win, prefs.compact);
+        }
+    }
+    let _ = app.emit("widget://prefs", prefs);
+}
+
+/// 悬浮窗右键原生菜单事件（id: w.top / w.lock / w.snap / w.compact / w.op.N / w.color.X / w.settings）。
+fn handle_widget_menu_event(app: &AppHandle, id: &str) {
+    let mut prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    match id {
+        "w.settings" => {
+            show_main(app);
+            let _ = app.emit("ui://navigate", "settings");
+            return;
+        }
+        "w.top" => prefs.always_on_top = !prefs.always_on_top,
+        "w.lock" => prefs.locked = !prefs.locked,
+        "w.snap" => prefs.edge_snap = !prefs.edge_snap,
+        "w.compact" => prefs.compact = !prefs.compact,
+        _ => {
+            if let Some(v) = id.strip_prefix("w.op.").and_then(|v| v.parse::<u8>().ok()) {
+                prefs.opacity = v;
+            } else if let Some(c) = id.strip_prefix("w.color.") {
+                prefs.accent = c.to_string();
+            } else {
+                return;
+            }
+        }
+    }
+    apply_widget_prefs(app, &prefs);
 }
 
 // ---------- 监控线程 ----------
@@ -552,6 +677,67 @@ fn set_paused_internal(app: &AppHandle, paused: bool) {
 #[tauri::command]
 fn get_live_status(app: AppHandle) -> LiveStatus {
     live_status(&app)
+}
+
+/// 悬浮窗右键 → 弹出原生上下文菜单（带 ✓ 与子菜单，Win11 玻璃样式）。
+#[tauri::command]
+fn show_widget_menu(app: AppHandle) -> Result<(), String> {
+    let window = app.get_window("widget").ok_or("悬浮窗未创建")?;
+    let prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    let check = |id: &str, label: &str, checked: bool| {
+        CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>).map_err(|e| e.to_string())
+    };
+    let top_i = check("w.top", "置顶显示", prefs.always_on_top)?;
+    let lock_i = check("w.lock", "锁定位置", prefs.locked)?;
+    let snap_i = check("w.snap", "贴边收起", prefs.edge_snap)?;
+    let compact_i = check("w.compact", "缩略模式", prefs.compact)?;
+
+    let op_menu = Submenu::with_id(&app, "w.opacity", "透明度", true).map_err(|e| e.to_string())?;
+    for (v, label) in [(85u8, "高 85%"), (70, "中 70%"), (55, "低 55%"), (40, "低 40%")] {
+        let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
+        op_menu.append(&item).map_err(|e| e.to_string())?;
+    }
+    let color_menu = Submenu::with_id(&app, "w.color", "配色", true).map_err(|e| e.to_string())?;
+    for (k, label) in [
+        ("blue", "蓝色"),
+        ("cyan", "青色"),
+        ("violet", "紫色"),
+        ("green", "绿色"),
+        ("orange", "橙色"),
+        ("pink", "粉色"),
+    ] {
+        let item = check(&format!("w.color.{k}"), label, prefs.accent == k)?;
+        color_menu.append(&item).map_err(|e| e.to_string())?;
+    }
+    let settings_i =
+        MenuItem::with_id(&app, "w.settings", "设置…", true, None::<&str>).map_err(|e| e.to_string())?;
+    let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(
+        &app,
+        &[&top_i, &lock_i, &snap_i, &compact_i, &op_menu, &color_menu, &sep, &settings_i],
+    )
+    .map_err(|e| e.to_string())?;
+    menu.popup(window).map_err(|e| e.to_string())
+}
+
+/// 贴边收起模式下，鼠标悬停展开 / 离开收起。
+#[tauri::command]
+fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
+    let prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    if let Some(win) = app.get_webview_window("widget") {
+        if collapsed && prefs.edge_snap {
+            collapse_widget(&win);
+        } else if !prefs.edge_snap || !collapsed {
+            expand_widget(&win, prefs.compact);
+        }
+    }
+}
+
+/// 前端直接更新悬浮窗偏好（预留）。
+#[tauri::command]
+fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), String> {
+    apply_widget_prefs(&app, &widget);
+    Ok(())
 }
 
 #[tauri::command]

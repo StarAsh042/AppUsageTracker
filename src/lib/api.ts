@@ -12,6 +12,15 @@ export interface CategoryRule {
   keywords: string[];
 }
 
+export interface WidgetPrefs {
+  always_on_top: boolean;
+  locked: boolean;
+  edge_snap: boolean;
+  compact: boolean;
+  opacity: number;
+  accent: string;
+}
+
 export interface TrackerSettings {
   idle_threshold_seconds: number;
   foreground_poll_ms: number;
@@ -25,6 +34,7 @@ export interface TrackerSettings {
   category_daily_limit_minutes: Record<string, number>;
   app_category_overrides: Record<string, string>;
   category_rules: CategoryRule[];
+  widget: WidgetPrefs;
 }
 
 export interface LiveTopApp {
@@ -87,6 +97,18 @@ export const api = {
   listCategories: () => invoke<string[]>('list_available_categories'),
   openPath: (path: string) => invoke<void>('open_path', { path }),
   getVersion: () => invoke<string>('get_app_version'),
+  showWidgetMenu: () => invoke<void>('show_widget_menu'),
+  setWidgetCollapsed: (collapsed: boolean) => invoke<void>('set_widget_collapsed', { collapsed }),
+  updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),
+};
+
+export const WIDGET_ACCENTS: Record<string, string> = {
+  blue: '#4f8cff',
+  cyan: '#22d3ee',
+  violet: '#a78bfa',
+  green: '#34d399',
+  orange: '#fb923c',
+  pink: '#f472b6',
 };
 
 export const UNCATEGORIZED = '未分类';
