@@ -2,17 +2,19 @@
   import { api, type TrackerSettings, type CategoryRule } from './lib/api';
 
   let s = $state<TrackerSettings | null>(null);
-  let rulesText = $state('');
+  let rules = $state<{ name: string; keywords: string }[]>([]);
   let excludedText = $state('');
   let status = $state('');
   let saving = $state(false);
+  let backups = $state<string[]>([]);
 
   $effect(() => {
     (async () => {
       const st = await api.getSettings();
       s = st;
-      rulesText = st.category_rules.map((r) => `${r.name}=${r.keywords.join('|')}`).join('\n');
+      rules = st.category_rules.map((r) => ({ name: r.name, keywords: r.keywords.join('|') }));
       excludedText = st.excluded_app_keys.join('\n');
+      backups = await api.listBackups();
     })();
   });
 
@@ -35,28 +37,57 @@
     }
   }
 
+  function addRule() {
+    rules = [...rules, { name: '', keywords: '' }];
+  }
+
+  function delRule(i: number) {
+    rules = rules.filter((_, idx) => idx !== i);
+  }
+
   async function saveRules() {
     status = '';
     try {
-      const rules: CategoryRule[] = [];
-      for (const line of rulesText.split(/\r?\n/)) {
-        const raw = line.trim();
-        if (!raw) continue;
-        const eq = raw.indexOf('=');
-        if (eq < 0) throw new Error(`行格式错误:「${raw}」，应为 名称=关键词1|关键词2`);
-        const name = raw.slice(0, eq).trim();
-        if (!name) throw new Error('分类名不能为空');
-        const keywords = raw
-          .slice(eq + 1)
+      const out: CategoryRule[] = [];
+      const seen = new Set<string>();
+      for (const r of rules) {
+        const name = r.name.trim();
+        const keywords = r.keywords
           .split('|')
           .map((x) => x.trim())
           .filter(Boolean);
+        if (!name && !keywords.length) continue; // 空行跳过
+        if (!name) throw new Error('分类名不能为空');
+        if (seen.has(name)) throw new Error(`分类「${name}」重复`);
+        seen.add(name);
         if (!keywords.length) throw new Error(`分类「${name}」至少需要一个关键词`);
-        rules.push({ name, keywords });
+        out.push({ name, keywords });
       }
-      if (!rules.length) throw new Error('至少保留一条分类规则');
-      await api.saveCategoryRules(rules);
+      if (!out.length) throw new Error('至少保留一条分类规则');
+      await api.saveCategoryRules(out);
+      if (s) s.category_rules = out;
       status = '分类规则已保存';
+    } catch (e) {
+      status = String(e);
+    }
+  }
+
+  async function exportBackup() {
+    status = '';
+    try {
+      const path = await api.exportBackupJson();
+      backups = await api.listBackups();
+      status = `已导出: ${path}`;
+    } catch (e) {
+      status = String(e);
+    }
+  }
+
+  async function importBackup() {
+    if (!confirm('导入将清空当前全部数据并以最新备份替换，确定继续？')) return;
+    status = '';
+    try {
+      status = await api.importBackupJson();
     } catch (e) {
       status = String(e);
     }
@@ -162,10 +193,65 @@
 
       <section class="panel">
         <h3>分类规则</h3>
-        <p class="hint">格式：分类名=关键词1|关键词2（每行一条，匹配应用名 / 进程名 / 路径，不区分大小写）。</p>
-        <textarea rows="9" bind:value={rulesText} spellcheck="false"></textarea>
+        <p class="hint">关键词以 | 分隔，匹配应用名 / 进程名 / 路径，不区分大小写；顺序即优先级。</p>
+        <div class="rules-editor">
+          {#each rules as r, i (`${r.name}-${i}`)}
+            <div class="rule-row">
+              <input class="rule-name" placeholder="分类名" bind:value={r.name} spellcheck="false" />
+              <input class="rule-kw" placeholder="关键词1|关键词2|…" bind:value={r.keywords} spellcheck="false" />
+              <button class="rule-del" title="删除分类" onclick={() => delRule(i)}>✕</button>
+            </div>
+          {/each}
+        </div>
         <div class="row-actions">
+          <button class="ghost" onclick={addRule}>+ 新增分类</button>
           <button class="ghost" onclick={saveRules}>保存分类规则</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>备份与恢复（JSON）</h3>
+        <p class="hint">备份保存在数据目录 backups/ 下；恢复将用所选备份整体替换当前数据。</p>
+        <div class="row-actions">
+          <button class="ghost" onclick={exportBackup}>导出全部数据</button>
+          <button class="ghost" onclick={importBackup}>从最新备份恢复</button>
+        </div>
+        {#if backups.length}
+          <div class="backup-list">
+            {#each backups.slice(0, 5) as b (b)}
+              <span class="backup-item">📄 {b}</span>
+            {/each}
+          </div>
+        {:else}
+          <p class="hint">暂无备份</p>
+        {/if}
+      </section>
+
+      <section class="panel">
+        <h3>外观</h3>
+        <div class="theme-row">
+          <label class="check-row">
+            <input
+              type="radio"
+              name="theme"
+              checked={s.theme !== 'light'}
+              onchange={() => {
+                if (s) s.theme = 'dark';
+              }}
+            />
+            <span>深色</span>
+          </label>
+          <label class="check-row">
+            <input
+              type="radio"
+              name="theme"
+              checked={s.theme === 'light'}
+              onchange={() => {
+                if (s) s.theme = 'light';
+              }}
+            />
+            <span>浅色</span>
+          </label>
         </div>
       </section>
     </div>
@@ -277,10 +363,61 @@
     resize: vertical;
   }
 
-  .limits {
+  .rules-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .rule-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px 16px;
+    grid-template-columns: 110px 1fr 34px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .rule-name,
+  .rule-kw {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .rule-del {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--danger);
+    border-radius: 7px;
+    padding: 5px 0;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .rule-del:hover {
+    background: rgba(255, 95, 95, 0.12);
+  }
+
+  .backup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+  }
+
+  .backup-item {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .theme-row {
+    display: flex;
+    gap: 24px;
   }
 
   .limit-row span {

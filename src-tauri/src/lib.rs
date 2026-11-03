@@ -6,15 +6,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use chrono::Local;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WindowEvent,
+};
 use tauri_plugin_notification::NotificationExt;
 use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
 use tracker_core::limits::categories_to_notify;
-use tracker_core::models::{AppIdentity, DailyUsage, ForegroundInterval, TrackingState};
+use tracker_core::models::{
+    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TrackingState,
+};
 use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
 
@@ -119,6 +123,10 @@ pub fn run() {
             show_widget_menu,
             set_widget_collapsed,
             update_widget_settings,
+            get_timeline,
+            export_backup_json,
+            import_backup_json,
+            list_backups,
         ])
         .setup(|app| {
             let settings = load_settings();
@@ -127,7 +135,8 @@ pub fn run() {
                 .map_err(|e| format!("打开数据库失败: {e}"))?;
 
             // 排除名单 = 用户配置 + 自身（始终排除）
-            let mut excluded: HashSet<String> = settings.excluded_app_keys.iter().cloned().collect();
+            let mut excluded: HashSet<String> =
+                settings.excluded_app_keys.iter().cloned().collect();
             if let Ok(self_exe) = std::env::current_exe() {
                 excluded.insert(self_exe.to_string_lossy().to_lowercase());
             }
@@ -135,9 +144,12 @@ pub fn run() {
             // 启动时把今日已有记录载入内存，保证后续绝对覆盖式 flush 不丢数据
             let today = Local::now().format("%Y-%m-%d").to_string();
             let mut agg = UsageAggregator::new(settings.idle_threshold_seconds as f64, excluded);
-            let rows = store.query_daily(&today, &today).map_err(|e| e.to_string())?;
+            let rows = store
+                .query_daily(&today, &today)
+                .map_err(|e| e.to_string())?;
             for r in rows {
-                agg.daily.insert(format!("{}|{}", r.usage_date, r.app_key), r);
+                agg.daily
+                    .insert(format!("{}|{}", r.usage_date, r.app_key), r);
             }
 
             app.manage(AppState {
@@ -163,6 +175,7 @@ pub fn run() {
                 setup_widget_clamp(&handle);
             }
 
+            purge_expired(&handle);
             spawn_monitor(handle.clone());
             Ok(())
         })
@@ -180,7 +193,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&open_i, &widget_i, &pause_i, &settings_i, &PredefinedMenuItem::separator(app)?, &quit_i],
+        &[
+            &open_i,
+            &widget_i,
+            &pause_i,
+            &settings_i,
+            &PredefinedMenuItem::separator(app)?,
+            &quit_i,
+        ],
     )?;
 
     let widget_handle = widget_i.clone();
@@ -195,15 +215,28 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "open" => show_main(app),
             "widget" => {
                 let st = app.state::<AppState>();
-                let visible = app.get_webview_window("widget").map(|w| w.is_visible().unwrap_or(false)).unwrap_or(false);
+                let visible = app
+                    .get_webview_window("widget")
+                    .map(|w| w.is_visible().unwrap_or(false))
+                    .unwrap_or(false);
                 set_widget_visible(app, !visible);
-                let _ = st.tray.lock().unwrap().as_ref().map(|h| h.widget_toggle.set_checked(!visible));
+                let _ = st
+                    .tray
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|h| h.widget_toggle.set_checked(!visible));
             }
             "pause" => {
                 let st = app.state::<AppState>();
                 let paused = !st.user_paused.load(Ordering::Relaxed);
                 set_paused_internal(app, paused);
-                let _ = st.tray.lock().unwrap().as_ref().map(|h| h.pause_toggle.set_checked(paused));
+                let _ = st
+                    .tray
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|h| h.pause_toggle.set_checked(paused));
             }
             "settings" => {
                 show_main(app);
@@ -216,14 +249,22 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 show_main(tray.app_handle());
             }
         })
         .build(app)?;
 
     let state = app.state::<AppState>();
-    *state.tray.lock().unwrap() = Some(TrayHandles { widget_toggle: widget_handle, pause_toggle: pause_handle });
+    *state.tray.lock().unwrap() = Some(TrayHandles {
+        widget_toggle: widget_handle,
+        pause_toggle: pause_handle,
+    });
     Ok(())
 }
 
@@ -253,22 +294,34 @@ fn setup_main_window(app: &AppHandle) {
 }
 
 fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
-    let prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
-    let (w, h) = if prefs.compact { WIDGET_COMPACT } else { WIDGET_NORMAL };
-    let win = tauri::WebviewWindowBuilder::new(app, "widget", WebviewUrl::App("widget.html".into()))
-        .title("使用时长悬浮窗")
-        .inner_size(w, h)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(prefs.always_on_top)
-        .skip_taskbar(true)
-        .resizable(false)
-        .shadow(false)
-        .focused(false)
-        .position(12.0, 12.0)
-        .build()?;
-    // 真·亚克力磨砂；失败则退回 Mica
-    if window_vibrancy::apply_acrylic(&win, Some((18, 18, 24, 110))).is_err() {
+    let prefs = {
+        app.state::<AppState>()
+            .settings
+            .lock()
+            .unwrap()
+            .widget
+            .clone()
+    };
+    let (w, h) = if prefs.compact {
+        WIDGET_COMPACT
+    } else {
+        WIDGET_NORMAL
+    };
+    let win =
+        tauri::WebviewWindowBuilder::new(app, "widget", WebviewUrl::App("widget.html".into()))
+            .title("使用时长悬浮窗")
+            .inner_size(w, h)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(prefs.always_on_top)
+            .skip_taskbar(true)
+            .resizable(false)
+            .shadow(false)
+            .focused(false)
+            .position(12.0, 12.0)
+            .build()?;
+    // 真·亚克力磨砂（底色随强调色微调）；失败则退回 Mica
+    if window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent))).is_err() {
         let _ = window_vibrancy::apply_mica(&win, None);
     }
     apply_rounded_corners(&win);
@@ -284,8 +337,8 @@ fn apply_rounded_corners(win: &WebviewWindow) {
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::Graphics::Dwm::{
-            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWM_WINDOW_CORNER_PREFERENCE,
-            DWMWCP_ROUND,
+            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+            DWM_WINDOW_CORNER_PREFERENCE,
         };
         if let Ok(hwnd) = win.hwnd() {
             let pref = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_ROUND.0);
@@ -304,9 +357,12 @@ fn apply_rounded_corners(win: &WebviewWindow) {
 }
 
 fn setup_widget_clamp(app: &AppHandle) {
-    let Some(w) = app.get_webview_window("widget") else { return };
+    let Some(w) = app.get_webview_window("widget") else {
+        return;
+    };
     let h = app.clone();
-    let last_clamp = std::cell::Cell::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+    let last_clamp =
+        std::cell::Cell::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
     w.on_window_event(move |e| {
         if let WindowEvent::Moved(_) = e {
             if last_clamp.get().elapsed() < std::time::Duration::from_millis(120) {
@@ -359,7 +415,10 @@ fn collapse_widget(win: &WebviewWindow) {
     let ms = mon.size();
     let cx = pos.x + _size.width as i32 / 2;
     let cy = pos.y + _size.height as i32 / 2;
-    let (w, h) = ((WIDGET_COLLAPSED.0 * sf) as i32, (WIDGET_COLLAPSED.1 * sf) as i32);
+    let (w, h) = (
+        (WIDGET_COLLAPSED.0 * sf) as i32,
+        (WIDGET_COLLAPSED.1 * sf) as i32,
+    );
     let dl = cx - mp.x;
     let dr = mp.x + ms.width as i32 - cx;
     let dt = cy - mp.y;
@@ -374,15 +433,36 @@ fn collapse_widget(win: &WebviewWindow) {
     } else {
         (cx - w / 2, mp.y + ms.height as i32 - h)
     };
-    let _ = win.set_size(tauri::LogicalSize::new(WIDGET_COLLAPSED.0, WIDGET_COLLAPSED.1));
+    let _ = win.set_size(tauri::LogicalSize::new(
+        WIDGET_COLLAPSED.0,
+        WIDGET_COLLAPSED.1,
+    ));
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
 /// 展开悬浮窗（正常 / 缩略），并钳回屏幕内。
 fn expand_widget(win: &WebviewWindow, compact: bool) {
-    let (w, h) = if compact { WIDGET_COMPACT } else { WIDGET_NORMAL };
+    let (w, h) = if compact {
+        WIDGET_COMPACT
+    } else {
+        WIDGET_NORMAL
+    };
     let _ = win.set_size(tauri::LogicalSize::new(w, h));
     clamp_widget_pos(win);
+}
+
+/// 强调色 → 亚克力 tint（深色底与强调色 10% 混合）。
+fn accent_tint(accent: &str) -> (u8, u8, u8, u8) {
+    let (r, g, b) = match accent {
+        "cyan" => (34u8, 211u8, 238u8),
+        "violet" => (167, 139, 250),
+        "green" => (52, 211, 153),
+        "orange" => (251, 146, 60),
+        "pink" => (244, 114, 182),
+        _ => (79, 140, 255),
+    };
+    let mix = |base: u32, c: u32| ((base * 9 + c) / 10) as u8;
+    (mix(16, r as u32), mix(18, g as u32), mix(24, b as u32), 110)
 }
 
 /// 应用悬浮窗偏好：持久化 + 窗口行为 + 通知前端。
@@ -395,6 +475,7 @@ fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
     save_settings_file(app);
     if let Some(win) = app.get_webview_window("widget") {
         let _ = win.set_always_on_top(prefs.always_on_top);
+        let _ = window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent)));
         if prefs.edge_snap {
             collapse_widget(&win);
         } else {
@@ -406,7 +487,14 @@ fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
 
 /// 悬浮窗右键原生菜单事件（id: w.top / w.lock / w.snap / w.compact / w.op.N / w.color.X / w.settings）。
 fn handle_widget_menu_event(app: &AppHandle, id: &str) {
-    let mut prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    let mut prefs = {
+        app.state::<AppState>()
+            .settings
+            .lock()
+            .unwrap()
+            .widget
+            .clone()
+    };
     match id {
         "w.settings" => {
             show_main(app);
@@ -447,7 +535,12 @@ fn foreground_identity(display_cache: &mut HashMap<String, String>) -> Option<Ap
         display_cache.insert(key.clone(), d.clone());
         d
     };
-    Some(AppIdentity { app_key: key, process_name: stem, display_name: display, exe_path: exe })
+    Some(AppIdentity {
+        app_key: key,
+        process_name: stem,
+        display_name: display,
+        exe_path: exe,
+    })
 }
 
 fn spawn_monitor(app: AppHandle) {
@@ -457,6 +550,7 @@ fn spawn_monitor(app: AppHandle) {
         let mut last_tick = tracker_core::win32::get_tick_count64();
         let mut last_flush = std::time::Instant::now();
         let mut cur_day = last_wall.format("%Y-%m-%d").to_string();
+        let mut rest_acc = 0.0f64;
 
         loop {
             let poll_ms = {
@@ -492,12 +586,37 @@ fn spawn_monitor(app: AppHandle) {
                 }
             }
 
-            // 跨天：flush + 清限额提醒标记
+            // 休息提醒：连续活跃累计，空闲即视为已休息
+            let rest_minutes = state.settings.lock().unwrap().rest_reminder_minutes;
+            {
+                let agg = state.aggregator.lock().unwrap();
+                match agg.state {
+                    TrackingState::Active => rest_acc += wall_delta.max(0) as f64 / 1000.0,
+                    TrackingState::Idle => rest_acc = 0.0,
+                    _ => {}
+                }
+            }
+            if rest_minutes > 0 && rest_acc >= rest_minutes as f64 * 60.0 {
+                rest_acc = 0.0;
+                let _ = app.emit("ui://rest", ());
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("休息提醒")
+                    .body(format!(
+                        "已连续活跃使用 {rest_minutes} 分钟，站起来活动一下吧"
+                    ))
+                    .show();
+            }
+
+            // 跨天：flush + 清限额提醒标记 + 保留策略清理
             let today = now.format("%Y-%m-%d").to_string();
             if today != cur_day {
                 cur_day = today;
                 flush_state(&app);
                 state.notified_limits.lock().unwrap().clear();
+                rest_acc = 0.0;
+                purge_expired(&app);
             }
 
             if last_flush.elapsed() >= std::time::Duration::from_secs(30) {
@@ -521,9 +640,12 @@ fn flush_state(app: &AppHandle) {
         let agg = state.aggregator.lock().unwrap();
         agg.daily.values().cloned().collect()
     };
-    let intervals: Vec<ForegroundInterval> = {
+    let (intervals, state_intervals): (Vec<ForegroundInterval>, Vec<StateInterval>) = {
         let mut agg = state.aggregator.lock().unwrap();
-        std::mem::take(&mut agg.pending_intervals)
+        (
+            std::mem::take(&mut agg.pending_intervals),
+            std::mem::take(&mut agg.pending_state_intervals),
+        )
     };
     let store = state.store.lock().unwrap();
     if let Err(e) = store.save_daily_replace(&daily) {
@@ -534,13 +656,38 @@ fn flush_state(app: &AppHandle) {
             eprintln!("save_intervals failed: {e}");
         }
     }
+    if !state_intervals.is_empty() {
+        if let Err(e) = store.save_state_intervals(&state_intervals) {
+            eprintln!("save_state_intervals failed: {e}");
+        }
+    }
+}
+
+/// 保留策略：清理 N 天前的明细与聚合（0 = 永久保留）。
+fn purge_expired(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let retention = state.settings.lock().unwrap().retention_days;
+    if retention == 0 {
+        return;
+    }
+    let cutoff = (Local::now() - chrono::Duration::days(retention as i64))
+        .format("%Y-%m-%d")
+        .to_string();
+    let result = state.store.lock().unwrap().purge_before(&cutoff);
+    if let Err(e) = result {
+        eprintln!("purge_before failed: {e}");
+    }
 }
 
 fn check_limits(app: &AppHandle) {
     let state = app.state::<AppState>();
     let (limits, rules, overrides) = {
         let s = state.settings.lock().unwrap();
-        (s.category_daily_limit_minutes.clone(), s.category_rules.clone(), s.app_category_overrides.clone())
+        (
+            s.category_daily_limit_minutes.clone(),
+            s.category_rules.clone(),
+            s.app_category_overrides.clone(),
+        )
     };
     if limits.is_empty() {
         return;
@@ -600,7 +747,11 @@ fn live_status(app: &AppHandle) -> LiveStatus {
     let top_apps = top
         .into_iter()
         .take(5)
-        .map(|(display_name, category, active_seconds)| LiveTopApp { display_name, category, active_seconds })
+        .map(|(display_name, category, active_seconds)| LiveTopApp {
+            display_name,
+            category,
+            active_seconds,
+        })
         .collect();
     LiveStatus {
         state: agg.state,
@@ -615,7 +766,10 @@ fn live_status(app: &AppHandle) -> LiveStatus {
 // ---------- 设置 ----------
 
 fn db_path(data_dir: &str) -> String {
-    std::path::Path::new(data_dir).join("usage.db").to_string_lossy().to_string()
+    std::path::Path::new(data_dir)
+        .join("usage.db")
+        .to_string_lossy()
+        .to_string()
 }
 
 fn load_settings() -> TrackerSettings {
@@ -683,9 +837,17 @@ fn get_live_status(app: AppHandle) -> LiveStatus {
 #[tauri::command]
 fn show_widget_menu(app: AppHandle) -> Result<(), String> {
     let window = app.get_window("widget").ok_or("悬浮窗未创建")?;
-    let prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    let prefs = {
+        app.state::<AppState>()
+            .settings
+            .lock()
+            .unwrap()
+            .widget
+            .clone()
+    };
     let check = |id: &str, label: &str, checked: bool| {
-        CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>).map_err(|e| e.to_string())
+        CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>)
+            .map_err(|e| e.to_string())
     };
     let top_i = check("w.top", "置顶显示", prefs.always_on_top)?;
     let lock_i = check("w.lock", "锁定位置", prefs.locked)?;
@@ -693,7 +855,12 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
     let compact_i = check("w.compact", "缩略模式", prefs.compact)?;
 
     let op_menu = Submenu::with_id(&app, "w.opacity", "透明度", true).map_err(|e| e.to_string())?;
-    for (v, label) in [(85u8, "高 85%"), (70, "中 70%"), (55, "低 55%"), (40, "低 40%")] {
+    for (v, label) in [
+        (85u8, "高 85%"),
+        (70, "中 70%"),
+        (55, "低 55%"),
+        (40, "低 40%"),
+    ] {
         let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
         op_menu.append(&item).map_err(|e| e.to_string())?;
     }
@@ -709,12 +876,21 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
         let item = check(&format!("w.color.{k}"), label, prefs.accent == k)?;
         color_menu.append(&item).map_err(|e| e.to_string())?;
     }
-    let settings_i =
-        MenuItem::with_id(&app, "w.settings", "设置…", true, None::<&str>).map_err(|e| e.to_string())?;
+    let settings_i = MenuItem::with_id(&app, "w.settings", "设置…", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let menu = Menu::with_items(
         &app,
-        &[&top_i, &lock_i, &snap_i, &compact_i, &op_menu, &color_menu, &sep, &settings_i],
+        &[
+            &top_i,
+            &lock_i,
+            &snap_i,
+            &compact_i,
+            &op_menu,
+            &color_menu,
+            &sep,
+            &settings_i,
+        ],
     )
     .map_err(|e| e.to_string())?;
     menu.popup(window).map_err(|e| e.to_string())
@@ -723,7 +899,14 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
 /// 贴边收起模式下，鼠标悬停展开 / 离开收起。
 #[tauri::command]
 fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
-    let prefs = { app.state::<AppState>().settings.lock().unwrap().widget.clone() };
+    let prefs = {
+        app.state::<AppState>()
+            .settings
+            .lock()
+            .unwrap()
+            .widget
+            .clone()
+    };
     if let Some(win) = app.get_webview_window("widget") {
         if collapsed && prefs.edge_snap {
             collapse_widget(&win);
@@ -757,8 +940,10 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
         let st = state.store.lock().unwrap();
         st.query_daily(from, to).map_err(|e| e.to_string())?
     };
-    let mut by_key: HashMap<String, DailyUsage> =
-        store_rows.into_iter().map(|r| (format!("{}|{}", r.usage_date, r.app_key), r)).collect();
+    let mut by_key: HashMap<String, DailyUsage> = store_rows
+        .into_iter()
+        .map(|r| (format!("{}|{}", r.usage_date, r.app_key), r))
+        .collect();
     {
         // 今日内存实时数据覆盖库中同键数据
         let agg = state.aggregator.lock().unwrap();
@@ -805,11 +990,19 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
                 exe_path: e.exe_path,
                 category,
                 active_seconds: e.seconds,
-                percent: if total > 0.0 { e.seconds / total * 100.0 } else { 0.0 },
+                percent: if total > 0.0 {
+                    e.seconds / total * 100.0
+                } else {
+                    0.0
+                },
             }
         })
         .collect();
-    apps.sort_by(|a, b| b.active_seconds.partial_cmp(&a.active_seconds).unwrap_or(std::cmp::Ordering::Equal));
+    apps.sort_by(|a, b| {
+        b.active_seconds
+            .partial_cmp(&a.active_seconds)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut cats: HashMap<String, f64> = HashMap::new();
     for a in &apps {
@@ -820,13 +1013,23 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
         .map(|(name, seconds)| DashboardCategory {
             name,
             seconds,
-            percent: if total > 0.0 { seconds / total * 100.0 } else { 0.0 },
+            percent: if total > 0.0 {
+                seconds / total * 100.0
+            } else {
+                0.0
+            },
         })
         .collect();
-    categories.sort_by(|a, b| b.seconds.partial_cmp(&a.seconds).unwrap_or(std::cmp::Ordering::Equal));
+    categories.sort_by(|a, b| {
+        b.seconds
+            .partial_cmp(&a.seconds)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    let mut trend: Vec<DashboardTrendPoint> =
-        trend.into_iter().map(|(date, seconds)| DashboardTrendPoint { date, seconds }).collect();
+    let mut trend: Vec<DashboardTrendPoint> = trend
+        .into_iter()
+        .map(|(date, seconds)| DashboardTrendPoint { date, seconds })
+        .collect();
     trend.sort_by(|a, b| a.date.cmp(&b.date));
 
     let top_app = apps.first().map(|a| a.display_name.clone());
@@ -847,23 +1050,41 @@ fn get_settings(state: State<AppState>) -> TrackerSettings {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, state: State<AppState>, settings: TrackerSettings) -> Result<(), String> {
+fn save_settings(
+    app: AppHandle,
+    state: State<AppState>,
+    settings: TrackerSettings,
+) -> Result<(), String> {
     let old_dir = state.settings.lock().unwrap().data_directory.clone();
     let dir_changed = old_dir != settings.data_directory;
 
-    autostart::set(settings.start_with_windows, &std::env::current_exe().map_err(|e| e.to_string())?.to_string_lossy())?;
+    autostart::set(
+        settings.start_with_windows,
+        &std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .to_string_lossy(),
+    )?;
 
     if dir_changed {
         std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
         let (daily, intervals) = {
             let st = state.store.lock().unwrap();
-            let daily = st.query_daily("0000-01-01", "9999-12-31").map_err(|e| e.to_string())?;
-            let intervals = st.query_intervals("0000-01-01", "9999-12-31").map_err(|e| e.to_string())?;
+            let daily = st
+                .query_daily("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?;
+            let intervals = st
+                .query_intervals("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?;
             (daily, intervals)
         };
-        let new_store = SqliteStore::open(&db_path(&settings.data_directory)).map_err(|e| e.to_string())?;
-        new_store.save_daily_replace(&daily).map_err(|e| e.to_string())?;
-        new_store.save_intervals(&intervals).map_err(|e| e.to_string())?;
+        let new_store =
+            SqliteStore::open(&db_path(&settings.data_directory)).map_err(|e| e.to_string())?;
+        new_store
+            .save_daily_replace(&daily)
+            .map_err(|e| e.to_string())?;
+        new_store
+            .save_intervals(&intervals)
+            .map_err(|e| e.to_string())?;
         *state.store.lock().unwrap() = new_store;
     }
 
@@ -876,12 +1097,16 @@ fn save_settings(app: AppHandle, state: State<AppState>, settings: TrackerSettin
         agg.apply_settings(settings.idle_threshold_seconds as f64, excluded);
     }
 
-    *state.settings.lock().unwrap() = settings;
+    *state.settings.lock().unwrap() = settings.clone();
     save_settings_file(&app);
+    let _ = app.emit("app://settings", &settings);
 
     // 悬浮窗可见性同步
     let want = state.settings.lock().unwrap().show_floating_widget;
-    let now_visible = app.get_webview_window("widget").map(|w| w.is_visible().unwrap_or(false)).unwrap_or(false);
+    let now_visible = app
+        .get_webview_window("widget")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
     if want != now_visible {
         set_widget_visible(&app, want);
     }
@@ -913,7 +1138,11 @@ fn set_app_category(app: AppHandle, state: State<AppState>, app_key: String, cat
 }
 
 #[tauri::command]
-fn save_category_rules(app: AppHandle, state: State<AppState>, rules: Vec<CategoryRuleDef>) -> Result<(), String> {
+fn save_category_rules(
+    app: AppHandle,
+    state: State<AppState>,
+    rules: Vec<CategoryRuleDef>,
+) -> Result<(), String> {
     if rules.is_empty() {
         return Err("至少保留一条分类规则".into());
     }
@@ -999,6 +1228,185 @@ fn open_path(path: String) -> Result<(), String> {
 #[tauri::command]
 fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+// ---------- 时间线 ----------
+
+#[derive(Serialize, Clone)]
+struct TimelineSegment {
+    app_key: String,
+    display_name: String,
+    category: String,
+    start_time: String,
+    end_time: String,
+    duration_seconds: f64,
+}
+
+#[derive(Serialize, Clone)]
+struct TimelineState {
+    state: String,
+    start_time: String,
+    end_time: String,
+    duration_seconds: f64,
+}
+
+#[derive(Serialize, Clone)]
+struct TimelineData {
+    date: String,
+    segments: Vec<TimelineSegment>,
+    states: Vec<TimelineState>,
+}
+
+#[tauri::command]
+fn get_timeline(app: AppHandle, date: String) -> Result<TimelineData, String> {
+    let state = app.state::<AppState>();
+    let (rules, overrides) = {
+        let s = state.settings.lock().unwrap();
+        (s.category_rules.clone(), s.app_category_overrides.clone())
+    };
+    let resolver = CategoryResolver::new(rules, overrides);
+    let (intervals, states) = {
+        let st = state.store.lock().unwrap();
+        (
+            st.query_intervals(&date, &date)
+                .map_err(|e| e.to_string())?,
+            st.query_state_intervals(&date, &date)
+                .map_err(|e| e.to_string())?,
+        )
+    };
+    let segments = intervals
+        .into_iter()
+        .take(3000)
+        .map(|i| TimelineSegment {
+            category: resolver.resolve(&i.display_name, &i.process_name, &i.exe_path),
+            app_key: i.app_key,
+            display_name: i.display_name,
+            start_time: i.start_time,
+            end_time: i.end_time,
+            duration_seconds: i.duration_seconds,
+        })
+        .collect();
+    Ok(TimelineData {
+        date,
+        segments,
+        states: states
+            .into_iter()
+            .map(|s| TimelineState {
+                state: s.state,
+                start_time: s.start_time,
+                end_time: s.end_time,
+                duration_seconds: s.duration_seconds,
+            })
+            .collect(),
+    })
+}
+
+// ---------- JSON 备份 ----------
+
+#[derive(Serialize, Deserialize)]
+struct BackupFile {
+    version: u32,
+    exported_at: String,
+    daily: Vec<DailyUsage>,
+    intervals: Vec<ForegroundInterval>,
+    states: Vec<StateInterval>,
+}
+
+fn backups_dir(data_dir: &str) -> std::path::PathBuf {
+    std::path::Path::new(data_dir).join("backups")
+}
+
+#[tauri::command]
+fn export_backup_json(app: AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let data_dir = state.settings.lock().unwrap().data_directory.clone();
+    let (daily, intervals, states) = {
+        let st = state.store.lock().unwrap();
+        (
+            st.query_daily("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?,
+            st.query_intervals("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?,
+            st.query_state_intervals("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?,
+        )
+    };
+    let dir = backups_dir(&data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!(
+        "backup_{}.json",
+        Local::now().format("%Y%m%d_%H%M%S")
+    ));
+    let file = BackupFile {
+        version: 1,
+        exported_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        daily,
+        intervals,
+        states,
+    };
+    std::fs::write(
+        &path,
+        serde_json::to_string(&file).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn import_backup_json(app: AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let data_dir = state.settings.lock().unwrap().data_directory.clone();
+    let dir = backups_dir(&data_dir);
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("没有可导入的备份: {e}"))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
+        .collect();
+    files.sort();
+    let path = files.pop().ok_or("没有可导入的备份")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let backup: BackupFile = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    {
+        let st = state.store.lock().unwrap();
+        st.clear_all().map_err(|e| e.to_string())?;
+        st.save_daily_replace(&backup.daily)
+            .map_err(|e| e.to_string())?;
+        st.save_intervals(&backup.intervals)
+            .map_err(|e| e.to_string())?;
+        st.save_state_intervals(&backup.states)
+            .map_err(|e| e.to_string())?;
+    }
+    {
+        let mut agg = state.aggregator.lock().unwrap();
+        agg.daily.clear();
+        agg.pending_intervals.clear();
+        agg.pending_state_intervals.clear();
+    }
+    Ok(format!(
+        "已从 {} 恢复 {} 条日聚合 / {} 条明细",
+        path.file_name()
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default(),
+        backup.daily.len(),
+        backup.intervals.len()
+    ))
+}
+
+#[tauri::command]
+fn list_backups(app: AppHandle) -> Vec<String> {
+    let state = app.state::<AppState>();
+    let data_dir = state.settings.lock().unwrap().data_directory.clone();
+    let Ok(entries) = std::fs::read_dir(backups_dir(&data_dir)) else {
+        return vec![];
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    names.reverse();
+    names
 }
 
 // ---------- 小工具 ----------

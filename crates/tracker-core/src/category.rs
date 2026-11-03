@@ -8,7 +8,10 @@ pub struct CategoryResolver {
 }
 
 impl CategoryResolver {
-    pub fn new(rules: Vec<CategoryRuleDef>, overrides: std::collections::HashMap<String, String>) -> Self {
+    pub fn new(
+        rules: Vec<CategoryRuleDef>,
+        overrides: std::collections::HashMap<String, String>,
+    ) -> Self {
         Self { rules, overrides }
     }
 

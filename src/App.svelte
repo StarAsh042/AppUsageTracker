@@ -1,22 +1,34 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
   import Dashboard from './Dashboard.svelte';
+  import TimelineView from './TimelineView.svelte';
+  import CalendarView from './CalendarView.svelte';
   import SettingsView from './SettingsView.svelte';
   import { api, fmtDuration, stateLabel, type LiveStatus } from './lib/api';
 
-  let view = $state<'dashboard' | 'settings'>('dashboard');
+  let view = $state<'dashboard' | 'timeline' | 'calendar' | 'settings'>('dashboard');
   let live = $state<LiveStatus | null>(null);
   let version = $state('');
   let paused = $state(false);
+  let focusDate = $state<string | null>(null);
+  let restTip = $state(false);
+  let restTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     api.getVersion().then((v) => (version = v));
+    api.getSettings().then((s) => applyTheme(s.theme));
     const un1 = listen<LiveStatus>('usage://tick', (e) => {
       live = e.payload;
       paused = e.payload.state === 'Paused';
     });
     const un2 = listen<string>('ui://navigate', (e) => {
-      view = e.payload === 'settings' ? 'settings' : 'dashboard';
+      view = (e.payload as typeof view) ?? 'dashboard';
+    });
+    const un3 = listen<{ theme?: string }>('app://settings', (e) => applyTheme(e.payload?.theme));
+    const un4 = listen('ui://rest', () => {
+      restTip = true;
+      clearTimeout(restTimer);
+      restTimer = setTimeout(() => (restTip = false), 30_000);
     });
     // 禁用 WebView 默认右键菜单（排行右键分类等自定义菜单不受影响）
     const prevent = (e: Event) => e.preventDefault();
@@ -24,9 +36,20 @@
     return () => {
       un1.then((f) => f());
       un2.then((f) => f());
+      un3.then((f) => f());
+      un4.then((f) => f());
       window.removeEventListener('contextmenu', prevent);
     };
   });
+
+  function applyTheme(theme?: string) {
+    document.documentElement.classList.toggle('theme-light', theme === 'light');
+  }
+
+  function onPickDate(date: string) {
+    focusDate = date;
+    view = 'dashboard';
+  }
 
   async function togglePause() {
     paused = !paused;
@@ -50,14 +73,27 @@
     </div>
     <nav>
       <button class:active={view === 'dashboard'} onclick={() => (view = 'dashboard')}>仪表盘</button>
+      <button class:active={view === 'timeline'} onclick={() => (view = 'timeline')}>时间线</button>
+      <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>日历</button>
       <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>设置</button>
       <button onclick={togglePause}>{paused ? '恢复监控' : '暂停监控'}</button>
     </nav>
   </header>
 
+  {#if restTip}
+    <div class="rest-banner">
+      ⏸ 已连续使用较久，建议起身休息一下
+      <button onclick={() => (restTip = false)}>知道了</button>
+    </div>
+  {/if}
+
   <main>
     {#if view === 'dashboard'}
-      <Dashboard />
+      <Dashboard {focusDate} />
+    {:else if view === 'timeline'}
+      <TimelineView initialDate={focusDate ?? undefined} />
+    {:else if view === 'calendar'}
+      <CalendarView onPick={(d) => onPickDate(d)} />
     {:else}
       <SettingsView />
     {/if}
@@ -154,6 +190,27 @@
   main {
     flex: 1;
     overflow: hidden;
+  }
+
+  .rest-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(245, 166, 35, 0.14);
+    border-bottom: 1px solid rgba(245, 166, 35, 0.4);
+    color: var(--warn);
+    padding: 8px 18px;
+    font-size: 13px;
+  }
+
+  .rest-banner button {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid rgba(245, 166, 35, 0.4);
+    color: var(--warn);
+    border-radius: 6px;
+    padding: 3px 12px;
+    cursor: pointer;
   }
 
   footer {

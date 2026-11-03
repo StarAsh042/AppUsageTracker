@@ -46,6 +46,15 @@ pub struct ForegroundInterval {
     pub duration_seconds: f64,
 }
 
+/// 跟踪状态区间（统计中/空闲/锁定/挂起/暂停），供时间线与状态分布统计。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateInterval {
+    pub state: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub duration_seconds: f64,
+}
+
 /// 分类规则。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryRule {

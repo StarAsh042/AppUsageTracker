@@ -8,8 +8,13 @@ pub fn categories_to_notify(
 ) -> Vec<String> {
     let mut result = Vec::new();
     for (cat, mins) in limit_minutes {
-        if *mins == 0 || already_notified.contains(cat) { continue; }
-        if today_seconds.get(cat).map_or(false, |&s| s >= *mins as f64 * 60.0) {
+        if *mins == 0 || already_notified.contains(cat) {
+            continue;
+        }
+        if today_seconds
+            .get(cat)
+            .is_some_and(|&s| s >= *mins as f64 * 60.0)
+        {
             result.push(cat.clone());
         }
     }

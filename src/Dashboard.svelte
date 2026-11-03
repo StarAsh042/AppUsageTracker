@@ -2,13 +2,24 @@
   import { listen } from '@tauri-apps/api/event';
   import { api, fmtDuration, localDateKey, type DashboardData } from './lib/api';
 
+  let { focusDate = null }: { focusDate?: string | null } = $props();
+
   let from = $state(localDateKey());
   let to = $state(localDateKey());
   let data = $state<DashboardData | null>(null);
+  let prevTotal = $state<number | null>(null);
   let loading = $state(false);
   let categories = $state<string[]>([]);
   let menu = $state<{ x: number; y: number; appKey: string; current: string } | null>(null);
   let lastLoad = 0;
+
+  // 日历页点选日期 → 聚焦该日
+  $effect(() => {
+    if (focusDate) {
+      from = focusDate;
+      to = focusDate;
+    }
+  });
 
   $effect(() => {
     api.listCategories().then((c) => (categories = c));
@@ -18,10 +29,35 @@
     loading = true;
     try {
       data = await api.getDashboard(from, to);
+      // 多日范围：取上一周期做环比
+      prevTotal = null;
+      if (from < to) {
+        const dayMs = 86400000;
+        const f = new Date(from + 'T00:00:00').getTime();
+        const t = new Date(to + 'T00:00:00').getTime();
+        const days = Math.round((t - f) / dayMs) + 1;
+        const pf = new Date(f - days * dayMs);
+        const pt = new Date(f - dayMs);
+        const p = (n: number) => String(n).padStart(2, '0');
+        const prevFrom = `${pf.getFullYear()}-${p(pf.getMonth() + 1)}-${p(pf.getDate())}`;
+        const prevTo = `${pt.getFullYear()}-${p(pt.getMonth() + 1)}-${p(pt.getDate())}`;
+        const prev = await api.getDashboard(prevFrom, prevTo);
+        prevTotal = prev.total_active_seconds;
+      }
     } finally {
       loading = false;
     }
   }
+
+  const isMultiDay = $derived(from < to);
+  const dayCount = $derived(
+    from < to ? Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86400000) + 1 : 1
+  );
+  const dailyAvg = $derived(data ? data.total_active_seconds / dayCount : 0);
+  const deltaPct = $derived.by(() => {
+    if (!data || prevTotal === null || prevTotal <= 0) return null;
+    return ((data.total_active_seconds - prevTotal) / prevTotal) * 100;
+  });
 
   // 范围变化时重新加载
   $effect(() => {
@@ -121,7 +157,18 @@
       <div class="card">
         <div class="label">总活跃时长</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
+        {#if deltaPct !== null}
+          <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
+            较上一周期 {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
+          </div>
+        {/if}
       </div>
+      {#if isMultiDay}
+        <div class="card">
+          <div class="label">日均活跃（{dayCount} 天）</div>
+          <div class="value">{fmtDuration(dailyAvg)}</div>
+        </div>
+      {/if}
       <div class="card">
         <div class="label">最常用应用</div>
         <div class="value">{data.top_app ?? '—'}</div>
@@ -130,10 +177,12 @@
         <div class="label">应用数量</div>
         <div class="value">{data.apps.length}</div>
       </div>
-      <div class="card">
-        <div class="label">日期范围</div>
-        <div class="value small">{data.from} ~ {data.to}</div>
-      </div>
+      {#if !isMultiDay}
+        <div class="card">
+          <div class="label">日期范围</div>
+          <div class="value small">{data.from} ~ {data.to}</div>
+        </div>
+      {/if}
     </div>
 
     <div class="content">
@@ -293,6 +342,19 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 12px;
+  }
+
+  .delta {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .delta.up {
+    color: var(--warn);
+  }
+
+  .delta.down {
+    color: var(--ok);
   }
 
   .card {

@@ -83,9 +83,32 @@ export interface DashboardData {
   trend: DashboardTrendPoint[];
 }
 
+export interface TimelineSegment {
+  app_key: string;
+  display_name: string;
+  category: string;
+  start_time: string;
+  end_time: string;
+  duration_seconds: number;
+}
+
+export interface TimelineState {
+  state: string;
+  start_time: string;
+  end_time: string;
+  duration_seconds: number;
+}
+
+export interface TimelineData {
+  date: string;
+  segments: TimelineSegment[];
+  states: TimelineState[];
+}
+
 export const api = {
   getLiveStatus: () => invoke<LiveStatus>('get_live_status'),
   getDashboard: (from: string, to: string) => invoke<DashboardData>('get_dashboard', { from, to }),
+  getTimeline: (date: string) => invoke<TimelineData>('get_timeline', { date }),
   getSettings: () => invoke<TrackerSettings>('get_settings'),
   saveSettings: (settings: TrackerSettings) => invoke<void>('save_settings', { settings }),
   setPaused: (paused: boolean) => invoke<void>('set_paused', { paused }),
@@ -100,6 +123,9 @@ export const api = {
   showWidgetMenu: () => invoke<void>('show_widget_menu'),
   setWidgetCollapsed: (collapsed: boolean) => invoke<void>('set_widget_collapsed', { collapsed }),
   updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),
+  exportBackupJson: () => invoke<string>('export_backup_json'),
+  importBackupJson: () => invoke<string>('import_backup_json'),
+  listBackups: () => invoke<string[]>('list_backups'),
 };
 
 export const WIDGET_ACCENTS: Record<string, string> = {
