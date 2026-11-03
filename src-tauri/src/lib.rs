@@ -118,12 +118,15 @@ pub fn run() {
             let store = SqliteStore::open(&db_path(&settings.data_directory))
                 .map_err(|e| format!("打开数据库失败: {e}"))?;
 
+            // 排除名单 = 用户配置 + 自身（始终排除）
+            let mut excluded: HashSet<String> = settings.excluded_app_keys.iter().cloned().collect();
+            if let Ok(self_exe) = std::env::current_exe() {
+                excluded.insert(self_exe.to_string_lossy().to_lowercase());
+            }
+
             // 启动时把今日已有记录载入内存，保证后续绝对覆盖式 flush 不丢数据
             let today = Local::now().format("%Y-%m-%d").to_string();
-            let mut agg = UsageAggregator::new(
-                settings.idle_threshold_seconds as f64,
-                settings.excluded_app_keys.iter().cloned().collect(),
-            );
+            let mut agg = UsageAggregator::new(settings.idle_threshold_seconds as f64, excluded);
             let rows = store.query_daily(&today, &today).map_err(|e| e.to_string())?;
             for r in rows {
                 agg.daily.insert(format!("{}|{}", r.usage_date, r.app_key), r);
@@ -251,6 +254,7 @@ fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
         .skip_taskbar(true)
         .resizable(false)
         .shadow(false)
+        .focused(false)
         .position(12.0, 12.0)
         .build()?;
     // 真·亚克力磨砂；失败则退回 Mica
@@ -678,11 +682,12 @@ fn save_settings(app: AppHandle, state: State<AppState>, settings: TrackerSettin
     }
 
     {
+        let mut excluded: HashSet<String> = settings.excluded_app_keys.iter().cloned().collect();
+        if let Ok(self_exe) = std::env::current_exe() {
+            excluded.insert(self_exe.to_string_lossy().to_lowercase());
+        }
         let mut agg = state.aggregator.lock().unwrap();
-        agg.apply_settings(
-            settings.idle_threshold_seconds as f64,
-            settings.excluded_app_keys.iter().cloned().collect(),
-        );
+        agg.apply_settings(settings.idle_threshold_seconds as f64, excluded);
     }
 
     *state.settings.lock().unwrap() = settings;
