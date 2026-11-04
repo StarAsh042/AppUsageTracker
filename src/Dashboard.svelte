@@ -1,6 +1,6 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, localDateKey, type AppDetail, type DashboardData, type TrackerSettings } from './lib/api';
+  import { api, fmtDuration, localDateKey, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
 
   const PALETTE = ['#4f8cff', '#3ecf8e', '#f5a623', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#94a3b8'];
 
@@ -49,6 +49,17 @@
 
   // 分类环形图
   const CAT_COLORS = PALETTE;
+
+  // 分类 → 颜色（与环形图同序同色），排行 chip 复用
+  function catColor(name: string): string {
+    if (!data) return PALETTE[0];
+    const idx = data.categories.findIndex((c) => c.name === name);
+    return idx < 0 ? PALETTE[0] : PALETTE[idx % PALETTE.length];
+  }
+
+  // 秒级走表：load 时记录基准，tick 时给当前应用加上进行中的区间
+  let baseSeconds = new Map<string, number>();
+  let baseTotal = 0;
   const donut = $derived.by(() => {
     if (!data || !data.categories.length) return null;
     const total = data.categories.reduce((s, c) => s + c.seconds, 0) || 1;
@@ -75,7 +86,7 @@
   }
 
   function maxDetailPoints(points: { seconds: number }[]): number {
-    return Math.max(1, ...points.map((p) => p.seconds)) * 1.1;
+    return Math.max(1, ...points.map((p) => p.seconds)) * 1.4;
   }
 
   // 日历页点选日期 → 聚焦该日
@@ -94,6 +105,8 @@
     loading = true;
     try {
       data = await api.getDashboard(from, to);
+      baseSeconds = new Map(data.apps.map((a) => [a.app_key, a.active_seconds]));
+      baseTotal = data.total_active_seconds;
       // 多日范围：取上一周期做环比
       prevTotal = null;
       if (from < to) {
@@ -131,10 +144,28 @@
     load();
   });
 
-  // 今天视图下，每 5 秒随 tick 刷新
+  // 今天视图下：每秒走表；每 5 秒全量刷新（排序/新应用）
   $effect(() => {
-    const un = listen('usage://tick', () => {
-      if (from === localDateKey() && to === localDateKey() && Date.now() - lastLoad > 5000) {
+    const un = listen<LiveStatus>('usage://tick', (e) => {
+      if (from !== localDateKey() || to !== localDateKey() || !data) return;
+      const live = e.payload;
+      const curKey = live.current_app?.app_key;
+      const liveSec = live.current_seconds;
+      const total = baseTotal + (curKey ? liveSec : 0);
+      data = {
+        ...data,
+        total_active_seconds: total,
+        apps: data.apps.map((a) =>
+          a.app_key === curKey
+            ? {
+                ...a,
+                active_seconds: (baseSeconds.get(a.app_key) ?? a.active_seconds) + liveSec,
+                percent: total > 0 ? (((baseSeconds.get(a.app_key) ?? 0) + liveSec) / total) * 100 : 0,
+              }
+            : { ...a, percent: total > 0 ? ((baseSeconds.get(a.app_key) ?? a.active_seconds) / total) * 100 : 0 },
+        ),
+      };
+      if (Date.now() - lastLoad > 5000) {
         lastLoad = Date.now();
         load();
       }
@@ -173,7 +204,28 @@
 
   function rowMenu(e: MouseEvent, appKey: string, current: string) {
     e.preventDefault();
-    menu = { x: e.clientX, y: e.clientY, appKey, current };
+    // 防止菜单被窗口边缘裁切：估算尺寸后翻转/钳制
+    const estH = (categories.length + 2) * 30 + 30;
+    const estW = 150;
+    let x = e.clientX;
+    let y = e.clientY;
+    if (y + estH > window.innerHeight - 8) {
+      y = Math.max(8, window.innerHeight - estH - 8);
+    }
+    if (x + estW > window.innerWidth - 8) {
+      x = window.innerWidth - estW - 8;
+    }
+    menu = { x, y, appKey, current };
+  }
+
+  async function excludeApp() {
+    if (!menu) return;
+    const key = menu.appKey;
+    const name = data?.apps.find((a) => a.app_key === key)?.display_name ?? key;
+    if (!confirm(`排除「${name}」？将停止统计并清除其全部记录。`)) return;
+    menu = null;
+    await api.excludeApp(key);
+    await load();
   }
 
   $effect(() => {
@@ -196,7 +248,7 @@
   }
 
   function trendMax(points: { seconds: number }[]): number {
-    return Math.max(1, ...points.map((p) => p.seconds)) * 1.08;
+    return Math.max(1, ...points.map((p) => p.seconds)) * 1.4;
   }
 </script>
 
@@ -295,7 +347,7 @@
             >
               <span class="col-rank">{i + 1}</span>
               <span class="col-name">{a.display_name}</span>
-              <span class="col-cat"><span class="cat-chip">{a.category}</span></span>
+              <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{a.category}</span></span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
               <span class="col-bar">
                 <span class="bar"><span class="fill" style="width:{Math.min(100, a.percent)}%"></span></span>
@@ -349,6 +401,7 @@
             {/each}
           </div>
         </div>
+        {#if data.trend.length >= 2}
         <div class="panel trend">
           <div class="panel-title">每日活跃</div>
           <div class="trend">
@@ -364,6 +417,7 @@
             {/each}
           </div>
         </div>
+        {/if}
       </div>
     </div>
   {:else}
@@ -408,6 +462,8 @@
         {c}
       </button>
     {/each}
+    <div class="ctx-sep"></div>
+    <button class="ctx-item danger" onclick={() => excludeApp()}>🚫 排除此应用</button>
   </div>
 {/if}
 
@@ -503,7 +559,7 @@
   }
 
   .card {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 14px 16px;
@@ -537,7 +593,7 @@
   }
 
   .panel {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 14px;
@@ -551,6 +607,10 @@
     flex-direction: column;
     gap: 14px;
     min-height: 0;
+  }
+
+  .side > .panel:first-child {
+    flex: 1;
   }
 
   .panel-title {
@@ -599,11 +659,13 @@
   }
 
   .cat-chip {
-    background: rgba(79, 140, 255, 0.14);
-    color: var(--accent);
+    background: color-mix(in srgb, var(--cc, #4f8cff) 16%, transparent);
+    color: var(--cc, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--cc, #4f8cff) 38%, transparent);
     font-size: 12px;
     border-radius: 6px;
     padding: 2px 8px;
+    white-space: nowrap;
   }
 
   .col-dur {
@@ -635,7 +697,7 @@
   .pct {
     color: var(--text-dim);
     font-size: 12px;
-    width: 48px;
+    width: 52px;
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -682,12 +744,13 @@
     flex: 1;
     display: flex;
     align-items: stretch;
+    justify-content: center;
     gap: 6px;
     min-height: 0;
   }
 
   .t-col {
-    flex: 1;
+    flex: 0 1 72px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -708,7 +771,6 @@
     background: linear-gradient(180deg, #4f8cff, #3566cc);
     border-radius: 6px 6px 0 0;
     min-height: 2px;
-    box-shadow: 0 0 12px rgba(79, 140, 255, 0.35);
   }
 
   .t-label {
@@ -880,12 +942,13 @@
   .m-trend {
     display: flex;
     align-items: stretch;
+    justify-content: center;
     gap: 5px;
     height: 110px;
   }
 
   .m-trend .t-col {
-    flex: 1;
+    flex: 0 1 72px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -960,5 +1023,15 @@
 
   .check {
     margin-right: 4px;
+  }
+
+  .ctx-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 5px 4px;
+  }
+
+  .ctx-item.danger {
+    color: var(--danger);
   }
 </style>

@@ -178,6 +178,14 @@ impl SqliteStore {
         rows.collect()
     }
 
+    /// 删除某应用的全部记录（用于剔除统计程序自身的历史行）。
+    pub fn delete_app_rows(&self, app_key: &str) -> Result<(), rusqlite::Error> {
+        self.conn.execute_batch(&format!(
+            "DELETE FROM ForegroundIntervals WHERE AppKey = '{app_key}';
+             DELETE FROM DailyAppUsage WHERE AppKey = '{app_key}';"
+        ))
+    }
+
     /// 保留策略：删除指定日期之前的全部明细（含前台区间与状态区间）与日聚合。
     pub fn purge_before(&self, date: &str) -> Result<(), rusqlite::Error> {
         self.conn.execute_batch(&format!(

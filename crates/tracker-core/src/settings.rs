@@ -51,7 +51,7 @@ impl Default for WidgetPrefs {
             always_on_top: true,
             locked: false,
             edge_snap: false,
-            compact: false,
+            compact: true,
             opacity: 85,
             accent: "blue".to_string(),
         }

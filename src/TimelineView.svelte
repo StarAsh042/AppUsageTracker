@@ -293,7 +293,7 @@
   }
 
   .nav {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     color: var(--text-dim);
     border-radius: 7px;
@@ -307,7 +307,7 @@
   }
 
   input[type='date'] {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: 7px;
@@ -331,7 +331,7 @@
   }
 
   .panel {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 14px 16px;
@@ -435,7 +435,7 @@
 
   .search {
     margin-left: auto;
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: 7px;

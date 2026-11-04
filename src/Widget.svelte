@@ -1,5 +1,6 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import {
     api,
     fmtDuration,
@@ -47,7 +48,43 @@
     if (prefs?.edge_snap) api.setWidgetCollapsed(true);
   }
 
-  const drag = $derived(prefs?.locked ? undefined : true);
+  // 手动拖拽（4px 阈值后才启动系统拖动，双击才可被识别）
+  let pressT = 0;
+  let pressX = 0;
+  let pressY = 0;
+  let dragging = false;
+  let lastTap = 0;
+
+  function onDown(e: MouseEvent) {
+    if (e.button !== 0 || prefs?.locked) return;
+    pressX = e.clientX;
+    pressY = e.clientY;
+    pressT = Date.now();
+    dragging = false;
+  }
+
+  function onMove(e: MouseEvent) {
+    if (!pressT || dragging) return;
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > 4) {
+      dragging = true;
+      getCurrentWindow().startDragging();
+    }
+  }
+
+  function onUp() {
+    if (dragging) {
+      pressT = 0;
+      return;
+    }
+    const now = Date.now();
+    if (now - pressT < 400 && now - lastTap < 400) {
+      lastTap = 0;
+      api.toggleMainWindow();
+    } else {
+      lastTap = now;
+    }
+    pressT = 0;
+  }
 </script>
 
 <div
@@ -55,7 +92,9 @@
   class:compact={prefs?.compact === true}
   class:collapsed
   style="--ac:{accent}; --wa:{bgAlpha}"
-  data-tauri-drag-region={drag}
+  onmousedown={onDown}
+  onmousemove={onMove}
+  onmouseup={onUp}
   oncontextmenu={openMenu}
   onmouseenter={onEnter}
   onmouseleave={onLeave}
@@ -63,32 +102,32 @@
   {#if collapsed}
     <div class="pill" title="使用时长悬浮窗">
       <span class="pill-icon">⏱</span>
-      <span class="pill-text" data-tauri-drag-region={drag}>
+      <span class="pill-text">
         {live ? fmtDuration(live.today_total_seconds) : '--'}
       </span>
     </div>
   {:else}
-    <div class="row top" data-tauri-drag-region={drag}>
+    <div class="row top">
       <span class="dot {live?.state.toLowerCase() ?? ''}"></span>
-      <span class="state" data-tauri-drag-region={drag}>{live ? stateLabel(live.state) : '…'}</span>
-      <span class="today" data-tauri-drag-region={drag}>
+      <span class="state">{live ? stateLabel(live.state) : '…'}</span>
+      <span class="today">
         今日 {live ? fmtDuration(live.today_total_seconds) : '--'}
       </span>
     </div>
 
-    <div class="current" data-tauri-drag-region={drag}>
+    <div class="current">
       {#if live?.current_app}
-        <div class="app-name" data-tauri-drag-region={drag}>{live.current_app.display_name}</div>
-        <div class="app-meta" data-tauri-drag-region={drag}>
+        <div class="app-name">{live.current_app.display_name}</div>
+        <div class="app-meta">
           {live.current_category} · 本轮 {fmtDuration(live.current_seconds)}
         </div>
       {:else}
-        <div class="app-name muted" data-tauri-drag-region={drag}>当前无前台应用</div>
+        <div class="app-name muted">当前无前台应用</div>
       {/if}
     </div>
 
     {#if prefs?.compact !== true}
-      <div class="tops" data-tauri-drag-region={drag}>
+      <div class="tops">
         {#each live?.top_apps ?? [] as t, i (t.display_name + i)}
           <div class="top-row">
             <span class="rank">{i + 1}</span>
@@ -114,8 +153,8 @@
     gap: 8px;
     padding: 12px 14px;
     border-radius: 14px;
-    background: rgba(16, 18, 24, var(--wa, 0.85));
-    border: 1px solid color-mix(in srgb, var(--ac, #4f8cff) 32%, transparent);
+    background: rgba(16, 18, 24, calc(var(--wa, 0.85) * 0.72));
+    border: 1px solid color-mix(in srgb, var(--ac, #4f8cff) 30%, transparent);
     color: #ecf0f8;
     font-size: 12px;
     overflow: hidden;

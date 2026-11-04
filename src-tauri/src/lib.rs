@@ -37,6 +37,8 @@ struct AppState {
     notified_limits: Mutex<HashSet<String>>,
     tray: Mutex<Option<TrayHandles>>,
     tray_icon: Mutex<Option<TrayIcon<tauri::Wry>>>,
+    /// 悬浮窗展开态锚点（物理坐标），贴边收起/展开围绕它，避免循环漂移。
+    widget_anchor: Mutex<(i32, i32)>,
 }
 
 struct TrayHandles {
@@ -151,7 +153,9 @@ pub fn run() {
             set_widget_collapsed,
             update_widget_settings,
             get_timeline,
+            toggle_main_window,
             get_app_detail,
+            exclude_app,
             scan_installed_apps,
             export_backup_json,
             import_backup_json,
@@ -177,6 +181,11 @@ pub fn run() {
                 .query_daily(&today, &today)
                 .map_err(|e| e.to_string())?;
             for r in rows {
+                // 剔除修复前误记的自身历史行（内存 + 库）
+                if r.process_name.to_lowercase() == *self_stem() {
+                    let _ = store.delete_app_rows(&r.app_key);
+                    continue;
+                }
                 agg.daily
                     .insert(format!("{}|{}", r.usage_date, r.app_key), r);
             }
@@ -189,6 +198,7 @@ pub fn run() {
                 notified_limits: Mutex::new(HashSet::new()),
                 tray: Mutex::new(None),
                 tray_icon: Mutex::new(None),
+                widget_anchor: Mutex::new((12, 12)),
             });
 
             let handle = app.handle().clone();
@@ -321,6 +331,12 @@ fn apply_hotkeys(app: &AppHandle) {
     }
 }
 
+/// 悬浮窗双击切换主界面（前端调用）。
+#[tauri::command]
+fn toggle_main_window(app: AppHandle) {
+    toggle_main(&app);
+}
+
 /// 主界面显示/隐藏切换（全局热键用）。
 fn toggle_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -344,6 +360,10 @@ fn show_main(app: &AppHandle) {
 
 fn setup_main_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
+        // 主窗口玻璃背板：Mica 优先，退回亚克力
+        if !apply_system_backdrop(&w, false) {
+            let _ = window_vibrancy::apply_acrylic(&w, Some((24, 26, 33, 90)));
+        }
         let h = app.clone();
         w.on_window_event(move |e| {
             // 关闭 = 隐藏到托盘
@@ -384,8 +404,10 @@ fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
             .focused(false)
             .position(12.0, 12.0)
             .build()?;
-    // 真·亚克力磨砂（底色随强调色微调）；失败则退回 Mica
-    if window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent))).is_err() {
+    // Win11 22H2+ 优先系统级亚克力背板；旧系统退回 legacy 亚克力（底色随强调色微调）
+    if !apply_system_backdrop(&win, true)
+        && window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent))).is_err()
+    {
         let _ = window_vibrancy::apply_mica(&win, None);
     }
     apply_rounded_corners(&win);
@@ -393,6 +415,38 @@ fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
     let h = app.clone();
     win.on_menu_event(move |_win, event| handle_widget_menu_event(&h, event.id().as_ref()));
     Ok(())
+}
+
+/// DWM 系统级背板（Win11 22H2+ 真系统亚克力/Mica，质感优于 legacy 合成）。
+/// transient=true 悬浮窗亚克力；false 主窗口 Mica。成功返回 true。
+fn apply_system_backdrop(win: &WebviewWindow, transient: bool) -> bool {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMSBT_MAINWINDOW, DWMSBT_TRANSIENTWINDOW,
+            DWMWA_SYSTEMBACKDROP_TYPE, DWM_SYSTEMBACKDROP_TYPE,
+        };
+        if let Ok(hwnd) = win.hwnd() {
+            let backdrop = if transient {
+                DWMSBT_TRANSIENTWINDOW
+            } else {
+                DWMSBT_MAINWINDOW
+            };
+            let ok = unsafe {
+                DwmSetWindowAttribute(
+                    HWND(hwnd.0),
+                    DWMWA_SYSTEMBACKDROP_TYPE,
+                    &backdrop as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
+                )
+            };
+            return ok.is_ok();
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (win, transient);
+    false
 }
 
 /// DWM 系统圆角（Win11），让亚克力背板一起被裁圆。
@@ -435,6 +489,12 @@ fn setup_widget_clamp(app: &AppHandle) {
             last_clamp.set(std::time::Instant::now());
             if let Some(w) = h.get_webview_window("widget") {
                 clamp_widget_pos(&w);
+                // 展开态下记录锚点（收起条 44px 宽不更新，避免贴边循环漂移）
+                if let (Ok(p), Ok(s)) = (w.outer_position(), w.outer_size()) {
+                    if s.width > 100 {
+                        *h.state::<AppState>().widget_anchor.lock().unwrap() = (p.x, p.y);
+                    }
+                }
             }
         }
     });
@@ -465,20 +525,31 @@ fn clamp_widget_pos(w: &WebviewWindow) {
 }
 
 /// 贴边收起：把悬浮窗缩成小条并吸附到最近的屏幕边缘。
-fn collapse_widget(win: &WebviewWindow) {
-    let (pos, mon, _size, sf) = match (
-        win.outer_position(),
-        win.current_monitor(),
-        win.outer_size(),
-        win.scale_factor(),
-    ) {
-        (Ok(p), Ok(Some(m)), Ok(s), Ok(f)) => (p, m, s, f),
+fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
+    let (mon, sf, compact) = match (win.current_monitor(), win.scale_factor()) {
+        (Ok(Some(m)), Ok(f)) => (
+            m,
+            f,
+            app.state::<AppState>()
+                .settings
+                .lock()
+                .unwrap()
+                .widget
+                .compact,
+        ),
         _ => return,
     };
+    let anchor = *app.state::<AppState>().widget_anchor.lock().unwrap();
+    let (ew, eh) = if compact {
+        WIDGET_COMPACT
+    } else {
+        WIDGET_NORMAL
+    };
+    // 以锚点（展开态位置）的中心判定最近边缘
+    let cx = anchor.0 + ((ew * sf) as i32) / 2;
+    let cy = anchor.1 + ((eh * sf) as i32) / 2;
     let mp = mon.position();
     let ms = mon.size();
-    let cx = pos.x + _size.width as i32 / 2;
-    let cy = pos.y + _size.height as i32 / 2;
     let (w, h) = (
         (WIDGET_COLLAPSED.0 * sf) as i32,
         (WIDGET_COLLAPSED.1 * sf) as i32,
@@ -489,13 +560,19 @@ fn collapse_widget(win: &WebviewWindow) {
     let db = mp.y + ms.height as i32 - cy;
     let min = dl.min(dr).min(dt).min(db);
     let (x, y) = if min == dl {
-        (mp.x, cy - h / 2)
+        (mp.x, (cy - h / 2).clamp(mp.y, mp.y + ms.height as i32 - h))
     } else if min == dr {
-        (mp.x + ms.width as i32 - w, cy - h / 2)
+        (
+            mp.x + ms.width as i32 - w,
+            (cy - h / 2).clamp(mp.y, mp.y + ms.height as i32 - h),
+        )
     } else if min == dt {
-        (cx - w / 2, mp.y)
+        ((cx - w / 2).clamp(mp.x, mp.x + ms.width as i32 - w), mp.y)
     } else {
-        (cx - w / 2, mp.y + ms.height as i32 - h)
+        (
+            (cx - w / 2).clamp(mp.x, mp.x + ms.width as i32 - w),
+            mp.y + ms.height as i32 - h,
+        )
     };
     let _ = win.set_size(tauri::LogicalSize::new(
         WIDGET_COLLAPSED.0,
@@ -504,14 +581,16 @@ fn collapse_widget(win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
-/// 展开悬浮窗（正常 / 缩略），并钳回屏幕内。
-fn expand_widget(win: &WebviewWindow, compact: bool) {
+/// 展开悬浮窗（正常 / 缩略），回到锚点位置。
+fn expand_widget(app: &AppHandle, win: &WebviewWindow, compact: bool) {
     let (w, h) = if compact {
         WIDGET_COMPACT
     } else {
         WIDGET_NORMAL
     };
     let _ = win.set_size(tauri::LogicalSize::new(w, h));
+    let anchor = *app.state::<AppState>().widget_anchor.lock().unwrap();
+    let _ = win.set_position(PhysicalPosition::new(anchor.0, anchor.1));
     clamp_widget_pos(win);
 }
 
@@ -539,11 +618,13 @@ fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
     save_settings_file(app);
     if let Some(win) = app.get_webview_window("widget") {
         let _ = win.set_always_on_top(prefs.always_on_top);
-        let _ = window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent)));
+        if !apply_system_backdrop(&win, true) {
+            let _ = window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent)));
+        }
         if prefs.edge_snap {
-            collapse_widget(&win);
+            collapse_widget(app, &win);
         } else {
-            expand_widget(&win, prefs.compact);
+            expand_widget(app, &win, prefs.compact);
         }
     }
     let _ = app.emit("widget://prefs", prefs);
@@ -584,6 +665,17 @@ fn handle_widget_menu_event(app: &AppHandle, id: &str) {
 
 // ---------- 监控线程 ----------
 
+/// 自身进程名（小写，不含扩展名），用于排除统计程序自己（含旧数据清理）。
+fn self_stem() -> &'static str {
+    static SELF: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SELF.get_or_init(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_lowercase()))
+            .unwrap_or_else(|| "app-usage-tracker".to_string())
+    })
+}
+
 fn foreground_identity(display_cache: &mut HashMap<String, String>) -> Option<AppIdentity> {
     let pid = tracker_core::win32::get_foreground_pid()?;
     let exe = tracker_core::win32::get_process_image_name(pid)?;
@@ -592,6 +684,10 @@ fn foreground_identity(display_cache: &mut HashMap<String, String>) -> Option<Ap
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| key.clone());
+    // 永不统计统计程序自身（无论路径如何）
+    if stem.to_lowercase() == *self_stem() {
+        return None;
+    }
     let display = if let Some(d) = display_cache.get(&key) {
         d.clone()
     } else {
@@ -990,9 +1086,9 @@ fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
     };
     if let Some(win) = app.get_webview_window("widget") {
         if collapsed && prefs.edge_snap {
-            collapse_widget(&win);
+            collapse_widget(&app, &win);
         } else if !prefs.edge_snap || !collapsed {
-            expand_widget(&win, prefs.compact);
+            expand_widget(&app, &win, prefs.compact);
         }
     }
 }
@@ -1204,6 +1300,39 @@ fn set_paused(app: AppHandle, state: State<AppState>, paused: bool) {
     if let Some(h) = state.tray.lock().unwrap().as_ref() {
         let _ = h.pause_toggle.set_checked(paused);
     }
+}
+
+/// 排除应用：停止统计 + 清除其全部已有记录。
+#[tauri::command]
+fn exclude_app(app: AppHandle, state: State<AppState>, app_key: String) -> Result<(), String> {
+    {
+        let mut s = state.settings.lock().unwrap();
+        if !s.excluded_app_keys.contains(&app_key) {
+            s.excluded_app_keys.push(app_key.clone());
+        }
+    }
+    save_settings_file(&app);
+    {
+        let (idle, excluded_list) = {
+            let s = state.settings.lock().unwrap();
+            (s.idle_threshold_seconds as f64, s.excluded_app_keys.clone())
+        };
+        let mut excluded: HashSet<String> = excluded_list.into_iter().collect();
+        if let Ok(self_exe) = std::env::current_exe() {
+            excluded.insert(self_exe.to_string_lossy().to_lowercase());
+        }
+        let mut agg = state.aggregator.lock().unwrap();
+        agg.apply_settings(idle, excluded);
+        agg.daily.retain(|_, v| v.app_key != app_key);
+        agg.pending_intervals.retain(|v| v.app_key != app_key);
+    }
+    state
+        .store
+        .lock()
+        .unwrap()
+        .delete_app_rows(&app_key)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

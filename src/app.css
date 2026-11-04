@@ -13,6 +13,15 @@
 }
 
 /* 浅色主题（设置 → 外观 → 浅色） */
+/* 玻璃质感：卡片半透明 */
+:root {
+  --glass-card: rgba(30, 32, 39, 0.72);
+}
+
+:root.theme-light {
+  --glass-card: rgba(255, 255, 255, 0.78);
+}
+
 :root.theme-light {
   color-scheme: light;
   --bg: #eef0f4;

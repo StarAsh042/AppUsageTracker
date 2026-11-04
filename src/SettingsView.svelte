@@ -372,7 +372,7 @@
   }
 
   .panel {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 14px 16px;
@@ -558,7 +558,7 @@
   }
 
   .scan-row select {
-    background: var(--card);
+    background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: 7px;

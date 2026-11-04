@@ -107,7 +107,8 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
+    /* 半透明底让 Mica/亚克力背板透出 */
+    background: color-mix(in srgb, var(--bg) 84%, transparent);
   }
 
   header {
