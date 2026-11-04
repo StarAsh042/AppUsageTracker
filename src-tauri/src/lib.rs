@@ -45,6 +45,8 @@ struct AppState {
     widget_anchor: Mutex<(i32, i32)>,
     /// 悬浮窗尺寸动画进行中（动画期间的 Moved 不回写锚点）。
     widget_anim: AtomicBool,
+    /// 本地 API 上次生效配置（enabled, port）。
+    api_last: Mutex<Option<(bool, u16)>>,
 }
 
 struct TrayHandles {
@@ -206,6 +208,7 @@ pub fn run() {
                 tray_icon: Mutex::new(None),
                 widget_anchor: Mutex::new((12, 12)),
                 widget_anim: AtomicBool::new(false),
+                api_last: Mutex::new(None),
             });
 
             let handle = app.handle().clone();
@@ -236,6 +239,7 @@ pub fn run() {
             }
 
             purge_expired(&handle);
+            spawn_api_server(&handle);
             spawn_monitor(handle.clone());
             Ok(())
         })
@@ -989,7 +993,172 @@ fn flush_state(app: &AppHandle) {
     }
 }
 
-/// 保留策略：清理 N 天前的明细与聚合（0 = 永久保留）。
+// ---------- 本地 HTTP API（127.0.0.1，供第三方工具读取统计） ----------
+
+static API_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// （重）启本地 API 服务线程；设置里关闭/改端口后自动退出旧线程。
+fn spawn_api_server(app: &AppHandle) {
+    let (enabled, port) = {
+        let st = app.state::<AppState>();
+        let s = st.settings.lock().unwrap();
+        (s.api_enabled, s.api_port)
+    };
+    {
+        let st = app.state::<AppState>();
+        let mut last = st.api_last.lock().unwrap();
+        if *last == Some((enabled, port)) {
+            return; // 配置未变，不打扰现有服务
+        }
+        *last = Some((enabled, port));
+    }
+    let gen = API_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    if !enabled {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let addr = format!("127.0.0.1:{port}");
+        let listener = match std::net::TcpListener::bind(&addr) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("本地 API 启动失败({addr}): {e}");
+                return;
+            }
+        };
+        let _ = listener.set_nonblocking(true);
+        let _ = app.emit("api://started", &addr);
+        loop {
+            if API_GEN.load(Ordering::SeqCst) != gen {
+                break;
+            }
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let app = app.clone();
+                    std::thread::spawn(move || {
+                        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                        handle_api(&app, stream);
+                    });
+                }
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                }
+            }
+        }
+    });
+}
+
+fn api_json(stream: &mut std::net::TcpStream, code: u16, body: String) {
+    let reason = match code {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        _ => "OK",
+    };
+    let head = format!(
+        "HTTP/1.1 {code} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    use std::io::Write;
+    let _ = stream.write_all(head.as_bytes());
+    let _ = stream.write_all(body.as_bytes());
+    let _ = stream.flush();
+}
+
+fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
+    use std::io::Read;
+    let mut buf = [0u8; 2048];
+    let n = match stream.read(&mut buf) {
+        Ok(n) if n > 0 => n,
+        _ => return,
+    };
+    let head = String::from_utf8_lossy(&buf[..n]);
+    let Some(req_line) = head.lines().next() else {
+        return;
+    };
+    let mut parts = req_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let target = parts.next().unwrap_or("/");
+    if method != "GET" {
+        return api_json(&mut stream, 404, r#"{"error":"method not allowed"}"#.into());
+    }
+    let (path, query) = match target.split_once('?') {
+        Some((p, q)) => (p.to_string(), q.to_string()),
+        None => (target.to_string(), String::new()),
+    };
+    let qs = |key: &str| -> Option<String> {
+        query.split('&').find_map(|kv| {
+            let (k, v) = kv.split_once('=')?;
+            (k == key).then(|| v.to_string())
+        })
+    };
+
+    match path.as_str() {
+        "/" | "/api" => api_json(
+            &mut stream,
+            200,
+            serde_json::json!({
+                "service": "AppUsageTracker",
+                "endpoints": [
+                    "/api/live",
+                    "/api/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD",
+                    "/api/timeline?date=YYYY-MM-DD",
+                    "/api/settings",
+                    "/api/version"
+                ]
+            })
+            .to_string(),
+        ),
+        "/api/live" => api_json(
+            &mut stream,
+            200,
+            serde_json::to_string(&live_status(app)).unwrap_or_default(),
+        ),
+        "/api/dashboard" => {
+            let today = Local::now().format("%Y-%m-%d").to_string();
+            let from = qs("from").unwrap_or_else(|| today.clone());
+            let to = qs("to").unwrap_or(today);
+            match build_dashboard(app, &from, &to) {
+                Ok(d) => api_json(
+                    &mut stream,
+                    200,
+                    serde_json::to_string(&d).unwrap_or_default(),
+                ),
+                Err(e) => api_json(&mut stream, 400, format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
+        "/api/timeline" => {
+            let Some(date) = qs("date") else {
+                return api_json(&mut stream, 400, r#"{"error":"missing date"}"#.into());
+            };
+            match timeline_data(app, &date) {
+                Ok(d) => api_json(
+                    &mut stream,
+                    200,
+                    serde_json::to_string(&d).unwrap_or_default(),
+                ),
+                Err(e) => api_json(&mut stream, 400, format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
+        "/api/settings" => {
+            let st = app.state::<AppState>();
+            let s = st.settings.lock().unwrap().clone();
+            api_json(
+                &mut stream,
+                200,
+                serde_json::to_string(&s).unwrap_or_default(),
+            )
+        }
+        "/api/version" => api_json(
+            &mut stream,
+            200,
+            serde_json::json!({ "version": app.package_info().version.to_string() }).to_string(),
+        ),
+        _ => api_json(&mut stream, 404, r#"{"error":"not found"}"#.into()),
+    }
+}
+
+/// 保留策略：清理 N 天前的明细与聚合（0 = 永久保留）。/// 保留策略：清理 N 天前的明细与聚合（0 = 永久保留）。
 fn purge_expired(app: &AppHandle) {
     let state = app.state::<AppState>();
     let retention = state.settings.lock().unwrap().retention_days;
@@ -1433,6 +1602,7 @@ fn save_settings(
     save_settings_file(&app);
     let _ = app.emit("app://settings", &settings);
     apply_hotkeys(&app);
+    spawn_api_server(&app);
 
     // 悬浮窗可见性同步
     let want = state.settings.lock().unwrap().show_floating_widget;
@@ -1833,6 +2003,12 @@ struct TimelineData {
 
 #[tauri::command]
 fn get_timeline(app: AppHandle, date: String) -> Result<TimelineData, String> {
+    timeline_data(&app, &date)
+}
+
+fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
+    let app = app.clone();
+    let date = date.to_string();
     let state = app.state::<AppState>();
     let (rules, overrides) = {
         let s = state.settings.lock().unwrap();

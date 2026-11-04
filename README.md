@@ -74,6 +74,19 @@ npm run tauri build
     └── lib/api.ts              # IPC 封装与类型
 ```
 
+## 本地 HTTP API
+
+设置中开启后（默认开，仅监听 `127.0.0.1:59598`），第三方工具可读取统计：
+
+```
+GET /                                          端点索引
+GET /api/live                                  实时状态（当前应用/今日总时长/Top5）
+GET /api/dashboard?from=&to=                   区间聚合（应用排行/分类占比/趋势）
+GET /api/timeline?date=YYYY-MM-DD              单日时间线（明细片段 + 状态区间）
+GET /api/settings                              当前设置
+GET /api/version                               版本
+```
+
 ## 数据存储
 
 - 数据目录：`%LocalAppData%\AppUsageTracker\`（可在设置中更改，改后自动迁移历史数据）

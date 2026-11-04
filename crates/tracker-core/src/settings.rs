@@ -20,6 +20,11 @@ pub struct TrackerSettings {
     /// 全局热键（Ctrl+Alt+D 主界面 / Ctrl+Alt+W 悬浮窗）。
     #[serde(default = "default_true")]
     pub hotkeys_enabled: bool,
+    /// 本地 HTTP API（仅监听 127.0.0.1，供第三方工具读取统计）。
+    #[serde(default = "default_true")]
+    pub api_enabled: bool,
+    #[serde(default = "default_api_port")]
+    pub api_port: u16,
     /// 分类性质：productive / neutral / distracting（效率评分用）。
     #[serde(default)]
     pub category_nature: std::collections::HashMap<String, String>,
@@ -29,6 +34,10 @@ pub struct TrackerSettings {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_api_port() -> u16 {
+    59598
 }
 
 /// 悬浮窗偏好（右键菜单可调：置顶/锁定/贴边/缩略/透明度/配色）。
@@ -81,6 +90,8 @@ impl Default for TrackerSettings {
             category_rules: default_category_rules(),
             daily_goal_minutes: 0,
             hotkeys_enabled: true,
+            api_enabled: true,
+            api_port: default_api_port(),
             category_nature: Default::default(),
             widget: Default::default(),
         }

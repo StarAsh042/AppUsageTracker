@@ -317,12 +317,6 @@
         <div class="label">应用数量</div>
         <div class="value">{data.apps.length}</div>
       </div>
-      {#if !isMultiDay}
-        <div class="card">
-          <div class="label">日期范围</div>
-          <div class="value small">{data.from} ~ {data.to}</div>
-        </div>
-      {/if}
     </div>
 
     <div class="content">

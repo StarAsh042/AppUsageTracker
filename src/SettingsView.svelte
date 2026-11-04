@@ -202,7 +202,19 @@
             <input type="checkbox" bind:checked={s.hotkeys_enabled} />
             <span>全局热键（Ctrl+Alt+D 主界面 / Ctrl+Alt+W 悬浮窗）</span>
           </label>
+          <label class="check-row">
+            <input type="checkbox" bind:checked={s.api_enabled} />
+            <span>本地 HTTP API（127.0.0.1:{s.api_port}，供第三方工具读取统计）</span>
+          </label>
         </div>
+        {#if s.api_enabled}
+          <div class="grid2">
+            <label>
+              <span>API 端口</span>
+              <input type="number" min="1024" max="65535" bind:value={s.api_port} />
+            </label>
+          </div>
+        {/if}
         <div class="grid2">
           <label>
             <span>数据目录</span>
