@@ -23,10 +23,14 @@ use tracker_core::models::{
 use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
 
-/// 悬浮窗三种形态（逻辑像素）。
+/// 悬浮窗三种形态（逻辑像素）：贴边收起后只留一根细线（横边横线、竖边竖线）。
 const WIDGET_NORMAL: (f64, f64) = (300.0, 216.0);
 const WIDGET_COMPACT: (f64, f64) = (200.0, 76.0);
-const WIDGET_COLLAPSED: (f64, f64) = (44.0, 150.0);
+const WIDGET_LINE_H: (f64, f64) = (160.0, 4.0);
+const WIDGET_LINE_V: (f64, f64) = (4.0, 160.0);
+
+/// 悬浮窗尺寸动画代数（新动画使旧动画失效）。
+static ANIM_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// 全局应用状态（Tauri managed state）。
 struct AppState {
@@ -404,13 +408,17 @@ fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
             .focused(false)
             .position(12.0, 12.0)
             .build()?;
-    // Win11 22H2+ 优先系统级亚克力背板；旧系统退回 legacy 亚克力（底色随强调色微调）
-    if !apply_system_backdrop(&win, true)
+    // Win11 Mica 常显背板（失焦也保持磨砂，不再只在点击时透明）；旧系统退回 legacy 亚克力
+    if !apply_system_backdrop(&win, false)
         && window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent))).is_err()
     {
         let _ = window_vibrancy::apply_mica(&win, None);
     }
     apply_rounded_corners(&win);
+    // 系统背板应用时会把窗口踢出 topmost 层，必须在背板之后重新置顶
+    if prefs.always_on_top {
+        let _ = win.set_always_on_top(true);
+    }
     // 悬浮窗右键原生菜单（事件处理器只在创建时注册一次）
     let h = app.clone();
     win.on_menu_event(move |_win, event| handle_widget_menu_event(&h, event.id().as_ref()));
@@ -550,48 +558,105 @@ fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
     let cy = anchor.1 + ((eh * sf) as i32) / 2;
     let mp = mon.position();
     let ms = mon.size();
-    let (w, h) = (
-        (WIDGET_COLLAPSED.0 * sf) as i32,
-        (WIDGET_COLLAPSED.1 * sf) as i32,
-    );
     let dl = cx - mp.x;
     let dr = mp.x + ms.width as i32 - cx;
     let dt = cy - mp.y;
     let db = mp.y + ms.height as i32 - cy;
     let min = dl.min(dr).min(dt).min(db);
-    let (x, y) = if min == dl {
-        (mp.x, (cy - h / 2).clamp(mp.y, mp.y + ms.height as i32 - h))
+    let (edge, lw, lh) = if min == dl {
+        ("left", WIDGET_LINE_V.0, WIDGET_LINE_V.1)
     } else if min == dr {
-        (
-            mp.x + ms.width as i32 - w,
-            (cy - h / 2).clamp(mp.y, mp.y + ms.height as i32 - h),
-        )
+        ("right", WIDGET_LINE_V.0, WIDGET_LINE_V.1)
     } else if min == dt {
-        ((cx - w / 2).clamp(mp.x, mp.x + ms.width as i32 - w), mp.y)
+        ("top", WIDGET_LINE_H.0, WIDGET_LINE_H.1)
+    } else {
+        ("bottom", WIDGET_LINE_H.0, WIDGET_LINE_H.1)
+    };
+    let (pw, ph) = ((lw * sf) as i32, (lh * sf) as i32);
+    let (x, y) = if edge == "left" {
+        (
+            mp.x,
+            (cy - ph / 2).clamp(mp.y, mp.y + ms.height as i32 - ph),
+        )
+    } else if edge == "right" {
+        (
+            mp.x + ms.width as i32 - pw,
+            (cy - ph / 2).clamp(mp.y, mp.y + ms.height as i32 - ph),
+        )
+    } else if edge == "top" {
+        ((cx - pw / 2).clamp(mp.x, mp.x + ms.width as i32 - pw), mp.y)
     } else {
         (
-            (cx - w / 2).clamp(mp.x, mp.x + ms.width as i32 - w),
-            mp.y + ms.height as i32 - h,
+            (cx - pw / 2).clamp(mp.x, mp.x + ms.width as i32 - pw),
+            mp.y + ms.height as i32 - ph,
         )
     };
-    let _ = win.set_size(tauri::LogicalSize::new(
-        WIDGET_COLLAPSED.0,
-        WIDGET_COLLAPSED.1,
-    ));
-    let _ = win.set_position(PhysicalPosition::new(x, y));
+    let cur = (
+        win.outer_position().map(|p| p.x).unwrap_or(x),
+        win.outer_position().map(|p| p.y).unwrap_or(y),
+        win.outer_size().map(|s| s.width as f64 / sf).unwrap_or(ew),
+        win.outer_size().map(|s| s.height as f64 / sf).unwrap_or(eh),
+    );
+    let _ = app.emit("widget://edge", edge);
+    animate_window(win, cur, (x as f64, y as f64, lw, lh), 160);
 }
 
 /// 展开悬浮窗（正常 / 缩略），回到锚点位置。
 fn expand_widget(app: &AppHandle, win: &WebviewWindow, compact: bool) {
+    let sf = win.scale_factor().unwrap_or(1.0);
     let (w, h) = if compact {
         WIDGET_COMPACT
     } else {
         WIDGET_NORMAL
     };
-    let _ = win.set_size(tauri::LogicalSize::new(w, h));
     let anchor = *app.state::<AppState>().widget_anchor.lock().unwrap();
-    let _ = win.set_position(PhysicalPosition::new(anchor.0, anchor.1));
-    clamp_widget_pos(win);
+    let cur = (
+        win.outer_position().map(|p| p.x).unwrap_or(anchor.0),
+        win.outer_position().map(|p| p.y).unwrap_or(anchor.1),
+        win.outer_size()
+            .map(|s| s.width as f64 / sf)
+            .unwrap_or(WIDGET_LINE_H.0),
+        win.outer_size()
+            .map(|s| s.height as f64 / sf)
+            .unwrap_or(WIDGET_LINE_H.1),
+    );
+    let _ = app.emit("widget://edge", "none");
+    animate_window(win, cur, (anchor.0 as f64, anchor.1 as f64, w, h), 160);
+}
+
+/// 窗口尺寸/位置动画（smoothstep，10 步；新动画会取消旧动画）。
+#[allow(clippy::too_many_arguments)]
+fn animate_window(
+    win: &WebviewWindow,
+    from: (i32, i32, f64, f64),
+    to: (f64, f64, f64, f64),
+    ms: u64,
+) {
+    let gen = ANIM_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let win = win.clone();
+    let steps = 10u64;
+    std::thread::spawn(move || {
+        for i in 1..=steps {
+            if ANIM_GEN.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            let t = i as f64 / steps as f64;
+            let t = t * t * (3.0 - 2.0 * t);
+            let _ = win.set_size(tauri::LogicalSize::new(
+                from.2 + (to.2 - from.2) * t,
+                from.3 + (to.3 - from.3) * t,
+            ));
+            let _ = win.set_position(PhysicalPosition::new(
+                (from.0 as f64 + (to.0 - from.0 as f64) * t) as i32,
+                (from.1 as f64 + (to.1 - from.1 as f64) * t) as i32,
+            ));
+            std::thread::sleep(std::time::Duration::from_millis(ms / steps));
+        }
+        if ANIM_GEN.load(Ordering::SeqCst) == gen {
+            let _ = win.set_size(tauri::LogicalSize::new(to.2, to.3));
+            let _ = win.set_position(PhysicalPosition::new(to.0 as i32, to.1 as i32));
+        }
+    });
 }
 
 /// 强调色 → 亚克力 tint（深色底与强调色 10% 混合）。
@@ -618,9 +683,6 @@ fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
     save_settings_file(app);
     if let Some(win) = app.get_webview_window("widget") {
         let _ = win.set_always_on_top(prefs.always_on_top);
-        if !apply_system_backdrop(&win, true) {
-            let _ = window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent)));
-        }
         if prefs.edge_snap {
             collapse_widget(app, &win);
         } else {

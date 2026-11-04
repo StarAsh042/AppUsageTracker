@@ -7,28 +7,46 @@
     stateLabel,
     WIDGET_ACCENTS,
     type LiveStatus,
+    type TrackerSettings,
     type WidgetPrefs,
   } from './lib/api';
 
   let live = $state<LiveStatus | null>(null);
   let prefs = $state<WidgetPrefs | null>(null);
+  let goalMinutes = $state(0);
   let hovering = $state(false);
+  let edge = $state<'none' | 'left' | 'right' | 'top' | 'bottom'>('none');
 
   const collapsed = $derived(prefs?.edge_snap === true && !hovering);
   const accent = $derived(WIDGET_ACCENTS[prefs?.accent ?? 'blue'] ?? '#4f8cff');
   const bgAlpha = $derived(((prefs?.opacity ?? 85) / 100).toFixed(2));
+  const goalPct = $derived.by(() => {
+    if (!goalMinutes || !live) return null;
+    return Math.min(100, Math.round((live.today_total_seconds / (goalMinutes * 60)) * 100));
+  });
 
   $effect(() => {
-    api.getSettings().then((s) => (prefs = s.widget));
+    api.getSettings().then((s) => {
+      prefs = s.widget;
+      goalMinutes = s.daily_goal_minutes;
+    });
     api.getLiveStatus().then((l) => (live = l));
+    const un0 = listen<TrackerSettings>('app://settings', (e) => {
+      goalMinutes = e.payload?.daily_goal_minutes ?? 0;
+    });
     const un1 = listen<LiveStatus>('usage://tick', (e) => (live = e.payload));
     const un2 = listen<WidgetPrefs>('widget://prefs', (e) => (prefs = e.payload));
+    const un3 = listen<string>('widget://edge', (e) => {
+      edge = (e.payload as typeof edge) ?? 'none';
+    });
     // 禁用 WebView 默认右键菜单（右键由原生菜单接管）
     const prevent = (e: Event) => e.preventDefault();
     window.addEventListener('contextmenu', prevent);
     return () => {
+      un0.then((f) => f());
       un1.then((f) => f());
       un2.then((f) => f());
+      un3.then((f) => f());
       window.removeEventListener('contextmenu', prevent);
     };
   });
@@ -91,6 +109,8 @@
   class="widget"
   class:compact={prefs?.compact === true}
   class:collapsed
+  class:h-edge={edge === 'top' || edge === 'bottom'}
+  class:v-edge={edge === 'left' || edge === 'right'}
   style="--ac:{accent}; --wa:{bgAlpha}"
   onmousedown={onDown}
   onmousemove={onMove}
@@ -100,18 +120,13 @@
   onmouseleave={onLeave}
 >
   {#if collapsed}
-    <div class="pill" title="使用时长悬浮窗">
-      <span class="pill-icon">⏱</span>
-      <span class="pill-text">
-        {live ? fmtDuration(live.today_total_seconds) : '--'}
-      </span>
-    </div>
+    <div class="edge-line" title="使用时长悬浮窗"></div>
   {:else}
     <div class="row top">
       <span class="dot {live?.state.toLowerCase() ?? ''}"></span>
       <span class="state">{live ? stateLabel(live.state) : '…'}</span>
       <span class="today">
-        今日 {live ? fmtDuration(live.today_total_seconds) : '--'}
+        今日 {live ? fmtDuration(live.today_total_seconds) : '--'}{goalPct !== null ? ` · 🎯${goalPct}%` : ''}
       </span>
     </div>
 
@@ -146,13 +161,13 @@
 </div>
 
 <style>
+  /* 圆角交给 DWM 系统裁切（CSS 圆角与系统半径不一致会露出背板白边） */
   .widget {
     height: 100vh;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 12px 14px;
-    border-radius: 14px;
     background: rgba(16, 18, 24, calc(var(--wa, 0.85) * 0.72));
     border: 1px solid color-mix(in srgb, var(--ac, #4f8cff) 30%, transparent);
     color: #ecf0f8;
@@ -175,8 +190,39 @@
     font-size: 12px;
   }
 
+  /* 贴边收起：整窗只剩一根渐变细线（横边横线 / 竖边竖线） */
   .widget.collapsed {
-    padding: 5px;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .edge-line {
+    position: absolute;
+    inset: 0;
+    border-radius: 2px;
+  }
+
+  .widget.collapsed.h-edge .edge-line {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--ac, #4f8cff) 85%, transparent) 15%,
+      color-mix(in srgb, var(--ac, #4f8cff) 85%, transparent) 85%,
+      transparent
+    );
+    box-shadow: 0 0 6px color-mix(in srgb, var(--ac, #4f8cff) 60%, transparent);
+  }
+
+  .widget.collapsed.v-edge .edge-line {
+    background: linear-gradient(
+      180deg,
+      transparent,
+      color-mix(in srgb, var(--ac, #4f8cff) 85%, transparent) 15%,
+      color-mix(in srgb, var(--ac, #4f8cff) 85%, transparent) 85%,
+      transparent
+    );
+    box-shadow: 0 0 6px color-mix(in srgb, var(--ac, #4f8cff) 60%, transparent);
   }
 
   .row {
@@ -282,30 +328,6 @@
     font-size: 11px;
   }
 
-  .pill {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-  }
-
-  .pill-icon {
-    font-size: 15px;
-  }
-
-  .pill-text {
-    writing-mode: vertical-rl;
-    text-orientation: upright;
-    font-size: 11px;
-    color: #aeb6c8;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 1px;
-    max-height: 100px;
-    overflow: hidden;
-  }
 
   .lock-badge {
     position: absolute;
