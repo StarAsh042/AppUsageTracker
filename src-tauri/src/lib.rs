@@ -164,6 +164,7 @@ pub fn run() {
             toggle_main_window,
             get_app_detail,
             exclude_app,
+            set_app_display_name,
             scan_installed_apps,
             export_backup_json,
             import_backup_json,
@@ -1234,6 +1235,12 @@ fn live_status(app: &AppHandle) -> LiveStatus {
     let mut top: Vec<(String, String, f64)> = Vec::new();
     let mut today_total = 0.0;
     let cur_key = current.as_ref().map(|c| c.app_key.clone());
+    let (rules_alias, _unused) = {
+        let s = state.settings.lock().unwrap();
+        let a = s.app_display_names.clone();
+        (a, ())
+    };
+    let _ = rules_alias;
     for d in agg.daily.values().filter(|d| d.usage_date == today) {
         // 当前前台应用叠加进行中的区间秒数，排行与总量实时走表
         let mut secs = d.active_seconds;
@@ -1242,7 +1249,11 @@ fn live_status(app: &AppHandle) -> LiveStatus {
         }
         today_total += secs;
         let cat = resolver.resolve(&d.display_name, &d.process_name, &d.exe_path);
-        top.push((d.display_name.clone(), cat, secs));
+        let shown = {
+            let s = state.settings.lock().unwrap();
+            display_alias(&s, &d.app_key, &d.display_name)
+        };
+        top.push((shown, cat, secs));
     }
     top.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let top_apps = top
@@ -1254,6 +1265,12 @@ fn live_status(app: &AppHandle) -> LiveStatus {
             active_seconds,
         })
         .collect();
+    // 当前应用显示名走别名
+    let mut current = current;
+    if let Some(c) = current.as_mut() {
+        let s = state.settings.lock().unwrap();
+        c.display_name = display_alias(&s, &c.app_key, &c.display_name);
+    }
     LiveStatus {
         state: agg.state,
         current_app: current,
@@ -1265,6 +1282,15 @@ fn live_status(app: &AppHandle) -> LiveStatus {
 }
 
 // ---------- 设置 ----------
+
+/// 应用别名：仅影响展示，不改历史数据与分类匹配。
+fn display_alias(settings: &TrackerSettings, app_key: &str, original: &str) -> String {
+    settings
+        .app_display_names
+        .get(app_key)
+        .cloned()
+        .unwrap_or_else(|| original.to_string())
+}
 
 fn db_path(data_dir: &str) -> String {
     std::path::Path::new(data_dir)
@@ -1484,9 +1510,13 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
         .into_iter()
         .map(|(app_key, e)| {
             let category = resolver.resolve(&e.display_name, &e.process_name, &e.exe_path);
+            let shown = {
+                let s = state.settings.lock().unwrap();
+                display_alias(&s, &app_key, &e.display_name)
+            };
             DashboardApp {
                 app_key,
-                display_name: e.display_name,
+                display_name: shown,
                 process_name: e.process_name,
                 exe_path: e.exe_path,
                 category,
@@ -1625,6 +1655,23 @@ fn set_paused(app: AppHandle, state: State<AppState>, paused: bool) {
     if let Some(h) = state.tray.lock().unwrap().as_ref() {
         let _ = h.pause_toggle.set_checked(paused);
     }
+}
+
+/// 设置应用别名（空 = 恢复默认名）。
+#[tauri::command]
+fn set_app_display_name(app: AppHandle, state: State<AppState>, app_key: String, name: String) {
+    {
+        let mut s = state.settings.lock().unwrap();
+        let trimmed = name.trim().to_string();
+        if trimmed.is_empty() {
+            s.app_display_names.remove(&app_key);
+        } else {
+            s.app_display_names.insert(app_key, trimmed);
+        }
+    }
+    save_settings_file(&app);
+    let settings = state.settings.lock().unwrap().clone();
+    let _ = app.emit("app://settings", &settings);
 }
 
 /// 排除应用：停止统计 + 清除其全部已有记录。
@@ -1830,6 +1877,10 @@ fn get_app_detail(
             .to_string();
     }
     let category = resolver.resolve(&display_name, &display_name, &exe_path);
+    display_name = {
+        let s = state.settings.lock().unwrap();
+        display_alias(&s, &app_key, &display_name)
+    };
     let mut points: Vec<DashboardTrendPoint> = daily
         .into_iter()
         .map(|(date, seconds)| DashboardTrendPoint { date, seconds })
@@ -2029,8 +2080,11 @@ fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
         .take(3000)
         .map(|i| TimelineSegment {
             category: resolver.resolve(&i.display_name, &i.process_name, &i.exe_path),
+            display_name: {
+                let s = state.settings.lock().unwrap();
+                display_alias(&s, &i.app_key, &i.display_name)
+            },
             app_key: i.app_key,
-            display_name: i.display_name,
             start_time: i.start_time,
             end_time: i.end_time,
             duration_seconds: i.duration_seconds,

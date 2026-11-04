@@ -28,6 +28,9 @@ pub struct TrackerSettings {
     /// 分类性质：productive / neutral / distracting（效率评分用）。
     #[serde(default)]
     pub category_nature: std::collections::HashMap<String, String>,
+    /// 应用显示名别名（app_key → 别名，读取时应用，不改历史数据）。
+    #[serde(default)]
+    pub app_display_names: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub widget: WidgetPrefs,
 }
@@ -93,6 +96,7 @@ impl Default for TrackerSettings {
             api_enabled: true,
             api_port: default_api_port(),
             category_nature: Default::default(),
+            app_display_names: Default::default(),
             widget: Default::default(),
         }
     }

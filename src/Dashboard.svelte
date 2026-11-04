@@ -15,13 +15,24 @@
   let settings = $state<TrackerSettings | null>(null);
   let detail = $state<AppDetail | null>(null);
   let catColors = $state<Map<string, string>>(new Map());
+  let aliases = $state<Map<string, string>>(new Map());
+
+  function aliasName(key: string, fallback: string): string {
+    return aliases.get(key) || fallback;
+  }
 
   $effect(() => {
     api.getSettings().then((s) => (settings = s));
     api.listCategories().then((cats) => {
       catColors = new Map(cats.map((c, i) => [c, CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]]));
     });
-    const un = listen<TrackerSettings>('app://settings', (e) => (settings = e.payload));
+    api.getSettings().then((s) => {
+      aliases = new Map(Object.entries(s.app_display_names ?? {}));
+    });
+    const un = listen<TrackerSettings>('app://settings', (e) => {
+      settings = e.payload;
+      aliases = new Map(Object.entries(e.payload?.app_display_names ?? {}));
+    });
     return () => {
       un.then((f) => f());
     };
@@ -79,8 +90,17 @@
     return { segs, C, R };
   });
 
+  let aliasDraft = $state('');
+
   async function openDetail(appKey: string) {
     detail = await api.getAppDetail(appKey, from, to);
+    aliasDraft = aliasName(appKey, detail.display_name);
+  }
+
+  async function saveAlias() {
+    if (!detail) return;
+    await api.setAppDisplayName(detail.app_key, aliasDraft);
+    await load();
   }
 
   function maxDetailPoints(points: { seconds: number }[]): number {
@@ -272,6 +292,9 @@
       <div class="card">
         <div class="label">总活跃时长</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
+        {#if isMultiDay}
+          <div class="delta">日均 {fmtDuration(dailyAvg)}（{dayCount} 天）</div>
+        {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
             较上一周期 {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
@@ -282,12 +305,6 @@
           <div class="delta">每日目标 {settings?.daily_goal_minutes} 分钟 · {goalPct}%</div>
         {/if}
       </div>
-      {#if isMultiDay}
-        <div class="card">
-          <div class="label">日均活跃（{dayCount} 天）</div>
-          <div class="value">{fmtDuration(dailyAvg)}</div>
-        </div>
-      {/if}
       <div class="card">
         <div class="label">最常用应用</div>
         <div class="value">{data.top_app ?? '—'}</div>
@@ -338,7 +355,7 @@
               title={a.exe_path}
             >
               <span class="col-rank">{i + 1}</span>
-              <span class="col-name">{a.display_name}</span>
+              <span class="col-name">{aliasName(a.app_key, a.display_name)}</span>
               <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{a.category}</span></span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
               <span class="col-bar">
@@ -422,10 +439,19 @@
     <div class="modal" onclick={(e) => e.stopPropagation()}>
       <div class="modal-head">
         <div>
-          <div class="m-name">{detail.display_name}</div>
+          <div class="m-name">{aliasName(detail.app_key, detail.display_name)}</div>
           <div class="m-meta"><span class="cat-chip">{detail.category}</span> <span class="m-path">{detail.exe_path}</span></div>
         </div>
         <button class="m-close" onclick={() => (detail = null)}>✕</button>
+      </div>
+      <div class="alias-row">
+        <input
+          class="alias-input"
+          placeholder="自定义显示名（清空即恢复默认）"
+          bind:value={aliasDraft}
+          spellcheck="false"
+        />
+        <button class="alias-save" onclick={saveAlias}>改名</button>
       </div>
       <div class="m-total">区间内活跃 <b>{fmtDuration(detail.total_seconds)}</b></div>
       <div class="m-trend">
@@ -533,7 +559,7 @@
 
   .cards {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
   }
 
@@ -918,6 +944,32 @@
 
   .m-close:hover {
     color: var(--text);
+  }
+
+  .alias-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .alias-input {
+    flex: 1;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+
+  .alias-save {
+    background: var(--accent);
+    border: 0;
+    color: #fff;
+    border-radius: 7px;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-size: 13px;
   }
 
   .m-total {

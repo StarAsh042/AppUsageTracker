@@ -54,7 +54,10 @@ export interface TrackerSettings {
   category_rules: CategoryRule[];
   daily_goal_minutes: number;
   hotkeys_enabled: boolean;
+  api_enabled: boolean;
+  api_port: number;
   category_nature: Record<string, string>;
+  app_display_names: Record<string, string>;
   widget: WidgetPrefs;
 }
 
@@ -148,6 +151,8 @@ export const api = {
   setWidgetCollapsed: (collapsed: boolean) => invoke<void>('set_widget_collapsed', { collapsed }),
   toggleMainWindow: () => invoke<void>('toggle_main_window'),
   excludeApp: (appKey: string) => invoke<void>('exclude_app', { appKey }),
+  setAppDisplayName: (appKey: string, name: string) =>
+    invoke<void>('set_app_display_name', { appKey, name }),
   updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),
   exportBackupJson: () => invoke<string>('export_backup_json'),
   importBackupJson: () => invoke<string>('import_backup_json'),
