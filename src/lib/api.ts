@@ -21,6 +21,24 @@ export interface WidgetPrefs {
   accent: string;
 }
 
+export interface AppDetail {
+  app_key: string;
+  display_name: string;
+  exe_path: string;
+  category: string;
+  total_seconds: number;
+  daily: { date: string; seconds: number }[];
+}
+
+export interface ScannedApp {
+  app_key: string;
+  display_name: string;
+  category: string;
+  source: string;
+}
+
+export type CategoryNature = 'productive' | 'neutral' | 'distracting';
+
 export interface TrackerSettings {
   idle_threshold_seconds: number;
   foreground_poll_ms: number;
@@ -34,6 +52,9 @@ export interface TrackerSettings {
   category_daily_limit_minutes: Record<string, number>;
   app_category_overrides: Record<string, string>;
   category_rules: CategoryRule[];
+  daily_goal_minutes: number;
+  hotkeys_enabled: boolean;
+  category_nature: Record<string, string>;
   widget: WidgetPrefs;
 }
 
@@ -109,6 +130,9 @@ export const api = {
   getLiveStatus: () => invoke<LiveStatus>('get_live_status'),
   getDashboard: (from: string, to: string) => invoke<DashboardData>('get_dashboard', { from, to }),
   getTimeline: (date: string) => invoke<TimelineData>('get_timeline', { date }),
+  getAppDetail: (appKey: string, from: string, to: string) =>
+    invoke<AppDetail>('get_app_detail', { appKey, from, to }),
+  scanInstalledApps: () => invoke<ScannedApp[]>('scan_installed_apps'),
   getSettings: () => invoke<TrackerSettings>('get_settings'),
   saveSettings: (settings: TrackerSettings) => invoke<void>('save_settings', { settings }),
   setPaused: (paused: boolean) => invoke<void>('set_paused', { paused }),

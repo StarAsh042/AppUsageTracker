@@ -242,7 +242,9 @@ mod tests {
             exe_path: "a.exe".into(),
             active_seconds: 30.0,
         };
-        store.save_daily_replace(std::slice::from_ref(&row)).unwrap();
+        store
+            .save_daily_replace(std::slice::from_ref(&row))
+            .unwrap();
         let mut grown = row.clone();
         grown.active_seconds = 90.0;
         store.save_daily_replace(&[grown]).unwrap();

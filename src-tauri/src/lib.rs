@@ -8,10 +8,11 @@ use std::sync::Mutex;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WindowEvent,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
@@ -35,6 +36,7 @@ struct AppState {
     user_paused: AtomicBool,
     notified_limits: Mutex<HashSet<String>>,
     tray: Mutex<Option<TrayHandles>>,
+    tray_icon: Mutex<Option<TrayIcon<tauri::Wry>>>,
 }
 
 struct TrayHandles {
@@ -107,6 +109,31 @@ pub fn run() {
             show_main(app);
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let main_hk: Shortcut = "Ctrl+Alt+D".parse().expect("valid shortcut");
+                    let widget_hk: Shortcut = "Ctrl+Alt+W".parse().expect("valid shortcut");
+                    if shortcut == &main_hk {
+                        toggle_main(app);
+                    } else if shortcut == &widget_hk {
+                        let st = app.state::<AppState>();
+                        let visible = app
+                            .get_webview_window("widget")
+                            .map(|w| w.is_visible().unwrap_or(false))
+                            .unwrap_or(false);
+                        set_widget_visible(app, !visible);
+                        let guard = st.tray.lock().unwrap();
+                        if let Some(h) = guard.as_ref() {
+                            let _ = h.widget_toggle.set_checked(!visible);
+                        }
+                    }
+                })
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             get_dashboard,
             get_live_status,
@@ -124,6 +151,8 @@ pub fn run() {
             set_widget_collapsed,
             update_widget_settings,
             get_timeline,
+            get_app_detail,
+            scan_installed_apps,
             export_backup_json,
             import_backup_json,
             list_backups,
@@ -159,10 +188,12 @@ pub fn run() {
                 user_paused: AtomicBool::new(false),
                 notified_limits: Mutex::new(HashSet::new()),
                 tray: Mutex::new(None),
+                tray_icon: Mutex::new(None),
             });
 
             let handle = app.handle().clone();
             build_tray(&handle)?;
+            apply_hotkeys(&handle);
             setup_main_window(&handle);
 
             let show_widget = {
@@ -206,7 +237,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let widget_handle = widget_i.clone();
     let pause_handle = pause_i.clone();
 
-    TrayIconBuilder::with_id("main-tray")
+    let tray_icon = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
         .tooltip("软件使用时间统计")
         .menu(&menu)
@@ -259,13 +290,46 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    let tray = tray_icon;
 
     let state = app.state::<AppState>();
+    *state.tray_icon.lock().unwrap() = Some(tray);
     *state.tray.lock().unwrap() = Some(TrayHandles {
         widget_toggle: widget_handle,
         pause_toggle: pause_handle,
     });
     Ok(())
+}
+
+/// 全局热键注册（设置开关）。
+fn apply_hotkeys(app: &AppHandle) {
+    let enabled = {
+        let st = app.state::<AppState>();
+        let v = st.settings.lock().unwrap().hotkeys_enabled;
+        v
+    };
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    if !enabled {
+        return;
+    }
+    if let Ok(hk) = "Ctrl+Alt+D".parse::<Shortcut>() {
+        let _ = gs.register(hk);
+    }
+    if let Ok(hk) = "Ctrl+Alt+W".parse::<Shortcut>() {
+        let _ = gs.register(hk);
+    }
+}
+
+/// 主界面显示/隐藏切换（全局热键用）。
+fn toggle_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
+            let _ = w.hide();
+        } else {
+            show_main(app);
+        }
+    }
 }
 
 // ---------- 窗口 ----------
@@ -627,6 +691,23 @@ fn spawn_monitor(app: AppHandle) {
 
             let status = live_status(&app);
             let _ = app.emit("usage://tick", &status);
+            // 托盘 tooltip 实时显示今日活跃与当前应用
+            if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
+                let tip = match &status.current_app {
+                    Some(a) => format!(
+                        "软件使用时间统计
+今日 {} · {}",
+                        fmt_hms(status.today_total_seconds),
+                        a.display_name
+                    ),
+                    None => format!(
+                        "软件使用时间统计
+今日 {}",
+                        fmt_hms(status.today_total_seconds)
+                    ),
+                };
+                let _ = tray.set_tooltip(Some(tip));
+            }
 
             last_wall = now;
             last_tick = tick;
@@ -1100,6 +1181,7 @@ fn save_settings(
     *state.settings.lock().unwrap() = settings.clone();
     save_settings_file(&app);
     let _ = app.emit("app://settings", &settings);
+    apply_hotkeys(&app);
 
     // 悬浮窗可见性同步
     let want = state.settings.lock().unwrap().show_floating_widget;
@@ -1228,6 +1310,214 @@ fn open_path(path: String) -> Result<(), String> {
 #[tauri::command]
 fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+// ---------- 应用详情 ----------
+
+#[derive(Serialize, Clone)]
+struct AppDetail {
+    app_key: String,
+    display_name: String,
+    exe_path: String,
+    category: String,
+    total_seconds: f64,
+    daily: Vec<DashboardTrendPoint>,
+}
+
+#[tauri::command]
+fn get_app_detail(
+    app: AppHandle,
+    app_key: String,
+    from: String,
+    to: String,
+) -> Result<AppDetail, String> {
+    let state = app.state::<AppState>();
+    let (rules, overrides) = {
+        let s = state.settings.lock().unwrap();
+        (s.category_rules.clone(), s.app_category_overrides.clone())
+    };
+    let resolver = CategoryResolver::new(rules, overrides);
+
+    let store_rows = {
+        let st = state.store.lock().unwrap();
+        st.query_daily(&from, &to).map_err(|e| e.to_string())?
+    };
+    let mut daily: HashMap<String, f64> = HashMap::new();
+    let mut display_name = String::new();
+    let mut exe_path = String::new();
+    for r in store_rows.into_iter().filter(|r| r.app_key == app_key) {
+        if display_name.is_empty() {
+            display_name = r.display_name.clone();
+            exe_path = r.exe_path.clone();
+        }
+        *daily.entry(r.usage_date).or_insert(0.0) += r.active_seconds;
+    }
+    {
+        // 今日内存实时数据
+        let agg = state.aggregator.lock().unwrap();
+        for v in agg.daily.values().filter(|v| {
+            v.app_key == app_key
+                && v.usage_date.as_str() >= from.as_str()
+                && v.usage_date.as_str() <= to.as_str()
+        }) {
+            if display_name.is_empty() {
+                display_name = v.display_name.clone();
+                exe_path = v.exe_path.clone();
+            }
+            *daily.entry(v.usage_date.clone()).or_insert(0.0) += v.active_seconds;
+        }
+    }
+    if display_name.is_empty() {
+        display_name = app_key
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or(&app_key)
+            .trim_end_matches(".exe")
+            .to_string();
+    }
+    let category = resolver.resolve(&display_name, &display_name, &exe_path);
+    let mut points: Vec<DashboardTrendPoint> = daily
+        .into_iter()
+        .map(|(date, seconds)| DashboardTrendPoint { date, seconds })
+        .collect();
+    points.sort_by(|a, b| a.date.cmp(&b.date));
+    let total_seconds = points.iter().map(|p| p.seconds).sum();
+    Ok(AppDetail {
+        app_key,
+        display_name,
+        exe_path,
+        category,
+        total_seconds,
+        daily: points,
+    })
+}
+
+// ---------- 应用扫描（桌面 / 开始菜单 lnk → 补分类） ----------
+
+#[derive(Serialize, Clone)]
+struct ScannedApp {
+    app_key: String,
+    display_name: String,
+    category: String,
+    source: String,
+}
+
+#[tauri::command]
+fn scan_installed_apps(app: AppHandle) -> Result<Vec<ScannedApp>, String> {
+    #[cfg(windows)]
+    {
+        let state = app.state::<AppState>();
+        let (rules, overrides) = {
+            let s = state.settings.lock().unwrap();
+            (s.category_rules.clone(), s.app_category_overrides.clone())
+        };
+        let resolver = CategoryResolver::new(rules, overrides);
+
+        let mut dirs: Vec<(std::path::PathBuf, &str)> = Vec::new();
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let desktop = std::path::Path::new(&profile).join("Desktop");
+            if desktop.is_dir() {
+                dirs.push((desktop, "桌面"));
+            }
+            let onedrive_desktop = std::path::Path::new(&profile)
+                .join("OneDrive")
+                .join("Desktop");
+            if onedrive_desktop.is_dir() {
+                dirs.push((onedrive_desktop, "桌面"));
+            }
+        }
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let start_menu =
+                std::path::Path::new(&appdata).join(r"Microsoft\Windows\Start Menu\Programs");
+            if start_menu.is_dir() {
+                dirs.push((start_menu, "开始菜单"));
+            }
+        }
+        if let Ok(pd) = std::env::var("PROGRAMDATA") {
+            let start_menu =
+                std::path::Path::new(&pd).join(r"Microsoft\Windows\Start Menu\Programs");
+            if start_menu.is_dir() {
+                dirs.push((start_menu, "开始菜单"));
+            }
+        }
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut result: Vec<ScannedApp> = Vec::new();
+        for (dir, source) in dirs {
+            collect_lnks(&dir, &mut |lnk_path, name| {
+                let Ok(link) = lnk::ShellLink::open(lnk_path, encoding_rs::GBK) else {
+                    return;
+                };
+                let Some(target) = link
+                    .link_info()
+                    .as_ref()
+                    .and_then(|li| li.local_base_path().map(|s| s.to_string()))
+                    .map(std::path::PathBuf::from)
+                else {
+                    return;
+                };
+                if target
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_lowercase() != "exe")
+                    .unwrap_or(true)
+                {
+                    return;
+                }
+                let exe = target.to_string_lossy().to_string();
+                let key = exe.to_lowercase();
+                if key.is_empty() || !seen.insert(key.clone()) {
+                    return;
+                }
+                let display = if name.is_empty() {
+                    target
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| key.clone())
+                } else {
+                    name
+                };
+                let category = resolver.resolve(&display, &display, &exe);
+                result.push(ScannedApp {
+                    app_key: key,
+                    display_name: display,
+                    category,
+                    source: source.to_string(),
+                });
+            });
+        }
+        result.sort_by(|a, b| {
+            (a.category == UNCATEGORIZED)
+                .cmp(&(b.category == UNCATEGORIZED))
+                .then_with(|| b.category.cmp(&a.category))
+                .then_with(|| a.display_name.cmp(&b.display_name))
+        });
+        Ok(result)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Ok(vec![])
+    }
+}
+
+/// 递归收集 .lnk 文件并回调（路径，lnk 文件名去扩展名）。
+#[cfg(windows)]
+fn collect_lnks(dir: &std::path::Path, cb: &mut dyn FnMut(&std::path::PathBuf, String)) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lnks(&path, cb);
+        } else if path.extension().map(|e| e == "lnk").unwrap_or(false) {
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            cb(&path, name);
+        }
+    }
 }
 
 // ---------- 时间线 ----------

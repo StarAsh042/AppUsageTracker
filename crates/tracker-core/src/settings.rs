@@ -14,8 +14,21 @@ pub struct TrackerSettings {
     pub category_daily_limit_minutes: std::collections::HashMap<String, u32>,
     pub app_category_overrides: std::collections::HashMap<String, String>,
     pub category_rules: Vec<CategoryRuleDef>,
+    /// 每日活跃目标（分钟，0 = 关闭）。
+    #[serde(default)]
+    pub daily_goal_minutes: u32,
+    /// 全局热键（Ctrl+Alt+D 主界面 / Ctrl+Alt+W 悬浮窗）。
+    #[serde(default = "default_true")]
+    pub hotkeys_enabled: bool,
+    /// 分类性质：productive / neutral / distracting（效率评分用）。
+    #[serde(default)]
+    pub category_nature: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub widget: WidgetPrefs,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// 悬浮窗偏好（右键菜单可调：置顶/锁定/贴边/缩略/透明度/配色）。
@@ -66,6 +79,9 @@ impl Default for TrackerSettings {
             category_daily_limit_minutes: Default::default(),
             app_category_overrides: Default::default(),
             category_rules: default_category_rules(),
+            daily_goal_minutes: 0,
+            hotkeys_enabled: true,
+            category_nature: Default::default(),
             widget: Default::default(),
         }
     }

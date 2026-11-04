@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type TrackerSettings, type CategoryRule } from './lib/api';
+  import { api, type TrackerSettings, type CategoryRule, type ScannedApp } from './lib/api';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -7,6 +7,46 @@
   let status = $state('');
   let saving = $state(false);
   let backups = $state<string[]>([]);
+  let scanned = $state<ScannedApp[] | null>(null);
+  let scanning = $state(false);
+
+  function natureOf(name: string): string {
+    return s?.category_nature[name] ?? 'neutral';
+  }
+
+  function setNature(name: string, val: string) {
+    if (!s) return;
+    if (!val || val === 'neutral') {
+      delete s.category_nature[name];
+    } else {
+      s.category_nature[name] = val;
+    }
+  }
+
+  const NATURE_LABELS: Record<string, string> = {
+    productive: '产出',
+    neutral: '中性',
+    distracting: '分心',
+  };
+
+  async function runScan() {
+    scanning = true;
+    try {
+      scanned = await api.scanInstalledApps();
+    } catch (e) {
+      status = String(e);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  async function assignCategory(appKey: string, cat: string) {
+    await api.setAppCategory(appKey, cat);
+    if (scanned) {
+      scanned = scanned.map((a) => (a.app_key === appKey ? { ...a, category: cat } : a));
+    }
+    status = '分类已更新';
+  }
 
   $effect(() => {
     (async () => {
@@ -144,6 +184,10 @@
             <span>数据保留（天）</span>
             <input type="number" min="30" max="3650" bind:value={s.retention_days} />
           </label>
+          <label>
+            <span>每日活跃目标（分钟，0 = 关闭）</span>
+            <input type="number" min="0" max="1440" bind:value={s.daily_goal_minutes} />
+          </label>
         </div>
         <div class="checks">
           <label class="check-row">
@@ -153,6 +197,10 @@
           <label class="check-row">
             <input type="checkbox" bind:checked={s.show_floating_widget} />
             <span>显示悬浮窗</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" bind:checked={s.hotkeys_enabled} />
+            <span>全局热键（Ctrl+Alt+D 主界面 / Ctrl+Alt+W 悬浮窗）</span>
           </label>
         </div>
         <div class="grid2">
@@ -186,8 +234,17 @@
                 value={limitOf(name)}
                 oninput={(e) => setLimit(name, Number((e.currentTarget as HTMLInputElement).value))}
               />
+              <select
+                value={natureOf(name)}
+                onchange={(e) => setNature(name, (e.currentTarget as HTMLSelectElement).value)}
+              >
+                {#each Object.entries(NATURE_LABELS) as [val, label] (val)}
+                  <option value={val}>{label}</option>
+                {/each}
+              </select>
             </label>
           {/each}
+          <p class="hint">选择「产出 / 中性 / 分心」后，仪表盘将显示效率评分。</p>
         </div>
       </section>
 
@@ -207,6 +264,36 @@
           <button class="ghost" onclick={addRule}>+ 新增分类</button>
           <button class="ghost" onclick={saveRules}>保存分类规则</button>
         </div>
+      </section>
+
+      <section class="panel">
+        <h3>扫描应用补分类</h3>
+        <p class="hint">扫描桌面与开始菜单快捷方式，把漏掉的程序归入分类（写在应用分类覆盖里，立即生效且对历史数据同样生效）。</p>
+        <div class="row-actions">
+          <button class="ghost" disabled={scanning} onclick={runScan}>{scanning ? '扫描中…' : '扫描应用'}</button>
+          {#if scanned}
+            <span class="hint">共 {scanned.length} 个应用，其中未分类 {scanned.filter((a) => a.category === '未分类').length} 个</span>
+          {/if}
+        </div>
+        {#if scanned && scanned.length}
+          <div class="scan-list">
+            {#each scanned as a (a.app_key)}
+              <div class="scan-row" class:uncat={a.category === '未分类'}>
+                <span class="scan-name" title={a.app_key}>{a.display_name} <span class="scan-src">{a.source}</span></span>
+                <span class="cat-chip">{a.category}</span>
+                <select
+                  value={a.category === '未分类' ? '' : a.category}
+                  onchange={(e) => assignCategory(a.app_key, (e.currentTarget as HTMLSelectElement).value || '未分类')}
+                >
+                  <option value="">设为分类…</option>
+                  {#each ruleNames() as name (name)}
+                    <option value={name}>{name}</option>
+                  {/each}
+                </select>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </section>
 
       <section class="panel">
@@ -418,6 +505,65 @@
   .theme-row {
     display: flex;
     gap: 24px;
+  }
+
+  .limits {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px 16px;
+  }
+
+  .limit-row select {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+
+  .scan-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 10px;
+  }
+
+  .scan-row {
+    display: grid;
+    grid-template-columns: 1fr 110px 130px;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--card2);
+    font-size: 13px;
+  }
+
+  .scan-row.uncat {
+    outline: 1px solid rgba(245, 166, 35, 0.45);
+  }
+
+  .scan-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scan-src {
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  .scan-row select {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 12px;
   }
 
   .limit-row span {

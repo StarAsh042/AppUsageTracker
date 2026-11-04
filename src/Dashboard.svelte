@@ -1,6 +1,8 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, localDateKey, type DashboardData } from './lib/api';
+  import { api, fmtDuration, localDateKey, type AppDetail, type DashboardData, type TrackerSettings } from './lib/api';
+
+  const PALETTE = ['#4f8cff', '#3ecf8e', '#f5a623', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#94a3b8'];
 
   let { focusDate = null }: { focusDate?: string | null } = $props();
 
@@ -12,6 +14,69 @@
   let categories = $state<string[]>([]);
   let menu = $state<{ x: number; y: number; appKey: string; current: string } | null>(null);
   let lastLoad = 0;
+  let settings = $state<TrackerSettings | null>(null);
+  let detail = $state<AppDetail | null>(null);
+
+  $effect(() => {
+    api.getSettings().then((s) => (settings = s));
+    const un = listen<TrackerSettings>('app://settings', (e) => (settings = e.payload));
+    return () => {
+      un.then((f) => f());
+    };
+  });
+
+  // 效率评分：产出 = 1，中性 = 0.5，分心 = 0（未标记分类不参与）
+  const scoreInfo = $derived.by(() => {
+    if (!data || !settings) return null;
+    const nature = settings.category_nature ?? {};
+    let marked = 0;
+    let weighted = 0;
+    for (const a of data.apps) {
+      const n = nature[a.category];
+      if (!n || n === 'neutral') continue;
+      marked += a.active_seconds;
+      if (n === 'productive') weighted += a.active_seconds;
+    }
+    if (marked < 1) return null;
+    return { pct: Math.round((weighted / marked) * 100) };
+  });
+
+  const goalPct = $derived.by(() => {
+    const goal = settings?.daily_goal_minutes ?? 0;
+    if (!goal || !data || from !== to) return null;
+    return Math.min(100, Math.round((data.total_active_seconds / (goal * 60)) * 100));
+  });
+
+  // 分类环形图
+  const CAT_COLORS = PALETTE;
+  const donut = $derived.by(() => {
+    if (!data || !data.categories.length) return null;
+    const total = data.categories.reduce((s, c) => s + c.seconds, 0) || 1;
+    const R = 42;
+    const C = 2 * Math.PI * R;
+    let acc = 0;
+    const segs = data.categories.map((c, i) => {
+      const frac = c.seconds / total;
+      const dash = Math.max(frac * C - 1.5, 0.6);
+      const seg = {
+        color: CAT_COLORS[i % CAT_COLORS.length],
+        dash: `${dash} ${C - dash}`,
+        offset: C * (1 - acc) + C / 4,
+        name: c.name,
+      };
+      acc += frac;
+      return seg;
+    });
+    return { segs, C, R };
+  });
+
+  async function openDetail(appKey: string) {
+    detail = await api.getAppDetail(appKey, from, to);
+  }
+
+  function maxDetailPoints(points: { seconds: number }[]): number {
+    return Math.max(1, ...points.map((p) => p.seconds)) * 1.1;
+  }
 
   // 日历页点选日期 → 聚焦该日
   $effect(() => {
@@ -162,6 +227,10 @@
             较上一周期 {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
           </div>
         {/if}
+        {#if goalPct !== null}
+          <div class="goal-bar"><span style="width:{goalPct}%"></span></div>
+          <div class="delta">每日目标 {settings?.daily_goal_minutes} 分钟 · {goalPct}%</div>
+        {/if}
       </div>
       {#if isMultiDay}
         <div class="card">
@@ -173,6 +242,27 @@
         <div class="label">最常用应用</div>
         <div class="value">{data.top_app ?? '—'}</div>
       </div>
+      {#if scoreInfo}
+        <div class="card">
+          <div class="label">效率评分</div>
+          <div class="score-row">
+            <svg viewBox="0 0 100 100" class="ring">
+              <circle cx="50" cy="50" r="42" class="ring-bg"></circle>
+              <circle
+                cx="50"
+                cy="50"
+                r="42"
+                class="ring-fg"
+                style="stroke-dasharray:{(scoreInfo.pct / 100) * 263.9} 263.9"
+              ></circle>
+            </svg>
+            <div>
+              <div class="value">{scoreInfo.pct}%</div>
+              <div class="delta">按分类性质加权</div>
+            </div>
+          </div>
+        </div>
+      {/if}
       <div class="card">
         <div class="label">应用数量</div>
         <div class="value">{data.apps.length}</div>
@@ -199,6 +289,7 @@
           {#each data.apps as a, i (a.app_key)}
             <div
               class="row"
+              onclick={() => openDetail(a.app_key)}
               oncontextmenu={(e) => rowMenu(e, a.app_key, a.category)}
               title={a.exe_path}
             >
@@ -220,6 +311,32 @@
       <div class="side">
         <div class="panel">
           <div class="panel-title">分类占比</div>
+          {#if donut}
+            <div class="donut-wrap">
+              <svg viewBox="0 0 100 100" class="donut">
+                {#each donut.segs as s (s.name)}
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r={donut.R}
+                    fill="none"
+                    stroke={s.color}
+                    stroke-width="13"
+                    stroke-dasharray={s.dash}
+                    stroke-dashoffset={s.offset}
+                  ></circle>
+                {/each}
+              </svg>
+              <div class="donut-legend">
+                {#each data.categories as c, i (c.name)}
+                  <span class="legend-item">
+                    <span class="sw" style="background:{CAT_COLORS[i % CAT_COLORS.length]}"></span>
+                    {c.name}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          {/if}
           <div class="cats">
             {#each data.categories as c (c.name)}
               <div class="cat-row">
@@ -253,6 +370,34 @@
     <div class="loading">{loading ? '加载中…' : ''}</div>
   {/if}
 </div>
+
+{#if detail}
+  <div class="modal-mask" onclick={() => (detail = null)}>
+    <div class="modal" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-head">
+        <div>
+          <div class="m-name">{detail.display_name}</div>
+          <div class="m-meta"><span class="cat-chip">{detail.category}</span> <span class="m-path">{detail.exe_path}</span></div>
+        </div>
+        <button class="m-close" onclick={() => (detail = null)}>✕</button>
+      </div>
+      <div class="m-total">区间内活跃 <b>{fmtDuration(detail.total_seconds)}</b></div>
+      <div class="m-trend">
+        {#each detail.daily as pt (pt.date)}
+          <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
+            <div class="t-bar-wrap">
+              <div class="t-fill" style="height:{(pt.seconds / maxDetailPoints(detail.daily)) * 100}%"></div>
+            </div>
+            <div class="t-label">{pt.date.slice(5)}</div>
+          </div>
+        {:else}
+          <div class="empty">该区间无数据</div>
+        {/each}
+      </div>
+      <div class="m-hint">右键排行行可随时改分类</div>
+    </div>
+  </div>
+{/if}
 
 {#if menu}
   <div class="ctx-menu" style="left:{menu.x}px; top:{menu.y}px">
@@ -587,6 +732,192 @@
     align-items: center;
     justify-content: center;
     color: var(--text-dim);
+  }
+
+  .goal-bar {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--card2);
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .goal-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #3ecf8e, #6ee7b7);
+  }
+
+  .score-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .ring {
+    width: 52px;
+    height: 52px;
+    transform: rotate(-90deg);
+  }
+
+  .ring-bg {
+    fill: none;
+    stroke: var(--card2);
+    stroke-width: 9;
+  }
+
+  .ring-fg {
+    fill: none;
+    stroke: var(--ok);
+    stroke-width: 9;
+    stroke-linecap: round;
+  }
+
+  .donut-wrap {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .donut {
+    width: 92px;
+    height: 92px;
+    flex: none;
+  }
+
+  .donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+  }
+
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .donut-legend .sw {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+  }
+
+  .modal-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+
+  .modal {
+    width: min(560px, 88%);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+  }
+
+  .modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .m-name {
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .m-meta {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .m-path {
+    color: var(--text-dim);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 340px;
+  }
+
+  .m-close {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 7px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+
+  .m-close:hover {
+    color: var(--text);
+  }
+
+  .m-total {
+    margin: 14px 0 6px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .m-total b {
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .m-trend {
+    display: flex;
+    align-items: stretch;
+    gap: 5px;
+    height: 110px;
+  }
+
+  .m-trend .t-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .m-trend .t-bar-wrap {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    background: var(--card2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .m-trend .t-fill {
+    width: 100%;
+    background: linear-gradient(180deg, #4f8cff, #3566cc);
+    border-radius: 4px 4px 0 0;
+    min-height: 2px;
+  }
+
+  .m-trend .t-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .m-hint {
+    margin-top: 12px;
+    color: var(--text-dim);
+    font-size: 11px;
   }
 
   .ctx-menu {
