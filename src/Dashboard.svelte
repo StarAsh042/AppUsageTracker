@@ -1,8 +1,6 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, localDateKey, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
-
-  const PALETTE = ['#4f8cff', '#3ecf8e', '#f5a623', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#94a3b8'];
+  import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
 
   let { focusDate = null }: { focusDate?: string | null } = $props();
 
@@ -16,14 +14,23 @@
   let lastLoad = 0;
   let settings = $state<TrackerSettings | null>(null);
   let detail = $state<AppDetail | null>(null);
+  let catColors = $state<Map<string, string>>(new Map());
 
   $effect(() => {
     api.getSettings().then((s) => (settings = s));
+    api.listCategories().then((cats) => {
+      catColors = new Map(cats.map((c, i) => [c, CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]]));
+    });
     const un = listen<TrackerSettings>('app://settings', (e) => (settings = e.payload));
     return () => {
       un.then((f) => f());
     };
   });
+
+  // 分类 → 颜色（按规则顺序稳定映射，排行/环形图/悬浮窗全局一致）
+  function catColor(name: string): string {
+    return catColors.get(name) ?? CATEGORY_PALETTE[0];
+  }
 
   // 效率评分：产出 = 1，中性 = 0.5，分心 = 0（未标记分类不参与）
   const scoreInfo = $derived.by(() => {
@@ -48,15 +55,6 @@
   });
 
   // 分类环形图
-  const CAT_COLORS = PALETTE;
-
-  // 分类 → 颜色（与环形图同序同色），排行 chip 复用
-  function catColor(name: string): string {
-    if (!data) return PALETTE[0];
-    const idx = data.categories.findIndex((c) => c.name === name);
-    return idx < 0 ? PALETTE[0] : PALETTE[idx % PALETTE.length];
-  }
-
   // 秒级走表：load 时记录基准，tick 时给当前应用加上进行中的区间
   let baseSeconds = new Map<string, number>();
   let baseTotal = 0;
@@ -70,7 +68,7 @@
       const frac = c.seconds / total;
       const dash = Math.max(frac * C - 1.5, 0.6);
       const seg = {
-        color: CAT_COLORS[i % CAT_COLORS.length],
+        color: catColor(c.name),
         dash: `${dash} ${C - dash}`,
         offset: C * (1 - acc) + C / 4,
         name: c.name,
@@ -382,7 +380,7 @@
               <div class="donut-legend">
                 {#each data.categories as c, i (c.name)}
                   <span class="legend-item">
-                    <span class="sw" style="background:{CAT_COLORS[i % CAT_COLORS.length]}"></span>
+                    <span class="sw" style="background:{catColor(c.name)}"></span>
                     {c.name}
                   </span>
                 {/each}

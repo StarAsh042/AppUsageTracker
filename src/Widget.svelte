@@ -5,6 +5,7 @@
     api,
     fmtDuration,
     stateLabel,
+    CATEGORY_PALETTE,
     WIDGET_ACCENTS,
     type LiveStatus,
     type TrackerSettings,
@@ -15,9 +16,16 @@
   let prefs = $state<WidgetPrefs | null>(null);
   let goalMinutes = $state(0);
   let hovering = $state(false);
+  let collapsedUi = $state(false);
   let edge = $state<'none' | 'left' | 'right' | 'top' | 'bottom'>('none');
+  let catColors = $state<Map<string, string>>(new Map());
+  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const collapsed = $derived(prefs?.edge_snap === true && !hovering);
+  function catColor(name: string): string {
+    return catColors.get(name) ?? '#aeb6c8';
+  }
+
+  const collapsed = $derived(prefs?.edge_snap === true && collapsedUi);
   const accent = $derived(WIDGET_ACCENTS[prefs?.accent ?? 'blue'] ?? '#4f8cff');
   const bgAlpha = $derived(((prefs?.opacity ?? 85) / 100).toFixed(2));
   const goalPct = $derived.by(() => {
@@ -29,6 +37,10 @@
     api.getSettings().then((s) => {
       prefs = s.widget;
       goalMinutes = s.daily_goal_minutes;
+      collapsedUi = false;
+    });
+    api.listCategories().then((cats) => {
+      catColors = new Map(cats.map((c, i) => [c, CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]]));
     });
     api.getLiveStatus().then((l) => (live = l));
     const un0 = listen<TrackerSettings>('app://settings', (e) => {
@@ -38,6 +50,7 @@
     const un2 = listen<WidgetPrefs>('widget://prefs', (e) => (prefs = e.payload));
     const un3 = listen<string>('widget://edge', (e) => {
       edge = (e.payload as typeof edge) ?? 'none';
+      collapsedUi = edge !== 'none';
     });
     // 禁用 WebView 默认右键菜单（右键由原生菜单接管）
     const prevent = (e: Event) => e.preventDefault();
@@ -58,12 +71,20 @@
 
   function onEnter() {
     hovering = true;
+    clearTimeout(leaveTimer);
+    collapsedUi = false;
     if (prefs?.edge_snap) api.setWidgetCollapsed(false);
   }
 
   function onLeave() {
     hovering = false;
-    if (prefs?.edge_snap) api.setWidgetCollapsed(true);
+    clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+      if (!hovering && prefs?.edge_snap) {
+        collapsedUi = true;
+        api.setWidgetCollapsed(true);
+      }
+    }, 260);
   }
 
   // 手动拖拽（4px 阈值后才启动系统拖动，双击才可被识别）
@@ -147,7 +168,7 @@
           <div class="top-row">
             <span class="rank">{i + 1}</span>
             <span class="name">{t.display_name}</span>
-            <span class="cat">{t.category}</span>
+            <span class="cat" style="color:{catColor(t.category)}">{t.category}</span>
             <span class="dur">{fmtDuration(t.active_seconds)}</span>
           </div>
         {/each}
@@ -318,7 +339,6 @@
   }
 
   .cat {
-    color: var(--ac, #4f8cff);
     font-size: 11px;
   }
 

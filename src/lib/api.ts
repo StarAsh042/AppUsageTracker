@@ -154,6 +154,17 @@ export const api = {
   listBackups: () => invoke<string[]>('list_backups'),
 };
 
+export const CATEGORY_PALETTE = [
+  '#4f8cff',
+  '#3ecf8e',
+  '#f5a623',
+  '#a78bfa',
+  '#22d3ee',
+  '#fb923c',
+  '#f472b6',
+  '#94a3b8',
+];
+
 export const WIDGET_ACCENTS: Record<string, string> = {
   blue: '#4f8cff',
   cyan: '#22d3ee',

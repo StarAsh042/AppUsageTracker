@@ -43,6 +43,8 @@ struct AppState {
     tray_icon: Mutex<Option<TrayIcon<tauri::Wry>>>,
     /// 悬浮窗展开态锚点（物理坐标），贴边收起/展开围绕它，避免循环漂移。
     widget_anchor: Mutex<(i32, i32)>,
+    /// 悬浮窗尺寸动画进行中（动画期间的 Moved 不回写锚点）。
+    widget_anim: AtomicBool,
 }
 
 struct TrayHandles {
@@ -203,6 +205,7 @@ pub fn run() {
                 tray: Mutex::new(None),
                 tray_icon: Mutex::new(None),
                 widget_anchor: Mutex::new((12, 12)),
+                widget_anim: AtomicBool::new(false),
             });
 
             let handle = app.handle().clone();
@@ -218,6 +221,18 @@ pub fn run() {
             if show_widget {
                 create_widget_window(&handle)?;
                 setup_widget_clamp(&handle);
+                if handle
+                    .state::<AppState>()
+                    .settings
+                    .lock()
+                    .unwrap()
+                    .widget
+                    .edge_snap
+                {
+                    if let Some(w) = handle.get_webview_window("widget") {
+                        collapse_widget(&handle, &w);
+                    }
+                }
             }
 
             purge_expired(&handle);
@@ -497,10 +512,25 @@ fn setup_widget_clamp(app: &AppHandle) {
             last_clamp.set(std::time::Instant::now());
             if let Some(w) = h.get_webview_window("widget") {
                 clamp_widget_pos(&w);
-                // 展开态下记录锚点（收起条 44px 宽不更新，避免贴边循环漂移）
+                // 展开态且非动画中才记录锚点（动画中途的位置会污染锚点）
                 if let (Ok(p), Ok(s)) = (w.outer_position(), w.outer_size()) {
-                    if s.width > 100 {
-                        *h.state::<AppState>().widget_anchor.lock().unwrap() = (p.x, p.y);
+                    let st = h.state::<AppState>();
+                    let (ew, eh) = {
+                        let settings = st.settings.lock().unwrap();
+                        let (lw, lh) = if settings.widget.compact {
+                            WIDGET_COMPACT
+                        } else {
+                            WIDGET_NORMAL
+                        };
+                        (lw, lh)
+                    };
+                    let sf = w.scale_factor().unwrap_or(1.0);
+                    let animating = st.widget_anim.load(Ordering::Relaxed);
+                    if !animating
+                        && (s.width as f64 - ew * sf).abs() < 8.0
+                        && (s.height as f64 - eh * sf).abs() < 8.0
+                    {
+                        *st.widget_anchor.lock().unwrap() = (p.x, p.y);
                     }
                 }
             }
@@ -553,21 +583,25 @@ fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
     } else {
         WIDGET_NORMAL
     };
-    // 以锚点（展开态位置）的中心判定最近边缘
-    let cx = anchor.0 + ((ew * sf) as i32) / 2;
-    let cy = anchor.1 + ((eh * sf) as i32) / 2;
     let mp = mon.position();
     let ms = mon.size();
-    let dl = cx - mp.x;
-    let dr = mp.x + ms.width as i32 - cx;
-    let dt = cy - mp.y;
-    let db = mp.y + ms.height as i32 - cy;
-    let min = dl.min(dr).min(dt).min(db);
-    let (edge, lw, lh) = if min == dl {
+    // 只有悬浮窗本身贴近屏幕边缘才收起（间隙按窗口矩形计算，逻辑像素）
+    let gap_l = anchor.0 as f64 / sf;
+    let gap_t = anchor.1 as f64 / sf;
+    let gap_r = (mp.x + ms.width as i32 - anchor.0 - (ew * sf) as i32) as f64 / sf;
+    let gap_b = (mp.y + ms.height as i32 - anchor.1 - (eh * sf) as i32) as f64 / sf;
+    let min = gap_l.min(gap_r).min(gap_t).min(gap_b);
+    if min > 8.0 {
+        return; // 不贴边：保持展开，不吸附
+    }
+    // 线沿边缘摆放的位置以锚点窗口中心为基准
+    let cx = anchor.0 + ((ew * sf) as i32) / 2;
+    let cy = anchor.1 + ((eh * sf) as i32) / 2;
+    let (edge, lw, lh) = if min == gap_l {
         ("left", WIDGET_LINE_V.0, WIDGET_LINE_V.1)
-    } else if min == dr {
+    } else if min == gap_r {
         ("right", WIDGET_LINE_V.0, WIDGET_LINE_V.1)
-    } else if min == dt {
+    } else if min == gap_t {
         ("top", WIDGET_LINE_H.0, WIDGET_LINE_H.1)
     } else {
         ("bottom", WIDGET_LINE_H.0, WIDGET_LINE_H.1)
@@ -598,46 +632,93 @@ fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
         win.outer_size().map(|s| s.height as f64 / sf).unwrap_or(eh),
     );
     let _ = app.emit("widget://edge", edge);
-    animate_window(win, cur, (x as f64, y as f64, lw, lh), 160);
+    animate_window(app, win, cur, (x as f64, y as f64, lw, lh), 160, None);
 }
 
 /// 展开悬浮窗（正常 / 缩略），回到锚点位置。
 fn expand_widget(app: &AppHandle, win: &WebviewWindow, compact: bool) {
-    let sf = win.scale_factor().unwrap_or(1.0);
+    let (sf, mon) = match (win.scale_factor(), win.current_monitor()) {
+        (Ok(f), Ok(Some(m))) => (f, m),
+        _ => return,
+    };
     let (w, h) = if compact {
         WIDGET_COMPACT
     } else {
         WIDGET_NORMAL
     };
-    let anchor = *app.state::<AppState>().widget_anchor.lock().unwrap();
+    let mp = mon.position();
+    let ms = mon.size();
+    let pos = win
+        .outer_position()
+        .unwrap_or(PhysicalPosition::new(mp.x, mp.y));
+    let size = win.outer_size().unwrap_or(tauri::PhysicalSize::new(4, 160));
+    // 线中心与线贴的是哪条边（间隙最小者）
+    let lcx = pos.x + size.width as i32 / 2;
+    let lcy = pos.y + size.height as i32 / 2;
+    let dl = pos.x - mp.x;
+    let dr = mp.x + ms.width as i32 - (pos.x + size.width as i32);
+    let dt = pos.y - mp.y;
+    let db = mp.y + ms.height as i32 - (pos.y + size.height as i32);
+    let min = dl.min(dr).min(dt).min(db);
+    let (ew, eh) = ((w * sf) as i32, (h * sf) as i32);
+    let (x, y) = if min == dl && dl <= 8 {
+        (
+            mp.x,
+            (lcy - eh / 2).clamp(mp.y, mp.y + ms.height as i32 - eh),
+        )
+    } else if min == dr && dr <= 8 {
+        (
+            mp.x + ms.width as i32 - ew,
+            (lcy - eh / 2).clamp(mp.y, mp.y + ms.height as i32 - eh),
+        )
+    } else if min == dt && dt <= 8 {
+        (
+            (lcx - ew / 2).clamp(mp.x, mp.x + ms.width as i32 - ew),
+            mp.y,
+        )
+    } else if min == db && db <= 8 {
+        (
+            (lcx - ew / 2).clamp(mp.x, mp.x + ms.width as i32 - ew),
+            mp.y + ms.height as i32 - eh,
+        )
+    } else {
+        // 线不在边缘（兜底）：回到锚点
+        let a = *app.state::<AppState>().widget_anchor.lock().unwrap();
+        (a.0, a.1)
+    };
     let cur = (
-        win.outer_position().map(|p| p.x).unwrap_or(anchor.0),
-        win.outer_position().map(|p| p.y).unwrap_or(anchor.1),
-        win.outer_size()
-            .map(|s| s.width as f64 / sf)
-            .unwrap_or(WIDGET_LINE_H.0),
-        win.outer_size()
-            .map(|s| s.height as f64 / sf)
-            .unwrap_or(WIDGET_LINE_H.1),
+        pos.x,
+        pos.y,
+        size.width as f64 / sf,
+        size.height as f64 / sf,
     );
     let _ = app.emit("widget://edge", "none");
-    animate_window(win, cur, (anchor.0 as f64, anchor.1 as f64, w, h), 160);
+    animate_window(app, win, cur, (x as f64, y as f64, w, h), 160, Some((x, y)));
 }
 
 /// 窗口尺寸/位置动画（smoothstep，10 步；新动画会取消旧动画）。
 #[allow(clippy::too_many_arguments)]
 fn animate_window(
+    app: &AppHandle,
     win: &WebviewWindow,
     from: (i32, i32, f64, f64),
     to: (f64, f64, f64, f64),
     ms: u64,
+    end_anchor: Option<(i32, i32)>,
 ) {
     let gen = ANIM_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let win = win.clone();
+    let app = app.clone();
     let steps = 10u64;
+    app.state::<AppState>()
+        .widget_anim
+        .store(true, Ordering::Relaxed);
     std::thread::spawn(move || {
         for i in 1..=steps {
             if ANIM_GEN.load(Ordering::SeqCst) != gen {
+                app.state::<AppState>()
+                    .widget_anim
+                    .store(false, Ordering::Relaxed);
                 return;
             }
             let t = i as f64 / steps as f64;
@@ -655,7 +736,13 @@ fn animate_window(
         if ANIM_GEN.load(Ordering::SeqCst) == gen {
             let _ = win.set_size(tauri::LogicalSize::new(to.2, to.3));
             let _ = win.set_position(PhysicalPosition::new(to.0 as i32, to.1 as i32));
+            if let Some((ax, ay)) = end_anchor {
+                *app.state::<AppState>().widget_anchor.lock().unwrap() = (ax, ay);
+            }
         }
+        app.state::<AppState>()
+            .widget_anim
+            .store(false, Ordering::Relaxed);
     });
 }
 
@@ -977,10 +1064,16 @@ fn live_status(app: &AppHandle) -> LiveStatus {
     };
     let mut top: Vec<(String, String, f64)> = Vec::new();
     let mut today_total = 0.0;
+    let cur_key = current.as_ref().map(|c| c.app_key.clone());
     for d in agg.daily.values().filter(|d| d.usage_date == today) {
-        today_total += d.active_seconds;
+        // 当前前台应用叠加进行中的区间秒数，排行与总量实时走表
+        let mut secs = d.active_seconds;
+        if cur_key.as_deref() == Some(d.app_key.as_str()) {
+            secs += current_seconds;
+        }
+        today_total += secs;
         let cat = resolver.resolve(&d.display_name, &d.process_name, &d.exe_path);
-        top.push((d.display_name.clone(), cat, d.active_seconds));
+        top.push((d.display_name.clone(), cat, secs));
     }
     top.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let top_apps = top
