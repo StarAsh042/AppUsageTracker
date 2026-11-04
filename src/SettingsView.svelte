@@ -262,7 +262,7 @@
 
       <section class="panel">
         <h3>分类规则</h3>
-        <p class="hint">关键词以 | 分隔，匹配应用名 / 进程名 / 路径，不区分大小写；顺序即优先级。</p>
+        <p class="hint">关键词以 | 分隔，匹配应用名 / 进程名 / 路径，不区分大小写；顺序即优先级。分类名支持层级：「开发/前端」会汇总进「开发」。</p>
         <div class="rules-editor">
           {#each rules as r, i (`${r.name}-${i}`)}
             <div class="rule-row">

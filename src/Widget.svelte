@@ -22,7 +22,7 @@
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
 
   function catColor(name: string): string {
-    return catColors.get(name) ?? '#aeb6c8';
+    return catColors.get(name.split('/')[0].trim()) ?? '#aeb6c8';
   }
 
   const collapsed = $derived(prefs?.edge_snap === true && collapsedUi);
@@ -40,7 +40,12 @@
       collapsedUi = false;
     });
     api.listCategories().then((cats) => {
-      catColors = new Map(cats.map((c, i) => [c, CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]]));
+      const m = new Map<string, string>();
+      for (const c of cats) {
+        const top = c.split('/')[0].trim();
+        if (top && !m.has(top)) m.set(top, CATEGORY_PALETTE[m.size % CATEGORY_PALETTE.length]);
+      }
+      catColors = m;
     });
     api.getLiveStatus().then((l) => (live = l));
     const un0 = listen<TrackerSettings>('app://settings', (e) => {

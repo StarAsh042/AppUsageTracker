@@ -24,7 +24,12 @@
   $effect(() => {
     api.getSettings().then((s) => (settings = s));
     api.listCategories().then((cats) => {
-      catColors = new Map(cats.map((c, i) => [c, CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]]));
+      const m = new Map<string, string>();
+      for (const c of cats) {
+        const top = c.split('/')[0].trim();
+        if (top && !m.has(top)) m.set(top, CATEGORY_PALETTE[m.size % CATEGORY_PALETTE.length]);
+      }
+      catColors = m;
     });
     api.getSettings().then((s) => {
       aliases = new Map(Object.entries(s.app_display_names ?? {}));
@@ -38,9 +43,13 @@
     };
   });
 
-  // 分类 → 颜色（按规则顺序稳定映射，排行/环形图/悬浮窗全局一致）
+  // 分类 → 颜色（按顶层分类稳定映射，排行/环形图/悬浮窗全局一致）
+  function catTop(name: string): string {
+    return name.split('/')[0].trim();
+  }
+
   function catColor(name: string): string {
-    return catColors.get(name) ?? CATEGORY_PALETTE[0];
+    return catColors.get(catTop(name)) ?? CATEGORY_PALETTE[0];
   }
 
   // 效率评分：产出 = 1，中性 = 0.5，分心 = 0（未标记分类不参与）
@@ -70,12 +79,13 @@
   let baseSeconds = new Map<string, number>();
   let baseTotal = 0;
   const donut = $derived.by(() => {
-    if (!data || !data.categories.length) return null;
-    const total = data.categories.reduce((s, c) => s + c.seconds, 0) || 1;
+    if (!catTree.length) return null;
+    const total = catTree.reduce((s, c) => s + c.seconds, 0) || 1;
     const R = 42;
     const C = 2 * Math.PI * R;
     let acc = 0;
-    const segs = data.categories.map((c, i) => {
+    const tops = catTree.filter((c) => c.depth === 0);
+    const segs = tops.map((c) => {
       const frac = c.seconds / total;
       const dash = Math.max(frac * C - 1.5, 0.6);
       const seg = {
@@ -91,6 +101,34 @@
   });
 
   let aliasDraft = $state('');
+
+  // 分类树：顶层（含子分类汇总）+ 子分类行
+  const catTree = $derived.by(() => {
+    if (!data) return [];
+    const tops = new Map<string, number>();
+    for (const c of data.categories) {
+      const top = c.name.split('/')[0].trim();
+      tops.set(top, (tops.get(top) ?? 0) + c.seconds);
+    }
+    const rows: { name: string; seconds: number; depth: number; percent: number }[] = [];
+    const maxTop = Math.max(1, ...tops.values());
+    const total = data.total_active_seconds || 1;
+    for (const [top, secs] of [...tops.entries()].sort((a, b) => b[1] - a[1])) {
+      rows.push({ name: top, seconds: secs, depth: 0, percent: (secs / maxTop) * 100 });
+      const kids = data.categories
+        .filter((c) => c.name.startsWith(top + '/'))
+        .sort((a, b) => b.seconds - a.seconds);
+      for (const k of kids) {
+        rows.push({
+          name: k.name,
+          seconds: k.seconds,
+          depth: k.name.split('/').length - 1,
+          percent: (k.seconds / total) * 100,
+        });
+      }
+    }
+    return rows;
+  });
 
   async function openDetail(appKey: string) {
     detail = await api.getAppDetail(appKey, from, to);
@@ -389,7 +427,7 @@
                 {/each}
               </svg>
               <div class="donut-legend">
-                {#each data.categories as c, i (c.name)}
+                {#each catTree.filter((c) => c.depth === 0) as c (c.name)}
                   <span class="legend-item">
                     <span class="sw" style="background:{catColor(c.name)}"></span>
                     {c.name}
@@ -399,9 +437,11 @@
             </div>
           {/if}
           <div class="cats">
-            {#each data.categories as c (c.name)}
-              <div class="cat-row">
-                <span class="cat-name">{c.name}</span>
+            {#each catTree as c (c.name)}
+              <div class="cat-row" class:child={c.depth > 0}>
+                <span class="cat-name" class:dim={c.depth > 0}>
+                  {c.depth > 0 ? '└ ' : ''}{c.name}
+                </span>
                 <span class="cat-bar"><span class="fill" style="width:{c.percent}%"></span></span>
                 <span class="cat-dur">{fmtDuration(c.seconds)}</span>
               </div>
@@ -738,6 +778,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cat-row.child {
+    padding-left: 10px;
+  }
+
+  .cat-name.dim {
+    color: var(--text-dim);
+    font-size: 12px;
   }
 
   .cat-bar {
