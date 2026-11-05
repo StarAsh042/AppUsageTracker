@@ -194,11 +194,11 @@
             title="{seg.display_name} {seg.start_time.slice(11, 16)}–{seg.end_time.slice(11, 16)}（{fmtDuration(seg.duration_seconds)}）"
           ></div>
         {/each}
-        {#each hourTicks as t, i (t)}
-          {@const h = Math.floor(t)}
-          {@const m = Math.round((t - h) * 60)}
+        {#each hourTicks as t (t)}
+          {@const hh = Math.floor(t / 3600)}
+          {@const mm = Math.round((t - hh * 3600) / 60)}
           <span class="tick" style="left:{((t - view[0]) / (view[1] - view[0])) * 100}%">
-            {i % 1 === 0 ? (m === 0 ? h : `${h}:${String(m).padStart(2, '0')}`) : ''}
+            {mm === 0 ? `${hh}:00` : `${hh}:${String(mm).padStart(2, '0')}`}
           </span>
         {/each}
       </div>

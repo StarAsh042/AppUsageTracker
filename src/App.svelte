@@ -3,10 +3,11 @@
   import Dashboard from './Dashboard.svelte';
   import TimelineView from './TimelineView.svelte';
   import CalendarView from './CalendarView.svelte';
+  import CompareView from './CompareView.svelte';
   import SettingsView from './SettingsView.svelte';
   import { api, fmtDuration, stateLabel, type LiveStatus } from './lib/api';
 
-  let view = $state<'dashboard' | 'timeline' | 'calendar' | 'settings'>('dashboard');
+  let view = $state<'dashboard' | 'timeline' | 'calendar' | 'compare' | 'settings'>('dashboard');
   let live = $state<LiveStatus | null>(null);
   let version = $state('');
   let paused = $state(false);
@@ -75,6 +76,7 @@
       <button class:active={view === 'dashboard'} onclick={() => (view = 'dashboard')}>仪表盘</button>
       <button class:active={view === 'timeline'} onclick={() => (view = 'timeline')}>时间线</button>
       <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>日历</button>
+      <button class:active={view === 'compare'} onclick={() => (view = 'compare')}>对比</button>
       <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>设置</button>
       <button onclick={togglePause}>{paused ? '恢复监控' : '暂停监控'}</button>
     </nav>
@@ -94,6 +96,8 @@
       <TimelineView initialDate={focusDate ?? undefined} />
     {:else if view === 'calendar'}
       <CalendarView onPick={(d) => onPickDate(d)} />
+    {:else if view === 'compare'}
+      <CompareView />
     {:else}
       <SettingsView />
     {/if}
