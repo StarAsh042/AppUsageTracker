@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-06
+
+### 重写
+- 全量重写为 Rust 核心 + Tauri 2 壳 + Svelte 5 前端（独立 exe 约 11 MB，旧 C#/WPF 实现保留在 main/dev 历史）
+- tracker-core 纯逻辑库：聚合状态机（空闲/锁屏/睡眠/暂停、跨午夜切分），11 个单元测试
+
+### Added
+- 仪表盘：今天/昨天/本周/本月/自定义区间，汇总卡（总活跃+日均+环比、每日目标进度）、应用排行、分类占比、每日趋势
+- 时间线：24 小时色带（滚轮缩放/拖拽平移/明细表+搜索）、状态区间（统计中/空闲/锁定/挂起）
+- 日历热力图（GitHub contribution 风格，点选跳转）
+- 对比视图：双时段应用/分类并排对比（A/B 交换、快捷预设、变化 %）
+- 分类树：分类名支持「开发/前端」层级，顶层汇总环形图 + 树形占比
+- 应用详情下钻 + 应用改名别名（读取层全局生效）
+- 桌面悬浮窗：Win11 Mica 常显磨砂 + DWM 圆角，缩略/贴边收起成细线（动画）、置顶/锁定/透明度/配色右键菜单、双击开关主界面
+- 托盘：实时 tooltip、左键主界面、右键菜单（悬浮窗✓/暂停✓/设置/退出）
+- 全局热键 Ctrl+Alt+D / Ctrl+Alt+W；休息提醒；分类限额系统通知
+- 本地 HTTP API（127.0.0.1:59598：/api/live|dashboard|timeline|settings|version）
+- JSON 全量备份导出/恢复；数据保留策略；CSV 导出；开机自启；单实例
+- 深色/浅色主题；扫描桌面/开始菜单快捷方式补分类
+- GitHub Actions：CI（frontend/rust/tauri-build/cross-check/聚合）+ Release（tag 触发、版本校验、SHA256SUMS）
+
+### Fixed
+- 统计程序自身不再被统计（路径 + 进程名双保险，历史行自动清理）
+- 悬浮窗圆角白边（圆角交 DWM 裁切）、失焦玻璃消失（改 Mica 常显）、置顶失效（背板后重设 topmost）
+- 贴边收起：不贴边不吸附、锚点不漂移、原地展开 + 去抖防震荡、四边细线动画
+
 ## [0.2.0] - 2026-11-01
 
 ### Added
