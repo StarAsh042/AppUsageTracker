@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { api, type TrackerSettings, type CategoryRule, type ScannedApp } from './lib/api';
+  import {
+    api,
+    type TrackerSettings,
+    type CategoryRule,
+    type ScannedApp,
+    type UpdateInfo,
+  } from './lib/api';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -7,6 +13,11 @@
   let status = $state('');
   let saving = $state(false);
   let backups = $state<string[]>([]);
+  let appVersion = $state('');
+  let updateInfo = $state<UpdateInfo | null>(null);
+  let updateStatus = $state('');
+  let updateChecking = $state(false);
+  let updateInstalling = $state(false);
   let scanned = $state<ScannedApp[] | null>(null);
   let scanning = $state(false);
 
@@ -55,6 +66,7 @@
       rules = st.category_rules.map((r) => ({ name: r.name, keywords: r.keywords.join('|') }));
       excludedText = st.excluded_app_keys.join('\n');
       backups = await api.listBackups();
+      appVersion = await api.getVersion();
     })();
   });
 
@@ -133,6 +145,34 @@
     }
   }
 
+  async function checkUpdateNow() {
+    updateChecking = true;
+    updateInfo = null;
+    updateStatus = '';
+    try {
+      const info = await api.checkUpdate();
+      if (info) {
+        updateInfo = info;
+      } else {
+        updateStatus = '当前已是最新版本';
+      }
+    } catch (e) {
+      updateStatus = `检查失败: ${e}`;
+    } finally {
+      updateChecking = false;
+    }
+  }
+
+  async function installNow() {
+    updateInstalling = true;
+    try {
+      await api.installUpdate();
+    } catch (e) {
+      updateStatus = `更新失败: ${e}`;
+      updateInstalling = false;
+    }
+  }
+
   async function clearData() {
     if (confirm('确定清空全部统计数据？此操作不可恢复。')) {
       await api.clearAllData();
@@ -200,8 +240,21 @@
           </label>
           <label class="check-row">
             <input type="checkbox" bind:checked={s.hotkeys_enabled} />
-            <span>全局热键（Ctrl+Alt+D 主界面 / Ctrl+Alt+W 悬浮窗）</span>
+            <span>启用全局热键</span>
           </label>
+          {#if s.hotkeys_enabled}
+            <div class="grid2" style="margin-top:8px">
+              <label>
+                <span>主界面热键</span>
+                <input type="text" bind:value={s.hotkey_main} spellcheck="false" />
+              </label>
+              <label>
+                <span>悬浮窗热键</span>
+                <input type="text" bind:value={s.hotkey_widget} spellcheck="false" />
+              </label>
+            </div>
+            <p class="hint" style="margin:8px 0 0">组合写法如 Ctrl+Alt+D / Ctrl+Shift+P，保存时校验有效性。</p>
+          {/if}
           <label class="check-row">
             <input type="checkbox" bind:checked={s.api_enabled} />
             <span>本地 HTTP API（127.0.0.1:{s.api_port}，供第三方工具读取统计）</span>
@@ -306,6 +359,27 @@
             {/each}
           </div>
         {/if}
+      </section>
+
+      <section class="panel">
+        <h3>更新</h3>
+        <div class="row-actions">
+          <button class="ghost" disabled={updateChecking} onclick={checkUpdateNow}>
+            {updateChecking ? '检查中…' : '检查更新'}
+          </button>
+          {#if updateInfo}
+            <span class="hint">
+              发现新版本 v{updateInfo.version}
+              {#if updateInfo.notes}· {updateInfo.notes}{/if}
+            </span>
+            <button class="primary" disabled={updateInstalling} onclick={installNow}>
+              {updateInstalling ? '下载安装中…' : '立即更新（完成后自动重启）'}
+            </button>
+          {:else if updateStatus}
+            <span class="hint">{updateStatus}</span>
+          {/if}
+        </div>
+        <p class="hint">当前版本 v{appVersion}；更新包经数字签名校验，安装后应用自动重启。</p>
       </section>
 
       <section class="panel">

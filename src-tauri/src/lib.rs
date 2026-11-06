@@ -119,14 +119,21 @@ pub fn run() {
             show_main(app);
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    let main_hk: Shortcut = "Ctrl+Alt+D".parse().expect("valid shortcut");
-                    let widget_hk: Shortcut = "Ctrl+Alt+W".parse().expect("valid shortcut");
+                    // 每次触发时读当前设置（支持自定义组合）
+                    let (main_hk_s, widget_hk_s) = {
+                        let st = app.state::<AppState>();
+                        let s = st.settings.lock().unwrap();
+                        (s.hotkey_main.clone(), s.hotkey_widget.clone())
+                    };
+                    let main_hk: Shortcut = main_hk_s.parse().expect("valid shortcut");
+                    let widget_hk: Shortcut = widget_hk_s.parse().expect("valid shortcut");
                     if shortcut == &main_hk {
                         toggle_main(app);
                     } else if shortcut == &widget_hk {
@@ -165,6 +172,8 @@ pub fn run() {
             get_app_detail,
             exclude_app,
             set_app_display_name,
+            check_update,
+            install_update,
             scan_installed_apps,
             export_backup_json,
             import_backup_json,
@@ -337,22 +346,73 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 /// 全局热键注册（设置开关）。
 fn apply_hotkeys(app: &AppHandle) {
-    let enabled = {
+    let (enabled, main_hk_s, widget_hk_s) = {
         let st = app.state::<AppState>();
-        let v = st.settings.lock().unwrap().hotkeys_enabled;
-        v
+        let s = st.settings.lock().unwrap();
+        (
+            s.hotkeys_enabled,
+            s.hotkey_main.clone(),
+            s.hotkey_widget.clone(),
+        )
     };
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
     if !enabled {
         return;
     }
-    if let Ok(hk) = "Ctrl+Alt+D".parse::<Shortcut>() {
+    if let Ok(hk) = main_hk_s.parse::<Shortcut>() {
         let _ = gs.register(hk);
     }
-    if let Ok(hk) = "Ctrl+Alt+W".parse::<Shortcut>() {
+    if let Ok(hk) = widget_hk_s.parse::<Shortcut>() {
         let _ = gs.register(hk);
     }
+}
+
+// ---------- 应用内更新 ----------
+
+use tauri_plugin_updater::UpdaterExt;
+
+#[derive(Serialize, Clone)]
+struct UpdateInfo {
+    version: String,
+    notes: String,
+    date: String,
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let update = app
+        .updater()
+        .map_err(|e| format!("初始化更新器失败: {e}"))?
+        .check()
+        .await
+        .map_err(|e| format!("检查更新失败: {e}"))?;
+    Ok(update.map(|u| UpdateInfo {
+        version: u.version.clone(),
+        notes: u.body.clone().unwrap_or_default(),
+        date: u
+            .date
+            .map(|d| d.to_string())
+            .unwrap_or_default(),
+    }))
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|e| format!("初始化更新器失败: {e}"))?
+        .check()
+        .await
+        .map_err(|e| format!("检查更新失败: {e}"))?
+        .ok_or("当前已是最新版本")?;
+    let version = update.version.clone();
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| format!("安装更新失败: {e}"))?;
+    println!("已更新到 {version}，应用即将重启");
+    Ok(())
 }
 
 /// 悬浮窗双击切换主界面（前端调用）。
@@ -1581,11 +1641,21 @@ fn get_settings(state: State<AppState>) -> TrackerSettings {
 }
 
 #[tauri::command]
-fn save_settings(
-    app: AppHandle,
-    state: State<AppState>,
-    settings: TrackerSettings,
-) -> Result<(), String> {
+fn save_settings(app: AppHandle, state: State<AppState>, settings: TrackerSettings) -> Result<(), String> {
+    // 热键组合合法性校验（解析失败或重复即拒绝）
+    if settings.hotkeys_enabled {
+        let main_hk: Shortcut = settings
+            .hotkey_main
+            .parse()
+            .map_err(|_| format!("主界面热键无效: {}", settings.hotkey_main))?;
+        let widget_hk: Shortcut = settings
+            .hotkey_widget
+            .parse()
+            .map_err(|_| format!("悬浮窗热键无效: {}", settings.hotkey_widget))?;
+        if main_hk == widget_hk {
+            return Err("主界面与悬浮窗热键不能相同".into());
+        }
+    }
     let old_dir = state.settings.lock().unwrap().data_directory.clone();
     let dir_changed = old_dir != settings.data_directory;
 

@@ -49,8 +49,11 @@ jobs:
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a
       - name: Install frontend dependencies
         run: npm ci
-      - name: Build bundle
+      - name: Build bundle (sign updater artifacts)
         run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - name: Stage artifacts (version + platform + commit)
         shell: bash
         run: |
@@ -59,13 +62,31 @@ jobs:
           STAGE="AppUsageTracker_${VERSION}_${{ matrix.os }}_${SHORT_SHA}"
           mkdir -p "staging/$STAGE"
           found=0
-          for f in target/release/bundle/nsis/*.exe \
-                   target/release/bundle/msi/*.msi; do
+          for f in target/release/bundle/nsis/*-"${VERSION}"-x64-setup.exe \
+                   target/release/bundle/msi/*-"${VERSION}"-x64.msi; do
             if [ -f "$f" ]; then cp "$f" "staging/$STAGE/"; found=1; fi
           done
           if [ "$found" != "1" ]; then
             echo "::error::no bundle artifacts found"
             exit 1
+          fi
+          # 更新器产物（安装包本体 + .sig 签名）+ latest.json（应用内更新清单）
+          shopt -s nullglob
+          for sigf in target/release/bundle/nsis/*-"${VERSION}"-x64-setup.exe.sig; do
+            cp "$sigf" "staging/$STAGE/"
+          done
+          shopt -u nullglob
+          EXE=$(ls target/release/bundle/nsis/*-"${VERSION}"-x64-setup.exe | head -1)
+          if [ -n "$EXE" ] && [ -f "${EXE}.sig" ]; then
+            UPD_URL="https://github.com/StarAsh042/AppUsageTracker/releases/download/v${VERSION}/$(basename "$EXE")"
+            jq -n --arg v "$VERSION" \
+                  --arg sig "$(cat "${EXE}.sig")" \
+                  --arg url "$UPD_URL" \
+                  --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  '{version: $v, notes: ("AppUsageTracker " + $v), pub_date: $date, platforms: { "windows-x86_64": { signature: $sig, url: $url } } }' \
+              > "staging/$STAGE/latest.json"
+          else
+            echo "::warning::no updater signature; latest.json skipped"
           fi
           cd "staging/$STAGE"
           sha256sum * > SHA256SUMS

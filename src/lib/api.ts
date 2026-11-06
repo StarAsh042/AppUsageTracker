@@ -54,6 +54,8 @@ export interface TrackerSettings {
   category_rules: CategoryRule[];
   daily_goal_minutes: number;
   hotkeys_enabled: boolean;
+  hotkey_main: string;
+  hotkey_widget: string;
   api_enabled: boolean;
   api_port: number;
   category_nature: Record<string, string>;
@@ -153,11 +155,19 @@ export const api = {
   excludeApp: (appKey: string) => invoke<void>('exclude_app', { appKey }),
   setAppDisplayName: (appKey: string, name: string) =>
     invoke<void>('set_app_display_name', { appKey, name }),
+  checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
+  installUpdate: () => invoke<void>('install_update'),
   updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),
   exportBackupJson: () => invoke<string>('export_backup_json'),
   importBackupJson: () => invoke<string>('import_backup_json'),
   listBackups: () => invoke<string[]>('list_backups'),
 };
+
+export interface UpdateInfo {
+  version: string;
+  notes: string;
+  date: string;
+}
 
 export const CATEGORY_PALETTE = [
   '#4f8cff',
