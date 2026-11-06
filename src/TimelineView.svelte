@@ -7,6 +7,7 @@
     CATEGORY_PALETTE,
     type TimelineData,
     type TopTitle,
+    type TopWeb,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
 
@@ -17,6 +18,7 @@
   let date = $state(initialDate);
   let data = $state<TimelineData | null>(null);
   let titles = $state<TopTitle[]>([]);
+  let web = $state<TopWeb[]>([]);
   let loading = $state(false);
   let hover = $state<{ name: string; detail: string; x: number } | null>(null);
   // 可视窗口（秒 0-86400），滚轮缩放、拖动平移
@@ -34,9 +36,10 @@
     loading = true;
     view = [0, 86400];
     try {
-      [data, titles] = await Promise.all([
+      [data, titles, web] = await Promise.all([
         api.getTimeline(date),
         api.getTopTitles(date, date, 15),
+        api.getTopWeb(date, date, 10),
       ]);
     } finally {
       loading = false;
@@ -275,6 +278,23 @@
         {/each}
       </div>
     </div>
+    {#if web.length}
+      <div class="panel">
+        <div class="band-title">{t('Top 网页')}（{t('该日累计')}）</div>
+        <div class="rows">
+          {#each web as wv, i (wv.domain + wv.title + i)}
+            <div class="trow">
+              <span class="rk">{i + 1}</span>
+              <span class="tmain">
+                <span class="ttl">{wv.title || wv.domain}</span>
+                <span class="tapp">{wv.domain}</span>
+              </span>
+              <span class="tdur">{fmtDuration(wv.seconds)}</span>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
     {#if titles.length}
       <div class="panel">
         <div class="band-title">Top 标题（该日累计）</div>

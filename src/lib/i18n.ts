@@ -177,4 +177,15 @@ export const en: Record<string, string> = {
   目标: 'goal',
 };
 
+// 0.5.0 网页统计 + 隐私区
+const en05: Record<string, string> = {
+  网页浏览统计: 'Web browsing stats',
+  需安装浏览器扩展: 'requires the browser extension',
+  记录网页浏览: 'Record web browsing',
+  'Top 网页': 'Top Websites',
+  网页: 'Web',
+  域名: 'Domain',
+};
+Object.assign(en, en05);
+
 export const lang = writable<Lang>('zh');

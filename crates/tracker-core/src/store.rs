@@ -36,7 +36,14 @@ impl SqliteStore {
                  StartTime TEXT NOT NULL, EndTime TEXT NOT NULL, DurationSeconds REAL NOT NULL
              );
              CREATE INDEX IF NOT EXISTS IX_Titles_Start ON TitleIntervals(StartTime);
-             CREATE INDEX IF NOT EXISTS IX_Titles_App ON TitleIntervals(AppKey, Title);",
+             CREATE INDEX IF NOT EXISTS IX_Titles_App ON TitleIntervals(AppKey, Title);
+             CREATE TABLE IF NOT EXISTS WebIntervals (
+                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 Domain TEXT NOT NULL, Title TEXT NOT NULL,
+                 StartTime TEXT NOT NULL, EndTime TEXT NOT NULL, DurationSeconds REAL NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS IX_Web_Start ON WebIntervals(StartTime);
+             CREATE INDEX IF NOT EXISTS IX_Web_Domain ON WebIntervals(Domain, Title);",
         )?;
         Ok(Self { conn })
     }
@@ -221,6 +228,42 @@ impl SqliteStore {
         rows.collect()
     }
 
+    pub fn save_web_intervals(&self, rows: &[WebInterval]) -> Result<(), rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "INSERT INTO WebIntervals (Domain, Title, StartTime, EndTime, DurationSeconds)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        for r in rows {
+            stmt.execute(rusqlite::params![r.domain, r.title, r.start_time, r.end_time, r.duration_seconds])?;
+        }
+        Ok(())
+    }
+
+    /// Top 网页：按 (域名, 标题) 聚合时长。
+    pub fn top_web(
+        &self,
+        from: &str,
+        to: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, String, f64)>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT Domain, Title, SUM(DurationSeconds)
+             FROM WebIntervals
+             WHERE substr(StartTime, 1, 10) >= ?1 AND substr(StartTime, 1, 10) <= ?2
+             GROUP BY Domain, Title
+             ORDER BY SUM(DurationSeconds) DESC
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from, to, limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
     /// 删除某应用的全部记录（用于剔除统计程序自身的历史行）。
     pub fn delete_app_rows(&self, app_key: &str) -> Result<(), rusqlite::Error> {
         self.conn.execute_batch(&format!(
@@ -236,6 +279,7 @@ impl SqliteStore {
             "DELETE FROM ForegroundIntervals WHERE substr(StartTime, 1, 10) < '{date}';
              DELETE FROM StateIntervals WHERE substr(StartTime, 1, 10) < '{date}';
              DELETE FROM TitleIntervals WHERE substr(StartTime, 1, 10) < '{date}';
+             DELETE FROM WebIntervals WHERE substr(StartTime, 1, 10) < '{date}';
              DELETE FROM DailyAppUsage WHERE UsageDate < '{date}';"
         ))
     }
@@ -243,7 +287,7 @@ impl SqliteStore {
     pub fn clear_all(&self) -> Result<(), rusqlite::Error> {
         self.conn.execute_batch(
             "DELETE FROM ForegroundIntervals; DELETE FROM StateIntervals;
-             DELETE FROM TitleIntervals; DELETE FROM DailyAppUsage;",
+             DELETE FROM TitleIntervals; DELETE FROM WebIntervals; DELETE FROM DailyAppUsage;",
         )
     }
 }

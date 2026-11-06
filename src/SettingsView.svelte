@@ -295,6 +295,10 @@
           <input type="checkbox" bind:checked={s.record_window_titles} />
           <span>{t('记录前台窗口标题')}</span>
         </label>
+        <label class="check-row">
+          <input type="checkbox" bind:checked={s.record_web} />
+          <span>{t('网页浏览统计')}（{t('需安装浏览器扩展')}）</span>
+        </label>
         {#if s.record_window_titles}
           <p class="hint">{t('排除规则')}——{t('每行一条子串')}。</p>
           <textarea

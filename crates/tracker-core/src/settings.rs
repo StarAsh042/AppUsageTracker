@@ -38,6 +38,9 @@ pub struct TrackerSettings {
     /// 窗口标题记录（隐私敏感，默认关闭；打开后 TitleIntervals 才有数据）。
     #[serde(default)]
     pub record_window_titles: bool,
+    /// 浏览器网页统计（隐私敏感，默认关闭；打开后浏览器扩展的心跳才被接受）。
+    #[serde(default)]
+    pub record_web: bool,
     /// 标题排除规则（子串匹配，不区分大小写；命中即不记录）。
     #[serde(default)]
     pub title_exclude_patterns: Vec<String>,
@@ -128,6 +131,7 @@ impl Default for TrackerSettings {
             category_nature: Default::default(),
             app_display_names: Default::default(),
             record_window_titles: false,
+            record_web: false,
             title_exclude_patterns: Default::default(),
             language: "system".to_string(),
             schema_version: 1,

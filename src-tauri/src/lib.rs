@@ -21,7 +21,7 @@ use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
 use tracker_core::limits::categories_to_notify;
 use tracker_core::models::{
-    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TitleInterval, TrackingState,
+    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TitleInterval, TrackingState, WebInterval,
 };
 use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
@@ -50,6 +50,10 @@ struct AppState {
     widget_anim: AtomicBool,
     /// 本地 API 上次生效配置（enabled, port）。
     api_last: Mutex<Option<(bool, u16)>>,
+    /// 浏览器心跳当前打开段（domain, title, start）。
+    web_open: Mutex<Option<(String, String, chrono::DateTime<Local>)>>,
+    /// 浏览器心跳待写入明细。
+    web_pending: Mutex<Vec<WebInterval>>,
 }
 
 struct TrayHandles {
@@ -180,6 +184,8 @@ pub fn run() {
             check_update,
             install_update,
             get_top_titles,
+            get_top_titles,
+            get_top_web,
             export_weekly_report,
             scan_installed_apps,
             export_backup_json,
@@ -226,6 +232,8 @@ pub fn run() {
                 widget_anchor: Mutex::new((12, 12)),
                 widget_anim: AtomicBool::new(false),
                 api_last: Mutex::new(None),
+                web_open: Mutex::new(None),
+                web_pending: Mutex::new(Vec::new()),
             });
 
             let handle = app.handle().clone();
@@ -1010,6 +1018,35 @@ fn spawn_monitor(app: AppHandle) {
                 }
             }
 
+            // 窗口标题记录（隐私开关；仅在活跃态记录，排除模式命中即丢弃）
+            {
+                let (record, patterns) = {
+                    let s = state.settings.lock().unwrap();
+                    (s.record_window_titles, s.title_exclude_patterns.clone())
+                };
+                if record {
+                    let (app_key, title) = {
+                        let agg = state.aggregator.lock().unwrap();
+                        let key = agg.current_app().map(|c| c.app_key.clone());
+                        (key, tracker_core::win32::get_foreground_title())
+                    };
+                    let excluded = title.as_deref().map(|t| {
+                        let tl = t.to_lowercase();
+                        patterns
+                            .iter()
+                            .any(|p| !p.is_empty() && tl.contains(&p.to_lowercase()))
+                    });
+                    let feed = match (&app_key, &title) {
+                        (Some(k), Some(t)) if !excluded.unwrap_or(false) => {
+                            Some((k.as_str(), t.as_str()))
+                        }
+                        _ => None,
+                    };
+                    let mut agg = state.aggregator.lock().unwrap();
+                    agg.on_title_tick(feed, now);
+                }
+            }
+
             // 休息提醒：连续活跃累计，空闲即视为已休息
             let rest_minutes = state.settings.lock().unwrap().rest_reminder_minutes;
             {
@@ -1081,11 +1118,37 @@ fn flush_state(app: &AppHandle) {
         let agg = state.aggregator.lock().unwrap();
         agg.daily.values().cloned().collect()
     };
-    let (intervals, state_intervals): (Vec<ForegroundInterval>, Vec<StateInterval>) = {
+    let (intervals, state_intervals, title_intervals, web_intervals): (
+        Vec<ForegroundInterval>,
+        Vec<StateInterval>,
+        Vec<TitleInterval>,
+        Vec<WebInterval>,
+    ) = {
         let mut agg = state.aggregator.lock().unwrap();
         (
             std::mem::take(&mut agg.pending_intervals),
             std::mem::take(&mut agg.pending_state_intervals),
+            std::mem::take(&mut agg.pending_title_intervals),
+            {
+                // 网页心跳：闭合打开段（同键续记）+ 取待写明细
+                let now2 = Local::now();
+                let mut web_open = state.web_open.lock().unwrap();
+                let mut web_pending = state.web_pending.lock().unwrap();
+                if let Some((d, t, start)) = web_open.take() {
+                    let dur = (now2 - start).num_milliseconds() as f64 / 1000.0;
+                    if dur >= 1.0 {
+                        web_pending.push(WebInterval {
+                            domain: d.clone(),
+                            title: t.clone(),
+                            start_time: start.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            end_time: now2.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            duration_seconds: dur,
+                        });
+                    }
+                    *web_open = Some((d, t, now2));
+                }
+                std::mem::take(&mut web_pending)
+            },
         )
     };
     let store = state.store.lock().unwrap();
@@ -1100,6 +1163,16 @@ fn flush_state(app: &AppHandle) {
     if !state_intervals.is_empty() {
         if let Err(e) = store.save_state_intervals(&state_intervals) {
             eprintln!("save_state_intervals failed: {e}");
+        }
+    }
+    if !title_intervals.is_empty() {
+        if let Err(e) = store.save_title_intervals(&title_intervals) {
+            eprintln!("save_title_intervals failed: {e}");
+        }
+    }
+    if !web_intervals.is_empty() {
+        if let Err(e) = store.save_web_intervals(&web_intervals) {
+            eprintln!("save_web_intervals failed: {e}");
         }
     }
 }
@@ -1159,6 +1232,44 @@ fn spawn_api_server(app: &AppHandle) {
     });
 }
 
+/// 从 URL 提取域名（去 scheme/www/端口/认证信息，小写）。
+fn extract_domain(url: &str) -> Option<String> {
+    let after = url.split_once("://").map(|x| x.1).unwrap_or(url);
+    let host = after.split('/').next()?;
+    let host = host.split('@').next()?;
+    let host = host.split(':').next()?;
+    let host = host.strip_prefix("www.").unwrap_or(host);
+    let host = host.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_lowercase())
+    }
+}
+
+/// 浏览器心跳聚合：同域名+标题延长当前段，否则闭合旧段开新段。
+fn heartbeat_web(app: &AppHandle, domain: String, title: String) {
+    let state = app.state::<AppState>();
+    let now = Local::now();
+    let mut open = state.web_open.lock().unwrap();
+    let extend = matches!(open.as_ref(), Some((d, t, _)) if *d == domain && *t == title);
+    if !extend {
+        if let Some((d, t, start)) = open.take() {
+            let dur = (now - start).num_milliseconds() as f64 / 1000.0;
+            if dur >= 5.0 {
+                state.web_pending.lock().unwrap().push(WebInterval {
+                    domain: d,
+                    title: t,
+                    start_time: start.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    end_time: now.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    duration_seconds: dur,
+                });
+            }
+        }
+        *open = Some((domain, title, now));
+    }
+}
+
 fn api_json(stream: &mut std::net::TcpStream, code: u16, body: String) {
     let reason = match code {
         200 => "OK",
@@ -1178,21 +1289,44 @@ fn api_json(stream: &mut std::net::TcpStream, code: u16, body: String) {
 
 fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
     use std::io::Read;
-    let mut buf = [0u8; 2048];
-    let n = match stream.read(&mut buf) {
-        Ok(n) if n > 0 => n,
-        _ => return,
-    };
-    let head = String::from_utf8_lossy(&buf[..n]);
+    // 读请求头 +（POST 时）完整 body
+    let mut data: Vec<u8> = Vec::new();
+    let mut tmp = [0u8; 2048];
+    loop {
+        let n = match stream.read(&mut tmp) {
+            Ok(n) if n > 0 => n,
+            _ => break,
+        };
+        data.extend_from_slice(&tmp[..n]);
+        let Some(pos) = data.windows(4).position(|w| w == b"\r\n\r\n") else {
+            if data.len() > 16384 {
+                break;
+            }
+            continue;
+        };
+        let head_str = String::from_utf8_lossy(&data[..pos]);
+        let cl = head_str
+            .to_lowercase()
+            .lines()
+            .find(|l| l.starts_with("content-length:"))
+            .and_then(|l| l.split(':').nth(1))
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        if data.len() - (pos + 4) >= cl || data.len() > 65536 {
+            break;
+        }
+    }
+    let head = String::from_utf8_lossy(&data);
     let Some(req_line) = head.lines().next() else {
         return;
     };
     let mut parts = req_line.split_whitespace();
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
-    if method != "GET" {
-        return api_json(&mut stream, 404, r#"{"error":"method not allowed"}"#.into());
-    }
+    let body = String::from_utf8_lossy(
+        &data[data.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4).unwrap_or(data.len())..],
+    )
+    .to_string();
     let (path, query) = match target.split_once('?') {
         Some((p, q)) => (p.to_string(), q.to_string()),
         None => (target.to_string(), String::new()),
@@ -1205,6 +1339,56 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
     };
 
     match path.as_str() {
+        "/api/web-heartbeat" if method == "POST" => {
+            let (api_on, record) = {
+                let st = app.state::<AppState>();
+                let s = st.settings.lock().unwrap();
+                (s.api_enabled, s.record_web)
+            };
+            if !api_on || !record {
+                return api_json(&mut stream, 403, r#"{"error":"web tracking disabled"}"#.into());
+            }
+            #[derive(serde::Deserialize)]
+            struct Hb {
+                url: String,
+                #[serde(default)]
+                title: String,
+            }
+            let Ok(hb) = serde_json::from_str::<Hb>(body.trim()) else {
+                return api_json(&mut stream, 400, r#"{"error":"bad json"}"#.into());
+            };
+            match extract_domain(&hb.url) {
+                Some(domain) => {
+                    heartbeat_web(app, domain, hb.title);
+                    api_json(&mut stream, 200, r#"{"ok":true}"#.into());
+                }
+                None => api_json(&mut stream, 400, r#"{"error":"bad url"}"#.into()),
+            }
+        }
+        "/api/web-top" if method == "GET" => {
+            let today = Local::now().format("%Y-%m-%d").to_string();
+            let from = qs("from").unwrap_or_else(|| today.clone());
+            let to = qs("to").unwrap_or(today);
+            let limit = qs("limit").and_then(|v| v.parse::<i64>().ok()).unwrap_or(15);
+            let st = app.state::<AppState>();
+            let rows = {
+                let s = st.store.lock().unwrap();
+                s.top_web(&from, &to, limit.clamp(1, 200))
+                    .map_err(|e| e.to_string())
+            };
+            match rows {
+                Ok(list) => {
+                    let items: Vec<serde_json::Value> = list
+                        .into_iter()
+                        .map(|(domain, title, seconds)| {
+                            serde_json::json!({ "domain": domain, "title": title, "seconds": seconds })
+                        })
+                        .collect();
+                    api_json(&mut stream, 200, serde_json::Value::Array(items).to_string())
+                }
+                Err(e) => api_json(&mut stream, 500, format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
         "/" | "/api" => api_json(
             &mut stream,
             200,
@@ -1880,6 +2064,8 @@ fn exclude_app(app: AppHandle, state: State<AppState>, app_key: String) -> Resul
         agg.apply_settings(idle, excluded);
         agg.daily.retain(|_, v| v.app_key != app_key);
         agg.pending_intervals.retain(|v| v.app_key != app_key);
+        agg.pending_title_intervals
+            .retain(|v| v.app_key != app_key);
     }
     state
         .store
@@ -1943,6 +2129,12 @@ fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> 
         let mut agg = state.aggregator.lock().unwrap();
         agg.daily.clear();
         agg.pending_intervals.clear();
+        agg.pending_state_intervals.clear();
+        agg.pending_title_intervals.clear();
+    }
+    {
+        state.web_open.lock().unwrap().take();
+        state.web_pending.lock().unwrap().clear();
     }
     state.notified_limits.lock().unwrap().clear();
     let _ = app;
@@ -2402,6 +2594,33 @@ fn get_top_titles(app: AppHandle, from: String, to: String, limit: i64) -> Resul
         });
     }
     Ok(out)
+}
+
+// ---------- Top 网页 ----------
+
+#[derive(Serialize, Clone)]
+struct TopWeb {
+    domain: String,
+    title: String,
+    seconds: f64,
+}
+
+#[tauri::command]
+fn get_top_web(app: AppHandle, from: String, to: String, limit: i64) -> Result<Vec<TopWeb>, String> {
+    let state = app.state::<AppState>();
+    let rows = {
+        let st = state.store.lock().unwrap();
+        st.top_web(&from, &to, limit.clamp(1, 200))
+            .map_err(|e| e.to_string())?
+    };
+    Ok(rows
+        .into_iter()
+        .map(|(domain, title, seconds)| TopWeb {
+            domain,
+            title,
+            seconds,
+        })
+        .collect())
 }
 
 // ---------- JSON 备份 ----------

@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { get } from 'svelte/store';
+import { lang as langStore } from './i18n';
 
 export interface AppIdentity {
   app_key: string;
@@ -212,6 +214,11 @@ export function fmtDuration(sec: number): string {
   const h = Math.floor(t / 3600);
   const m = Math.floor((t % 3600) / 60);
   const s = t % 60;
+  if (get(langStore) === 'en') {
+    if (h > 0) return `${h}h${m}m`;
+    if (m > 0) return `${m}m${s}s`;
+    return `${s}s`;
+  }
   if (h > 0) return `${h}小时${m}分`;
   if (m > 0) return `${m}分${s}秒`;
   return `${s}秒`;

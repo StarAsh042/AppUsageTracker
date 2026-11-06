@@ -56,6 +56,16 @@ pub struct TitleInterval {
     pub duration_seconds: f64,
 }
 
+/// 浏览器网页区间（浏览器扩展心跳聚合，隐私开关打开才记录）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebInterval {
+    pub domain: String,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub duration_seconds: f64,
+}
+
 /// 跟踪状态区间（统计中/空闲/锁定/挂起/暂停），供时间线与状态分布统计。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateInterval {
