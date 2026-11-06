@@ -63,6 +63,7 @@ export interface TrackerSettings {
   category_nature: Record<string, string>;
   app_display_names: Record<string, string>;
   record_window_titles: boolean;
+  record_web: boolean;
   title_exclude_patterns: string[];
   language: string;
   schema_version: number;
@@ -153,6 +154,7 @@ export const api = {
   saveCategoryRules: (rules: CategoryRule[]) => invoke<void>('save_category_rules', { rules }),
   exportCsv: (from: string, to: string) => invoke<string>('export_csv', { from, to }),
   exportWeeklyReport: () => invoke<string>('export_weekly_report'),
+  dbMaintenance: () => invoke<DbMaintenance>('db_maintenance'),
   clearAllData: () => invoke<void>('clear_all_data'),
   listCategories: () => invoke<string[]>('list_available_categories'),
   openPath: (path: string) => invoke<void>('open_path', { path }),
@@ -165,6 +167,8 @@ export const api = {
     invoke<void>('set_app_display_name', { appKey, name }),
   getTopTitles: (from: string, to: string, limit: number) =>
     invoke<TopTitle[]>('get_top_titles', { from, to, limit }),
+  getTopWeb: (from: string, to: string, limit: number) =>
+    invoke<TopWeb[]>('get_top_web', { from, to, limit }),
   checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
   installUpdate: () => invoke<void>('install_update'),
   updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),
@@ -173,12 +177,25 @@ export const api = {
   listBackups: () => invoke<string[]>('list_backups'),
 };
 
+export interface TopWeb {
+  domain: string;
+  title: string;
+  seconds: number;
+}
+
 export interface TopTitle {
   app_key: string;
   display_name: string;
   category: string;
   title: string;
   seconds: number;
+}
+
+export interface DbMaintenance {
+  integrity: string;
+  vacuum_ok: boolean;
+  page_count: number;
+  freelist: number;
 }
 
 export interface UpdateInfo {

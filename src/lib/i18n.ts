@@ -178,13 +178,17 @@ export const en: Record<string, string> = {
 };
 
 // 0.5.0 网页统计 + 隐私区
+// 0.5.0 网页统计 + 隐私区 + 维护
 const en05: Record<string, string> = {
-  网页浏览统计: 'Web browsing stats',
-  需安装浏览器扩展: 'requires the browser extension',
-  记录网页浏览: 'Record web browsing',
+  '网页浏览统计': 'Web browsing stats',
+  '需安装浏览器扩展': 'requires the browser extension',
+  '记录网页浏览': 'Record web browsing',
   'Top 网页': 'Top Websites',
-  网页: 'Web',
-  域名: 'Domain',
+  '域名': 'Domain',
+  '数据库维护': 'Database Maintenance',
+  '完整性检查 + 压缩 (VACUUM)': 'Integrity check + VACUUM',
+  '页数': 'pages',
+  '空闲页': 'free pages',
 };
 Object.assign(en, en05);
 
