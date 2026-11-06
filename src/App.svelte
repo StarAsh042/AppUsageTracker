@@ -6,6 +6,7 @@
   import CompareView from './CompareView.svelte';
   import SettingsView from './SettingsView.svelte';
   import { api, fmtDuration, stateLabel, type LiveStatus } from './lib/api';
+  import { lang, en } from './lib/i18n';
 
   let view = $state<'dashboard' | 'timeline' | 'calendar' | 'compare' | 'settings'>('dashboard');
   let live = $state<LiveStatus | null>(null);
@@ -15,9 +16,14 @@
   let restTip = $state(false);
   let restTimer: ReturnType<typeof setTimeout> | undefined;
 
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+
   $effect(() => {
     api.getVersion().then((v) => (version = v));
-    api.getSettings().then((s) => applyTheme(s.theme));
+    api.getSettings().then((s) => {
+      applyTheme(s.theme);
+      lang.set(s.language === 'en' ? 'en' : 'zh');
+    });
     const un1 = listen<LiveStatus>('usage://tick', (e) => {
       live = e.payload;
       paused = e.payload.state === 'Paused';
@@ -25,7 +31,10 @@
     const un2 = listen<string>('ui://navigate', (e) => {
       view = (e.payload as typeof view) ?? 'dashboard';
     });
-    const un3 = listen<{ theme?: string }>('app://settings', (e) => applyTheme(e.payload?.theme));
+    const un3 = listen<{ theme?: string; language?: string }>('app://settings', (e) => {
+      applyTheme(e.payload?.theme);
+      lang.set(e.payload?.language === 'en' ? 'en' : 'zh');
+    });
     const un4 = listen('ui://rest', () => {
       restTip = true;
       clearTimeout(restTimer);
@@ -67,25 +76,25 @@
     <div class="live">
       {#if live}
         <span class="dot {live.state.toLowerCase()}"></span>
-        <span>{stateLabel(live.state)}</span>
+        <span>{stateLabel(live.state, $lang)}</span>
         <span class="sep">·</span>
-        <span>今日 {fmtDuration(live.today_total_seconds)}</span>
+        <span>{t('今日')} {fmtDuration(live.today_total_seconds)}</span>
       {/if}
     </div>
     <nav>
-      <button class:active={view === 'dashboard'} onclick={() => (view = 'dashboard')}>仪表盘</button>
-      <button class:active={view === 'timeline'} onclick={() => (view = 'timeline')}>时间线</button>
-      <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>日历</button>
-      <button class:active={view === 'compare'} onclick={() => (view = 'compare')}>对比</button>
-      <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>设置</button>
-      <button onclick={togglePause}>{paused ? '恢复监控' : '暂停监控'}</button>
+      <button class:active={view === 'dashboard'} onclick={() => (view = 'dashboard')}>{t('仪表盘')}</button>
+      <button class:active={view === 'timeline'} onclick={() => (view = 'timeline')}>{t('时间线')}</button>
+      <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>{t('日历')}</button>
+      <button class:active={view === 'compare'} onclick={() => (view = 'compare')}>{t('对比')}</button>
+      <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>{t('设置')}</button>
+      <button onclick={togglePause}>{paused ? t('恢复监控') : t('暂停监控')}</button>
     </nav>
   </header>
 
   {#if restTip}
     <div class="rest-banner">
-      ⏸ 已连续使用较久，建议起身休息一下
-      <button onclick={() => (restTip = false)}>知道了</button>
+      ⏸ {t('已连续使用较久')}，{t('建议起身休息一下')}
+      <button onclick={() => (restTip = false)}>{t('知道了')}</button>
     </div>
   {/if}
 
@@ -103,7 +112,7 @@
     {/if}
   </main>
 
-  <footer>v{version} · 仅统计前台活跃时间 · 数据保存在本地</footer>
+  <footer>v{version} · {t('仅统计前台活跃时间')} · {t('数据保存在本地')}</footer>
 </div>
 
 <style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type DashboardData } from './lib/api';
+  import { lang, en } from './lib/i18n';
 
   let aFrom = $state(localDateKey(-6));
   let aTo = $state(localDateKey());
@@ -9,6 +10,8 @@
   let bData = $state<DashboardData | null>(null);
   let loading = $state(false);
   let aliases = $state<Map<string, string>>(new Map());
+
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
   $effect(() => {
     api.getSettings().then((s) => {
@@ -152,17 +155,17 @@
   <div class="toolbar">
     <span class="tag a">A</span>
     <input type="date" bind:value={aFrom} max={aTo} />
-    <span class="tilde">至</span>
+    <span class="tilde">{t('至')}</span>
     <input type="date" bind:value={aTo} min={aFrom} />
     <span class="tag b">B</span>
     <input type="date" bind:value={bFrom} max={bTo} />
     <span class="tilde">至</span>
     <input type="date" bind:value={bTo} min={bFrom} />
-    <button class="ghost" onclick={swap}>⇄ 交换</button>
+    <button class="ghost" onclick={swap}>⇄ {t('交换')}</button>
     <div class="spacer"></div>
-    <button class="ghost" onclick={() => preset('yesterday')}>昨日 vs 前日</button>
-    <button class="ghost" onclick={() => preset('week')}>本周 vs 上周</button>
-    <button class="ghost" onclick={() => preset('month')}>本月 vs 上月</button>
+    <button class="ghost" onclick={() => preset('yesterday')}>{t('昨天')} vs {t('前日')}</button>
+    <button class="ghost" onclick={() => preset('week')}>{t('本周')} vs {t('上周')}</button>
+    <button class="ghost" onclick={() => preset('month')}>{t('本月')} vs {t('上月')}</button>
   </div>
 
   {#if aData && bData}
@@ -176,7 +179,7 @@
         <div class="value">{fmtDuration(bData.total_active_seconds)}</div>
       </div>
       <div class="card">
-        <div class="label">变化</div>
+        <div class="label">{t('变化')}</div>
         <div
           class="value {deltaCls(aData.total_active_seconds, bData.total_active_seconds)}"
         >
@@ -184,15 +187,15 @@
             ? '—'
             : deltaText(aData.total_active_seconds, bData.total_active_seconds)}
         </div>
-        <div class="hint2">B 相对 A</div>
+        <div class="hint2">B vs A</div>
       </div>
     </div>
 
     <div class="panel">
-      <div class="panel-title">应用对比</div>
+      <div class="panel-title">{t('应用对比')}</div>
       <div class="head">
         <span class="c-name">应用</span>
-        <span class="c-bars">A vs B（时长 / 占各自总量比）</span>
+        <span class="c-bars">A vs B（{t('时长')}）</span>
       </div>
       <div class="rows">
         {#each appRows as r (r.key)}
@@ -208,13 +211,13 @@
             </span>
           </div>
         {:else}
-          <div class="empty">暂无数据</div>
+          <div class="empty">{t('暂无数据')}</div>
         {/each}
       </div>
     </div>
 
     <div class="panel">
-      <div class="panel-title">分类对比</div>
+      <div class="panel-title">{t('分类对比')}</div>
       <div class="rows">
         {#each catRows as r (r.key)}
           {@const d = deltaPct(r.a, r.b)}
@@ -236,7 +239,7 @@
       </div>
     </div>
   {:else}
-    <div class="loading">{loading ? '加载中…' : ''}</div>
+    <div class="loading">{loading ? t('加载中') + '…' : ''}</div>
   {/if}
 </div>
 

@@ -1,6 +1,9 @@
 mod autostart;
 mod version_info;
 
+rust_i18n::i18n!("locales", fallback = "zh-CN");
+use rust_i18n::t;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -226,6 +229,7 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
+            apply_locale(&handle);
             build_tray(&handle)?;
             apply_hotkeys(&handle);
             setup_main_window(&handle);
@@ -306,11 +310,11 @@ pub fn run() {
 // ---------- 托盘 ----------
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open_i = MenuItem::with_id(app, "open", "打开主界面", true, None::<&str>)?;
-    let widget_i = CheckMenuItem::with_id(app, "widget", "悬浮窗", true, true, None::<&str>)?;
-    let pause_i = CheckMenuItem::with_id(app, "pause", "暂停监控", true, false, None::<&str>)?;
-    let settings_i = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let open_i = MenuItem::with_id(app, "open", &t!("打开主界面"), true, None::<&str>)?;
+    let widget_i = CheckMenuItem::with_id(app, "widget", &t!("悬浮窗"), true, true, None::<&str>)?;
+    let pause_i = CheckMenuItem::with_id(app, "pause", &t!("暂停监控"), true, false, None::<&str>)?;
+    let settings_i = MenuItem::with_id(app, "settings", &t!("设置"), true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", &t!("退出"), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -328,7 +332,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let tray_icon = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
-        .tooltip("软件使用时间统计")
+        .tooltip(t!("软件使用时间统计"))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -1022,7 +1026,7 @@ fn spawn_monitor(app: AppHandle) {
                 let _ = app
                     .notification()
                     .builder()
-                    .title("休息提醒")
+                    .title(t!("休息提醒"))
                     .body(format!(
                         "已连续活跃使用 {rest_minutes} 分钟，站起来活动一下吧"
                     ))
@@ -1314,8 +1318,8 @@ fn check_limits(app: &AppHandle) {
         let _ = app
             .notification()
             .builder()
-            .title("分类限额提醒")
-            .body(format!("「{cat}」今日使用时长已超过设定限额"))
+            .title(t!("分类限额提醒"))
+            .body(t!("「%{cat}」今日使用时长已超过设定限额", cat = cat))
             .show();
     }
 }
@@ -1396,6 +1400,24 @@ fn display_alias(settings: &TrackerSettings, app_key: &str, original: &str) -> S
         .get(app_key)
         .cloned()
         .unwrap_or_else(|| original.to_string())
+}
+
+/// 解析界面语言（system = 中文）。
+fn resolve_locale(language: &str) -> &'static str {
+    if language.starts_with("en") {
+        "en-US"
+    } else {
+        "zh-CN"
+    }
+}
+
+fn apply_locale(app: &AppHandle) {
+    let lang = {
+        let st = app.state::<AppState>();
+        let v = st.settings.lock().unwrap().language.clone();
+        v
+    };
+    rust_i18n::set_locale(resolve_locale(&lang));
 }
 
 fn db_path(data_dir: &str) -> String {
@@ -1490,34 +1512,34 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
         CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>)
             .map_err(|e| e.to_string())
     };
-    let top_i = check("w.top", "置顶显示", prefs.always_on_top)?;
-    let lock_i = check("w.lock", "锁定位置", prefs.locked)?;
-    let snap_i = check("w.snap", "贴边收起", prefs.edge_snap)?;
-    let compact_i = check("w.compact", "缩略模式", prefs.compact)?;
+    let top_i = check("w.top", &t!("置顶显示"), prefs.always_on_top)?;
+    let lock_i = check("w.lock", &t!("锁定位置"), prefs.locked)?;
+    let snap_i = check("w.snap", &t!("贴边收起"), prefs.edge_snap)?;
+    let compact_i = check("w.compact", &t!("缩略模式"), prefs.compact)?;
 
-    let op_menu = Submenu::with_id(&app, "w.opacity", "透明度", true).map_err(|e| e.to_string())?;
+    let op_menu = Submenu::with_id(&app, "w.opacity", &t!("透明度"), true).map_err(|e| e.to_string())?;
     for (v, label) in [
-        (85u8, "高 85%"),
-        (70, "中 70%"),
-        (55, "低 55%"),
-        (40, "低 40%"),
+        (85u8, &t!("高 85%")),
+        (70, &t!("中 70%")),
+        (55, &t!("低 55%")),
+        (40, &t!("低 40%")),
     ] {
         let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
         op_menu.append(&item).map_err(|e| e.to_string())?;
     }
-    let color_menu = Submenu::with_id(&app, "w.color", "配色", true).map_err(|e| e.to_string())?;
+    let color_menu = Submenu::with_id(&app, "w.color", &t!("配色"), true).map_err(|e| e.to_string())?;
     for (k, label) in [
-        ("blue", "蓝色"),
-        ("cyan", "青色"),
-        ("violet", "紫色"),
-        ("green", "绿色"),
-        ("orange", "橙色"),
-        ("pink", "粉色"),
+        ("blue", &t!("蓝色")),
+        ("cyan", &t!("青色")),
+        ("violet", &t!("紫色")),
+        ("green", &t!("绿色")),
+        ("orange", &t!("橙色")),
+        ("pink", &t!("粉色")),
     ] {
         let item = check(&format!("w.color.{k}"), label, prefs.accent == k)?;
         color_menu.append(&item).map_err(|e| e.to_string())?;
     }
-    let settings_i = MenuItem::with_id(&app, "w.settings", "设置…", true, None::<&str>)
+    let settings_i = MenuItem::with_id(&app, "w.settings", &t!("设置…"), true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let menu = Menu::with_items(
@@ -1791,6 +1813,7 @@ fn save_settings(app: AppHandle, state: State<AppState>, settings: TrackerSettin
     *state.settings.lock().unwrap() = settings.clone();
     save_settings_file(&app);
     let _ = app.emit("app://settings", &settings);
+    apply_locale(&app);
     apply_hotkeys(&app);
     spawn_api_server(&app);
 

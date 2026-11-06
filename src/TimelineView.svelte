@@ -3,10 +3,14 @@
     api,
     fmtDuration,
     localDateKey,
+    stateLabel,
     CATEGORY_PALETTE,
     type TimelineData,
     type TopTitle,
   } from './lib/api';
+  import { lang, en } from './lib/i18n';
+
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
   let { initialDate = localDateKey() }: { initialDate?: string } = $props();
 
@@ -143,13 +147,6 @@
     Paused: '#565d6e',
   };
 
-  const stateLabelCn: Record<string, string> = {
-    Active: '统计中',
-    Idle: '空闲',
-    Locked: '锁定',
-    Suspended: '挂起',
-    Paused: '暂停',
-  };
 
   function stateTotals(data: TimelineData): { state: string; seconds: number }[] {
     const m = new Map<string, number>();
@@ -220,7 +217,7 @@
           <div
             class="seg"
             style="{segStyle(st.start_time, st.end_time)};background:{STATE_COLORS[st.state] ?? '#565d6e'}"
-            title="{stateLabelCn[st.state] ?? st.state} {st.start_time.slice(11, 16)}–{st.end_time.slice(11, 16)}（{fmtDuration(st.duration_seconds)}）"
+            title="{stateLabel(st.state, $lang)} {st.start_time.slice(11, 16)}–{st.end_time.slice(11, 16)}（{fmtDuration(st.duration_seconds)}）"
           ></div>
         {/each}
         {#each hourTicks as t (t)}
@@ -232,7 +229,7 @@
         {#each stateTotals(data) as s (s.state)}
           <span class="state-item">
             <span class="sw" style="background:{STATE_COLORS[s.state] ?? '#565d6e'}"></span>
-            {stateLabelCn[s.state] ?? s.state} {fmtDuration(s.seconds)}
+            {stateLabel(s.state, $lang)} {fmtDuration(s.seconds)}
           </span>
         {:else}
           <span class="empty">该日暂无状态记录</span>

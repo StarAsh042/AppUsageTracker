@@ -62,6 +62,7 @@ export interface TrackerSettings {
   app_display_names: Record<string, string>;
   record_window_titles: boolean;
   title_exclude_patterns: string[];
+  language: string;
   schema_version: number;
   widget: WidgetPrefs;
 }
@@ -216,7 +217,17 @@ export function fmtDuration(sec: number): string {
   return `${s}秒`;
 }
 
-export function stateLabel(state: string): string {
+export function stateLabel(state: string, lang: 'zh' | 'en' = 'zh'): string {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      Active: 'Tracking',
+      Idle: 'Idle',
+      Locked: 'Locked',
+      Suspended: 'Suspended',
+      Paused: 'Paused',
+    };
+    return en[state] ?? state;
+  }
   const map: Record<string, string> = {
     Active: '统计中',
     Idle: '空闲',

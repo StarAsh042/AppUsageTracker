@@ -6,6 +6,7 @@
     type ScannedApp,
     type UpdateInfo,
   } from './lib/api';
+  import { lang, en } from './lib/i18n';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -19,6 +20,8 @@
   let updateStatus = $state('');
   let updateChecking = $state(false);
   let updateInstalling = $state(false);
+
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
   let scanned = $state<ScannedApp[] | null>(null);
   let scanning = $state(false);
 
@@ -87,7 +90,7 @@
         .map((x) => x.trim())
         .filter(Boolean);
       await api.saveSettings(snapshot);
-      status = '已保存，设置即时生效';
+      status = $lang === 'en' ? 'Saved. Changes apply immediately' : '已保存，设置即时生效';
     } catch (e) {
       status = `保存失败: ${e}`;
     } finally {
@@ -212,50 +215,50 @@
   {#if s}
     <div class="sections">
       <section class="panel">
-        <h3>常规</h3>
+        <h3>{t('常规')}</h3>
         <div class="grid2">
           <label>
-            <span>空闲阈值（秒）</span>
+            <span>{t('空闲阈值')}</span>
             <input type="number" min="30" max="3600" bind:value={s.idle_threshold_seconds} />
           </label>
           <label>
-            <span>轮询间隔（毫秒）</span>
+            <span>{t('轮询间隔')}</span>
             <input type="number" min="250" max="10000" step="250" bind:value={s.foreground_poll_ms} />
           </label>
           <label>
-            <span>休息提醒（分钟，0 = 关闭）</span>
+            <span>{t('休息提醒')}（{t('分钟')}，0 = {t('关闭')}）</span>
             <input type="number" min="0" max="240" bind:value={s.rest_reminder_minutes} />
           </label>
           <label>
-            <span>数据保留（天）</span>
+            <span>{t('数据保留')}</span>
             <input type="number" min="30" max="3650" bind:value={s.retention_days} />
           </label>
           <label>
-            <span>每日活跃目标（分钟，0 = 关闭）</span>
+            <span>{t('每日活跃目标')}</span>
             <input type="number" min="0" max="1440" bind:value={s.daily_goal_minutes} />
           </label>
         </div>
         <div class="checks">
           <label class="check-row">
             <input type="checkbox" bind:checked={s.start_with_windows} />
-            <span>开机自动启动</span>
+            <span>{t('开机自动启动')}</span>
           </label>
           <label class="check-row">
             <input type="checkbox" bind:checked={s.show_floating_widget} />
-            <span>显示悬浮窗</span>
+            <span>{t('显示悬浮窗')}</span>
           </label>
           <label class="check-row">
             <input type="checkbox" bind:checked={s.hotkeys_enabled} />
-            <span>启用全局热键</span>
+            <span>{t('启用全局热键')}</span>
           </label>
           {#if s.hotkeys_enabled}
             <div class="grid2" style="margin-top:8px">
               <label>
-                <span>主界面热键</span>
+                <span>{t('主界面热键')}</span>
                 <input type="text" bind:value={s.hotkey_main} spellcheck="false" />
               </label>
               <label>
-                <span>悬浮窗热键</span>
+                <span>{t('悬浮窗热键')}</span>
                 <input type="text" bind:value={s.hotkey_widget} spellcheck="false" />
               </label>
             </div>
@@ -263,37 +266,37 @@
           {/if}
           <label class="check-row">
             <input type="checkbox" bind:checked={s.api_enabled} />
-            <span>本地 HTTP API（127.0.0.1:{s.api_port}，供第三方工具读取统计）</span>
+            <span>{t('本地')}:{s.api_port}，{t('供第三方工具读取统计')}</span>
           </label>
         </div>
         {#if s.api_enabled}
           <div class="grid2">
             <label>
-              <span>API 端口</span>
+              <span>{t('API 端口')}</span>
               <input type="number" min="1024" max="65535" bind:value={s.api_port} />
             </label>
           </div>
         {/if}
         <div class="grid2">
           <label>
-            <span>数据目录</span>
+            <span>{t('数据目录')}</span>
             <input type="text" bind:value={s.data_directory} />
           </label>
         </div>
         <div class="row-actions">
-          <button class="ghost" onclick={openDataDir}>打开数据目录</button>
-          <button class="danger" onclick={clearData}>清空全部数据</button>
+          <button class="ghost" onclick={openDataDir}>{t('打开数据目录')}</button>
+          <button class="danger" onclick={clearData}>{t('清空全部数据')}</button>
         </div>
       </section>
 
       <section class="panel">
-        <h3>隐私：窗口标题记录</h3>
+        <h3>{t('隐私')}：{t('窗口标题记录')}</h3>
         <label class="check-row" style="margin-bottom:10px">
           <input type="checkbox" bind:checked={s.record_window_titles} />
-          <span>记录前台窗口标题（默认关闭；打开后「时间线」页可见 Top 标题）</span>
+          <span>{t('记录前台窗口标题')}</span>
         </label>
         {#if s.record_window_titles}
-          <p class="hint">排除规则（每行一条子串，不区分大小写；命中即不记录。可用来挡银行页面、密码框等敏感标题）。</p>
+          <p class="hint">{t('排除规则')}——{t('每行一条子串')}。</p>
           <textarea
             rows="4"
             bind:value={titlePatternsText}
@@ -304,13 +307,13 @@
       </section>
 
       <section class="panel">
-        <h3>排除应用</h3>
-        <p class="hint">每行一个 exe 完整路径（小写），这些应用不计入统计。</p>
+        <h3>{t('排除应用')}</h3>
+        <p class="hint">{t('每行一个')}。</p>
         <textarea rows="5" bind:value={excludedText} spellcheck="false"></textarea>
       </section>
 
       <section class="panel">
-        <h3>分类每日限额（分钟，0 = 不限）</h3>
+        <h3>{t('分类每日限额')}（{t('分钟')}，0 = {t('不限')}）</h3>
         <div class="limits">
           {#each ruleNames() as name (name)}
             <label class="limit-row">
@@ -327,18 +330,18 @@
                 onchange={(e) => setNature(name, (e.currentTarget as HTMLSelectElement).value)}
               >
                 {#each Object.entries(NATURE_LABELS) as [val, label] (val)}
-                  <option value={val}>{label}</option>
+                  <option value={val}>{t(label)}</option>
                 {/each}
               </select>
             </label>
           {/each}
-          <p class="hint">选择「产出 / 中性 / 分心」后，仪表盘将显示效率评分。</p>
+          <p class="hint">{t('产出')} / {t('中性')} / {t('分心')} → {t('效率趋势')}。</p>
         </div>
       </section>
 
       <section class="panel">
-        <h3>分类规则</h3>
-        <p class="hint">关键词以 | 分隔，匹配应用名 / 进程名 / 路径，不区分大小写；顺序即优先级。分类名支持层级：「开发/前端」会汇总进「开发」。</p>
+        <h3>{t('分类规则')}</h3>
+        <p class="hint">{t('关键词以')} — {t('层级')}。</p>
         <div class="rules-editor">
           {#each rules as r, i (`${r.name}-${i}`)}
             <div class="rule-row">
@@ -349,18 +352,18 @@
           {/each}
         </div>
         <div class="row-actions">
-          <button class="ghost" onclick={addRule}>+ 新增分类</button>
-          <button class="ghost" onclick={saveRules}>保存分类规则</button>
+          <button class="ghost" onclick={addRule}>+ {t('新增分类')}</button>
+          <button class="ghost" onclick={saveRules}>{t('保存分类规则')}</button>
         </div>
       </section>
 
       <section class="panel">
-        <h3>扫描应用补分类</h3>
-        <p class="hint">扫描桌面与开始菜单快捷方式，把漏掉的程序归入分类（写在应用分类覆盖里，立即生效且对历史数据同样生效）。</p>
+        <h3>{t('扫描应用补分类')}</h3>
+        <p class="hint">{t('扫描桌面与开始菜单快捷方式')}</p>
         <div class="row-actions">
-          <button class="ghost" disabled={scanning} onclick={runScan}>{scanning ? '扫描中…' : '扫描应用'}</button>
+          <button class="ghost" disabled={scanning} onclick={runScan}>{scanning ? t('扫描中') + '…' : t('扫描应用')}</button>
           {#if scanned}
-            <span class="hint">共 {scanned.length} 个应用，其中未分类 {scanned.filter((a) => a.category === '未分类').length} 个</span>
+            <span class="hint">{t('共')} {scanned.length} {t('个应用')}，{t('其中未分类')} {scanned.filter((a) => a.category === '未分类').length}</span>
           {/if}
         </div>
         {#if scanned && scanned.length}
@@ -373,7 +376,7 @@
                   value={a.category === '未分类' ? '' : a.category}
                   onchange={(e) => assignCategory(a.app_key, (e.currentTarget as HTMLSelectElement).value || '未分类')}
                 >
-                  <option value="">设为分类…</option>
+                  <option value="">{t('设为分类')}</option>
                   {#each ruleNames() as name (name)}
                     <option value={name}>{name}</option>
                   {/each}
@@ -385,32 +388,32 @@
       </section>
 
       <section class="panel">
-        <h3>更新</h3>
+        <h3>{t('更新')}</h3>
         <div class="row-actions">
           <button class="ghost" disabled={updateChecking} onclick={checkUpdateNow}>
-            {updateChecking ? '检查中…' : '检查更新'}
+            {updateChecking ? t('检查中') + '…' : t('检查更新')}
           </button>
           {#if updateInfo}
             <span class="hint">
-              发现新版本 v{updateInfo.version}
+              {t('发现新版本')} v{updateInfo.version}
               {#if updateInfo.notes}· {updateInfo.notes}{/if}
             </span>
             <button class="primary" disabled={updateInstalling} onclick={installNow}>
-              {updateInstalling ? '下载安装中…' : '立即更新（完成后自动重启）'}
+              {updateInstalling ? t('下载安装中') + '…' : t('立即更新')}
             </button>
           {:else if updateStatus}
             <span class="hint">{updateStatus}</span>
           {/if}
         </div>
-        <p class="hint">当前版本 v{appVersion}；更新包经数字签名校验，安装后应用自动重启。</p>
+        <p class="hint">{t('当前版本')} v{appVersion}. {t('更新包经数字签名校验')}</p>
       </section>
 
       <section class="panel">
-        <h3>备份与恢复（JSON）</h3>
-        <p class="hint">备份保存在数据目录 backups/ 下；恢复将用所选备份整体替换当前数据。</p>
+        <h3>{t('备份与恢复')}（JSON）</h3>
+        <p class="hint">{t('备份保存在数据目录')}</p>
         <div class="row-actions">
-          <button class="ghost" onclick={exportBackup}>导出全部数据</button>
-          <button class="ghost" onclick={importBackup}>从最新备份恢复</button>
+          <button class="ghost" onclick={exportBackup}>{t('导出全部数据')}</button>
+          <button class="ghost" onclick={importBackup}>{t('从最新备份恢复')}</button>
         </div>
         {#if backups.length}
           <div class="backup-list">
@@ -419,12 +422,22 @@
             {/each}
           </div>
         {:else}
-          <p class="hint">暂无备份</p>
+          <p class="hint">—</p>
         {/if}
       </section>
 
       <section class="panel">
-        <h3>外观</h3>
+        <h3>{t('外观')}</h3>
+        <div class="grid2" style="margin-bottom:12px">
+          <label>
+            <span>{t('界面语言')}</span>
+            <select bind:value={s.language} onchange={save}>
+              <option value="system">{t('跟随系统')}</option>
+              <option value="zh-CN">中文</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+        </div>
         <div class="theme-row">
           <label class="check-row">
             <input
@@ -454,10 +467,10 @@
 
     <div class="save-bar">
       {#if status}<span class="status">{status}</span>{/if}
-      <button class="primary" disabled={saving} onclick={save}>保存设置</button>
+      <button class="primary" disabled={saving} onclick={save}>{t('保存设置')}</button>
     </div>
   {:else}
-    <div class="loading">加载中…</div>
+    <div class="loading">{t('加载中')}…</div>
   {/if}
 </div>
 
@@ -614,6 +627,15 @@
   .theme-row {
     display: flex;
     gap: 24px;
+  }
+
+  select {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 7px 8px;
+    font-size: 12px;
   }
 
   .limits {

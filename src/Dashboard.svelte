@@ -1,6 +1,7 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
   import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
+  import { lang, en } from './lib/i18n';
 
   let { focusDate = null }: { focusDate?: string | null } = $props();
 
@@ -16,6 +17,8 @@
   let detail = $state<AppDetail | null>(null);
   let catColors = $state<Map<string, string>>(new Map());
   let trendMode = $state<'duration' | 'score'>('duration');
+
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
   let aliases = $state<Map<string, string>>(new Map());
 
   function aliasName(key: string, fallback: string): string {
@@ -284,7 +287,7 @@
     if (!menu) return;
     const key = menu.appKey;
     const name = data?.apps.find((a) => a.app_key === key)?.display_name ?? key;
-    if (!confirm(`排除「${name}」？将停止统计并清除其全部记录。`)) return;
+    if (!confirm(`「${name}」— ${t('将停止统计并清除其全部记录')}`)) return;
     menu = null;
     await api.excludeApp(key);
     await load();
@@ -317,41 +320,41 @@
 <div class="dash">
   <div class="toolbar">
     <div class="ranges">
-      <button onclick={() => setRange('today')}>今天</button>
-      <button onclick={() => setRange('yesterday')}>昨天</button>
-      <button onclick={() => setRange('week')}>本周</button>
-      <button onclick={() => setRange('month')}>本月</button>
+      <button onclick={() => setRange('today')}>{t('今天')}</button>
+      <button onclick={() => setRange('yesterday')}>{t('昨天')}</button>
+      <button onclick={() => setRange('week')}>{t('本周')}</button>
+      <button onclick={() => setRange('month')}>{t('本月')}</button>
     </div>
     <div class="dates">
       <input type="date" bind:value={from} max={to} />
-      <span>至</span>
+      <span>{t('至')}</span>
       <input type="date" bind:value={to} min={from} />
     </div>
     <div class="spacer"></div>
-    <button class="ghost" onclick={exportCsv}>导出 CSV</button>
-    <button class="ghost" onclick={exportWeekly}>周报</button>
+    <button class="ghost" onclick={exportCsv}>{t('导出')} CSV</button>
+    <button class="ghost" onclick={exportWeekly}>{t('周报')}</button>
   </div>
 
   {#if data}
     <div class="cards">
       <div class="card">
-        <div class="label">总活跃时长</div>
+        <div class="label">{t('总活跃时长')}</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
         {#if isMultiDay}
-          <div class="delta">日均 {fmtDuration(dailyAvg)}（{dayCount} 天）</div>
+          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}（{dayCount} {t('天')}）</div>
         {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
-            较上一周期 {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
+            {t('较上一周期')} {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
           </div>
         {/if}
         {#if goalPct !== null}
           <div class="goal-bar"><span style="width:{goalPct}%"></span></div>
-          <div class="delta">每日目标 {settings?.daily_goal_minutes} 分钟 · {goalPct}%</div>
+          <div class="delta">{t('每日目标')} {settings?.daily_goal_minutes} {t('分钟')} · {goalPct}%</div>
         {/if}
       </div>
       <div class="card">
-        <div class="label">最常用应用</div>
+        <div class="label">{t('最常用应用')}</div>
         <div class="value">{data.top_app ?? '—'}</div>
       </div>
       {#if scoreInfo}
@@ -376,20 +379,20 @@
         </div>
       {/if}
       <div class="card">
-        <div class="label">应用数量</div>
+        <div class="label">{t('应用数量')}</div>
         <div class="value">{data.apps.length}</div>
       </div>
     </div>
 
     <div class="content">
       <div class="panel ranking">
-        <div class="panel-title">应用排行</div>
+        <div class="panel-title">{t('应用排行')}</div>
         <div class="table-head">
           <span class="col-rank">#</span>
-          <span class="col-name">应用</span>
-          <span class="col-cat">分类</span>
-          <span class="col-dur">活跃时长</span>
-          <span class="col-bar">占比</span>
+          <span class="col-name">{t('应用')}</span>
+          <span class="col-cat">{t('分类')}</span>
+          <span class="col-dur">{t('活跃时长')}</span>
+          <span class="col-bar">{t('占比')}</span>
         </div>
         <div class="table-body">
           {#each data.apps as a, i (a.app_key)}
@@ -409,14 +412,14 @@
               </span>
             </div>
           {:else}
-            <div class="empty">该时间段暂无数据</div>
+            <div class="empty">{t('该时间段暂无数据')}</div>
           {/each}
         </div>
       </div>
 
       <div class="side">
         <div class="panel">
-          <div class="panel-title">分类占比</div>
+          <div class="panel-title">{t('分类占比')}</div>
           {#if donut}
             <div class="donut-wrap">
               <svg viewBox="0 0 100 100" class="donut">
@@ -460,10 +463,10 @@
         {#if data.trend.length >= 2}
         <div class="panel trend">
           <div class="panel-title trend-head">
-            <span>{trendMode === 'duration' ? '每日活跃' : '效率趋势'}</span>
+            <span>{trendMode === 'duration' ? t('每日活跃') : t('效率趋势')}</span>
             <span class="t-switch">
-              <button class:on={trendMode === 'duration'} onclick={() => (trendMode = 'duration')}>时长</button>
-              <button class:on={trendMode === 'score'} onclick={() => (trendMode = 'score')}>效率</button>
+              <button class:on={trendMode === 'duration'} onclick={() => (trendMode = 'duration')}>{t('时长')}</button>
+              <button class:on={trendMode === 'score'} onclick={() => (trendMode = 'score')}>{t('效率')}</button>
             </span>
           </div>
           <div class="trend">
@@ -504,7 +507,7 @@
                 </div>
               </div>
             {:else}
-              <div class="empty">暂无数据</div>
+              <div class="empty">{t('暂无数据')}</div>
             {/each}
           </div>
         </div>
@@ -512,7 +515,7 @@
       </div>
     </div>
   {:else}
-    <div class="loading">{loading ? '加载中…' : ''}</div>
+    <div class="loading">{loading ? t('加载中') + '…' : ''}</div>
   {/if}
 </div>
 
@@ -529,13 +532,13 @@
       <div class="alias-row">
         <input
           class="alias-input"
-          placeholder="自定义显示名（清空即恢复默认）"
+          placeholder={t('自定义显示名')}
           bind:value={aliasDraft}
           spellcheck="false"
         />
-        <button class="alias-save" onclick={saveAlias}>改名</button>
+        <button class="alias-save" onclick={saveAlias}>{t('改名')}</button>
       </div>
-      <div class="m-total">区间内活跃 <b>{fmtDuration(detail.total_seconds)}</b></div>
+      <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>
       <div class="m-trend">
         {#each detail.daily as pt (pt.date)}
           <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
@@ -545,17 +548,17 @@
             <div class="t-label">{pt.date.slice(5)}</div>
           </div>
         {:else}
-          <div class="empty">该区间无数据</div>
+          <div class="empty">{t('该区间无数据')}</div>
         {/each}
       </div>
-      <div class="m-hint">右键排行行可随时改分类</div>
+      <div class="m-hint">{t('右键排行行可随时改分类')}</div>
     </div>
   </div>
 {/if}
 
 {#if menu}
   <div class="ctx-menu" style="left:{menu.x}px; top:{menu.y}px">
-    <div class="ctx-title">设置分类</div>
+    <div class="ctx-title">{t('设置分类')}</div>
     {#each categories as c (c)}
       <button class="ctx-item" class:current={c === menu.current} onclick={() => pickCategory(c)}>
         {#if c === menu.current}<span class="check">✓</span>{/if}
@@ -563,7 +566,7 @@
       </button>
     {/each}
     <div class="ctx-sep"></div>
-    <button class="ctx-item danger" onclick={() => excludeApp()}>🚫 排除此应用</button>
+    <button class="ctx-item danger" onclick={() => excludeApp()}>🚫 {t('排除此应用')}</button>
   </div>
 {/if}
 

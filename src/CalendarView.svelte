@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, fmtDuration, localDateKey, type DashboardData } from './lib/api';
+  import { lang, en } from './lib/i18n';
 
   let { onPick = () => {} }: { onPick?: (date: string) => void } = $props();
 
@@ -8,7 +9,11 @@
   let total = $state(0);
   let loading = $state(false);
 
-  const WEEK_CN = ['一', '二', '三', '四', '五', '六', '日'];
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+
+  const WEEK_CN = $derived(
+    $lang === 'en' ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['一', '二', '三', '四', '五', '六', '日'],
+  );
 
   $effect(() => {
     load();
@@ -72,9 +77,13 @@
 <div class="cal">
   <div class="toolbar">
     <button class="nav" onclick={() => shiftMonth(-1)}>◀</button>
-    <span class="month">{cursor.getFullYear()} 年 {cursor.getMonth() + 1} 月</span>
+    <span class="month">
+      {$lang === 'en'
+        ? cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`}
+    </span>
     <button class="nav" onclick={() => shiftMonth(1)}>▶</button>
-    <span class="total">本月活跃 {fmtDuration(total)}</span>
+    <span class="total">{t('本月活跃')} {fmtDuration(total)}</span>
   </div>
 
   <div class="panel">
@@ -93,7 +102,7 @@
             class:today={key === todayKey}
             style="background:{heat(seconds)}"
             onclick={() => pick(d)}
-            title="{key}{seconds !== undefined ? ' · ' + fmtDuration(seconds) : ' · 无记录'}"
+            title="{key}{seconds !== undefined ? ' · ' + fmtDuration(seconds) : ''}"
           >
             <span class="day">{d}</span>
             {#if seconds !== undefined && seconds > 0}
@@ -104,13 +113,13 @@
       {/each}
     </div>
     <div class="scale">
-      <span>少</span>
+      <span>{t('少')}</span>
       <span class="sw" style="background:color-mix(in srgb, var(--accent) 25%, transparent)"></span>
       <span class="sw" style="background:color-mix(in srgb, var(--accent) 50%, transparent)"></span>
       <span class="sw" style="background:color-mix(in srgb, var(--accent) 75%, transparent)"></span>
       <span class="sw" style="background:var(--accent)"></span>
-      <span>多</span>
-      {#if loading}<span class="loading-inline">加载中…</span>{/if}
+      <span>{t('多')}</span>
+      {#if loading}<span class="loading-inline">{t('加载中')}…</span>{/if}
     </div>
   </div>
 </div>

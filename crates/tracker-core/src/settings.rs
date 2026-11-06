@@ -41,6 +41,9 @@ pub struct TrackerSettings {
     /// 标题排除规则（子串匹配，不区分大小写；命中即不记录）。
     #[serde(default)]
     pub title_exclude_patterns: Vec<String>,
+    /// 界面语言：system（=中文）/ en。
+    #[serde(default)]
+    pub language: String,
     /// 设置结构版本（迁移链用）。
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -126,6 +129,7 @@ impl Default for TrackerSettings {
             app_display_names: Default::default(),
             record_window_titles: false,
             title_exclude_patterns: Default::default(),
+            language: "system".to_string(),
             schema_version: 1,
             widget: Default::default(),
         }

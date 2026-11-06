@@ -1,6 +1,7 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { lang, en } from './lib/i18n';
   import {
     api,
     fmtDuration,
@@ -18,6 +19,8 @@
   let hovering = $state(false);
   let collapsedUi = $state(false);
   let edge = $state<'none' | 'left' | 'right' | 'top' | 'bottom'>('none');
+
+  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
   let catColors = $state<Map<string, string>>(new Map());
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -38,6 +41,7 @@
       prefs = s.widget;
       goalMinutes = s.daily_goal_minutes;
       collapsedUi = false;
+      lang.set(s.language === 'en' ? 'en' : 'zh');
     });
     api.listCategories().then((cats) => {
       const m = new Map<string, string>();
@@ -50,6 +54,7 @@
     api.getLiveStatus().then((l) => (live = l));
     const un0 = listen<TrackerSettings>('app://settings', (e) => {
       goalMinutes = e.payload?.daily_goal_minutes ?? 0;
+      lang.set(e.payload?.language === 'en' ? 'en' : 'zh');
     });
     const un1 = listen<LiveStatus>('usage://tick', (e) => (live = e.payload));
     const un2 = listen<WidgetPrefs>('widget://prefs', (e) => (prefs = e.payload));
@@ -150,9 +155,9 @@
   {:else}
     <div class="row top">
       <span class="dot {live?.state.toLowerCase() ?? ''}"></span>
-      <span class="state">{live ? stateLabel(live.state) : '…'}</span>
+      <span class="state">{live ? stateLabel(live.state, $lang) : '…'}</span>
       <span class="today">
-        今日 {live ? fmtDuration(live.today_total_seconds) : '--'}{goalPct !== null ? ` · 🎯${goalPct}%` : ''}
+        {t('今日')} {live ? fmtDuration(live.today_total_seconds) : '--'}{goalPct !== null ? ` · 🎯${goalPct}%` : ''}
       </span>
     </div>
 
@@ -160,10 +165,10 @@
       {#if live?.current_app}
         <div class="app-name">{live.current_app.display_name}</div>
         <div class="app-meta">
-          {live.current_category} · 本轮 {fmtDuration(live.current_seconds)}
+          {live.current_category} · {t('本轮')} {fmtDuration(live.current_seconds)}
         </div>
       {:else}
-        <div class="app-name muted">当前无前台应用</div>
+        <div class="app-name muted">{t('当前无前台应用')}</div>
       {/if}
     </div>
 
