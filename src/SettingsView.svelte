@@ -13,6 +13,7 @@
   let status = $state('');
   let saving = $state(false);
   let backups = $state<string[]>([]);
+  let titlePatternsText = $state('');
   let appVersion = $state('');
   let updateInfo = $state<UpdateInfo | null>(null);
   let updateStatus = $state('');
@@ -65,6 +66,7 @@
       s = st;
       rules = st.category_rules.map((r) => ({ name: r.name, keywords: r.keywords.join('|') }));
       excludedText = st.excluded_app_keys.join('\n');
+      titlePatternsText = st.title_exclude_patterns.join('\n');
       backups = await api.listBackups();
       appVersion = await api.getVersion();
     })();
@@ -79,6 +81,10 @@
       snapshot.excluded_app_keys = excludedText
         .split(/\r?\n/)
         .map((x) => x.trim().toLowerCase())
+        .filter(Boolean);
+      snapshot.title_exclude_patterns = titlePatternsText
+        .split(/\r?\n/)
+        .map((x) => x.trim())
         .filter(Boolean);
       await api.saveSettings(snapshot);
       status = '已保存，设置即时生效';
@@ -278,6 +284,23 @@
           <button class="ghost" onclick={openDataDir}>打开数据目录</button>
           <button class="danger" onclick={clearData}>清空全部数据</button>
         </div>
+      </section>
+
+      <section class="panel">
+        <h3>隐私：窗口标题记录</h3>
+        <label class="check-row" style="margin-bottom:10px">
+          <input type="checkbox" bind:checked={s.record_window_titles} />
+          <span>记录前台窗口标题（默认关闭；打开后「时间线」页可见 Top 标题）</span>
+        </label>
+        {#if s.record_window_titles}
+          <p class="hint">排除规则（每行一条子串，不区分大小写；命中即不记录。可用来挡银行页面、密码框等敏感标题）。</p>
+          <textarea
+            rows="4"
+            bind:value={titlePatternsText}
+            spellcheck="false"
+            placeholder="例如：银行｜密码｜ tokens"
+          ></textarea>
+        {/if}
       </section>
 
       <section class="panel">

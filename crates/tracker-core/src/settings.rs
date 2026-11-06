@@ -35,6 +35,15 @@ pub struct TrackerSettings {
     /// 应用显示名别名（app_key → 别名，读取时应用，不改历史数据）。
     #[serde(default)]
     pub app_display_names: std::collections::HashMap<String, String>,
+    /// 窗口标题记录（隐私敏感，默认关闭；打开后 TitleIntervals 才有数据）。
+    #[serde(default)]
+    pub record_window_titles: bool,
+    /// 标题排除规则（子串匹配，不区分大小写；命中即不记录）。
+    #[serde(default)]
+    pub title_exclude_patterns: Vec<String>,
+    /// 设置结构版本（迁移链用）。
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     #[serde(default)]
     pub widget: WidgetPrefs,
 }
@@ -53,6 +62,10 @@ fn default_hotkey_main() -> String {
 
 fn default_hotkey_widget() -> String {
     "Ctrl+Alt+W".to_string()
+}
+
+fn default_schema_version() -> u32 {
+    1
 }
 
 /// 悬浮窗偏好（右键菜单可调：置顶/锁定/贴边/缩略/透明度/配色）。
@@ -111,6 +124,9 @@ impl Default for TrackerSettings {
             api_port: default_api_port(),
             category_nature: Default::default(),
             app_display_names: Default::default(),
+            record_window_titles: false,
+            title_exclude_patterns: Default::default(),
+            schema_version: 1,
             widget: Default::default(),
         }
     }

@@ -46,6 +46,16 @@ pub struct ForegroundInterval {
     pub duration_seconds: f64,
 }
 
+/// 窗口标题区间（隐私开关打开才记录）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TitleInterval {
+    pub app_key: String,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub duration_seconds: f64,
+}
+
 /// 跟踪状态区间（统计中/空闲/锁定/挂起/暂停），供时间线与状态分布统计。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateInterval {

@@ -17,6 +17,11 @@ pub struct UsageAggregator {
     pub pending_intervals: Vec<ForegroundInterval>,
     /// 待写入的状态明细。
     pub pending_state_intervals: Vec<StateInterval>,
+    /// 待写入的标题明细。
+    pub pending_title_intervals: Vec<TitleInterval>,
+    /// 当前标题段（app_key, title）。
+    title_current: Option<(String, String)>,
+    title_start: chrono::DateTime<chrono::Local>,
 }
 
 fn day_key(dt: chrono::DateTime<chrono::Local>) -> String {
@@ -45,6 +50,48 @@ impl UsageAggregator {
             daily: HashMap::new(),
             pending_intervals: Vec::new(),
             pending_state_intervals: Vec::new(),
+            pending_title_intervals: Vec::new(),
+            title_current: None,
+            title_start: now,
+        }
+    }
+
+    /// 标题轮询：同一应用内标题变化时切换标题段。
+    pub fn on_title_tick(
+        &mut self,
+        foreground: Option<(&str, &str)>,
+        now: chrono::DateTime<chrono::Local>,
+    ) {
+        let key = match foreground {
+            Some((k, t)) => (k.to_string(), t.to_string()),
+            None => {
+                self.close_title_interval(now);
+                return;
+            }
+        };
+        let same = match &self.title_current {
+            Some((k, t)) => k == &key.0 && t == &key.1,
+            None => false,
+        };
+        if !same {
+            self.close_title_interval(now);
+            self.title_current = Some(key);
+            self.title_start = now;
+        }
+    }
+
+    fn close_title_interval(&mut self, now: chrono::DateTime<chrono::Local>) {
+        if let Some((app_key, title)) = self.title_current.take() {
+            let dur = (now - self.title_start).num_milliseconds() as f64 / 1000.0;
+            if dur >= 1.0 {
+                self.pending_title_intervals.push(TitleInterval {
+                    app_key,
+                    title,
+                    start_time: self.title_start.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    end_time: now.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    duration_seconds: dur,
+                });
+            }
         }
     }
 

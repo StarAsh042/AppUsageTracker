@@ -18,7 +18,7 @@ use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
 use tracker_core::limits::categories_to_notify;
 use tracker_core::models::{
-    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TrackingState,
+    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TitleInterval, TrackingState,
 };
 use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
@@ -174,6 +174,7 @@ pub fn run() {
             set_app_display_name,
             check_update,
             install_update,
+            get_top_titles,
             scan_installed_apps,
             export_backup_json,
             import_backup_json,
@@ -1363,11 +1364,19 @@ fn load_settings() -> TrackerSettings {
     let base = TrackerSettings::default();
     let path = std::path::Path::new(&base.data_directory).join("settings.json");
     if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Ok(s) = serde_json::from_str::<TrackerSettings>(&text) {
+        if let Ok(mut s) = serde_json::from_str::<TrackerSettings>(&text) {
+            migrate_settings(&mut s);
             return s;
         }
     }
     base
+}
+
+/// 设置结构迁移链：按 schema_version 逐级升级（当前 v1）。
+fn migrate_settings(s: &mut TrackerSettings) {
+    if s.schema_version < 1 {
+        s.schema_version = 1;
+    }
 }
 
 fn save_settings_file(app: &AppHandle) {
@@ -2173,6 +2182,73 @@ fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
             })
             .collect(),
     })
+}
+
+// ---------- Top 标题 ----------
+
+#[derive(Serialize, Clone)]
+struct TopTitle {
+    app_key: String,
+    display_name: String,
+    category: String,
+    title: String,
+    seconds: f64,
+}
+
+#[tauri::command]
+fn get_top_titles(app: AppHandle, from: String, to: String, limit: i64) -> Result<Vec<TopTitle>, String> {
+    let state = app.state::<AppState>();
+    let (rules, overrides, aliases_map) = {
+        let s = state.settings.lock().unwrap();
+        (
+            s.category_rules.clone(),
+            s.app_category_overrides.clone(),
+            s.app_display_names.clone(),
+        )
+    };
+    let resolver = CategoryResolver::new(rules, overrides);
+    let rows = {
+        let st = state.store.lock().unwrap();
+        st.top_titles(&from, &to, limit.clamp(1, 200))
+            .map_err(|e| e.to_string())?
+    };
+    let mut out: Vec<TopTitle> = Vec::new();
+    for (app_key, title, seconds) in rows {
+        // 行所属应用可能已被排除/删除——标题表同步清理过，直接呈现即可
+        let (display, cat) = {
+            let st = state.store.lock().unwrap();
+            match st.query_daily(&from, &to).ok() {
+                Some(rows) => {
+                    let hit = rows.iter().find(|r| r.app_key == app_key);
+                    match hit {
+                        Some(r) => (r.display_name.clone(), ()),
+                        None => (String::new(), ()),
+                    }
+                }
+                None => (String::new(), ()),
+            }
+        };
+        let display = if display.is_empty() {
+            app_key
+                .rsplit(['\\', '/'])
+                .next()
+                .unwrap_or(&app_key)
+                .trim_end_matches(".exe")
+                .to_string()
+        } else {
+            display
+        };
+        let display = aliases_map.get(&app_key).cloned().unwrap_or(display);
+        let category = resolver.resolve(&display, &display, &app_key);
+        out.push(TopTitle {
+            app_key,
+            display_name: display,
+            category,
+            title,
+            seconds,
+        });
+    }
+    Ok(out)
 }
 
 // ---------- JSON 备份 ----------

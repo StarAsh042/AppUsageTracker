@@ -60,6 +60,9 @@ export interface TrackerSettings {
   api_port: number;
   category_nature: Record<string, string>;
   app_display_names: Record<string, string>;
+  record_window_titles: boolean;
+  title_exclude_patterns: string[];
+  schema_version: number;
   widget: WidgetPrefs;
 }
 
@@ -155,6 +158,8 @@ export const api = {
   excludeApp: (appKey: string) => invoke<void>('exclude_app', { appKey }),
   setAppDisplayName: (appKey: string, name: string) =>
     invoke<void>('set_app_display_name', { appKey, name }),
+  getTopTitles: (from: string, to: string, limit: number) =>
+    invoke<TopTitle[]>('get_top_titles', { from, to, limit }),
   checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
   installUpdate: () => invoke<void>('install_update'),
   updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),
@@ -162,6 +167,14 @@ export const api = {
   importBackupJson: () => invoke<string>('import_backup_json'),
   listBackups: () => invoke<string[]>('list_backups'),
 };
+
+export interface TopTitle {
+  app_key: string;
+  display_name: string;
+  category: string;
+  title: string;
+  seconds: number;
+}
 
 export interface UpdateInfo {
   version: string;

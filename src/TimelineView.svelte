@@ -1,10 +1,18 @@
 <script lang="ts">
-  import { api, fmtDuration, localDateKey, type TimelineData } from './lib/api';
+  import {
+    api,
+    fmtDuration,
+    localDateKey,
+    CATEGORY_PALETTE,
+    type TimelineData,
+    type TopTitle,
+  } from './lib/api';
 
   let { initialDate = localDateKey() }: { initialDate?: string } = $props();
 
   let date = $state(initialDate);
   let data = $state<TimelineData | null>(null);
+  let titles = $state<TopTitle[]>([]);
   let loading = $state(false);
   let hover = $state<{ name: string; detail: string; x: number } | null>(null);
   // 可视窗口（秒 0-86400），滚轮缩放、拖动平移
@@ -22,7 +30,10 @@
     loading = true;
     view = [0, 86400];
     try {
-      data = await api.getTimeline(date);
+      [data, titles] = await Promise.all([
+        api.getTimeline(date),
+        api.getTopTitles(date, date, 15),
+      ]);
     } finally {
       loading = false;
     }
@@ -267,6 +278,23 @@
         {/each}
       </div>
     </div>
+    {#if titles.length}
+      <div class="panel">
+        <div class="band-title">Top 标题（该日累计）</div>
+        <div class="rows">
+          {#each titles as t, i (t.app_key + t.title + i)}
+            <div class="trow">
+              <span class="rk">{i + 1}</span>
+              <span class="tmain">
+                <span class="ttl">{t.title}</span>
+                <span class="tapp">{t.display_name} · {t.category}</span>
+              </span>
+              <span class="tdur">{fmtDuration(t.seconds)}</span>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
   {:else}
     <div class="loading">{loading ? '加载中…' : ''}</div>
   {/if}
@@ -482,6 +510,53 @@
   .table-body {
     max-height: 300px;
     overflow-y: auto;
+  }
+
+  .rows {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .trow {
+    display: grid;
+    grid-template-columns: 24px 1fr 90px;
+    gap: 10px;
+    align-items: center;
+    padding: 5px 4px;
+    border-radius: 6px;
+  }
+
+  .trow:hover {
+    background: var(--card2);
+  }
+
+  .rk {
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  .tmain {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .ttl {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tapp {
+    color: var(--text-dim);
+    font-size: 10px;
+  }
+
+  .tdur {
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
   }
 
   .tooltip {

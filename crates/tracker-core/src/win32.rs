@@ -10,7 +10,9 @@ mod imp {
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+    };
 
     pub fn get_foreground_pid() -> Option<u32> {
         unsafe {
@@ -40,6 +42,24 @@ mod imp {
             let now = GetTickCount64();
             let idle_ms = now - info.dwTime as u64;
             idle_ms as f64 / 1000.0
+        }
+    }
+
+    /// 前台窗口标题（无标题/失败返回 None）。
+    pub fn get_foreground_title() -> Option<String> {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_invalid() {
+                return None;
+            }
+            let mut buf = [0u16; 512];
+            let len = GetWindowTextW(hwnd, &mut buf);
+            if len <= 0 {
+                return None;
+            }
+            let s = String::from_utf16_lossy(&buf[..len as usize]);
+            let s = s.trim();
+            if s.is_empty() { None } else { Some(s.to_string()) }
         }
     }
 
@@ -100,6 +120,10 @@ mod imp {
 
     pub fn is_input_desktop_available() -> bool {
         true
+    }
+
+    pub fn get_foreground_title() -> Option<String> {
+        None
     }
 
     pub fn get_tick_count64() -> u64 {
