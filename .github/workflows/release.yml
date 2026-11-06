@@ -62,8 +62,8 @@ jobs:
           STAGE="AppUsageTracker_${VERSION}_${{ matrix.os }}_${SHORT_SHA}"
           mkdir -p "staging/$STAGE"
           found=0
-          for f in target/release/bundle/nsis/*-"${VERSION}"-x64-setup.exe \
-                   target/release/bundle/msi/*-"${VERSION}"-x64.msi; do
+          for f in target/release/bundle/nsis/*_${VERSION}_x64-setup.exe \
+                   target/release/bundle/msi/*_${VERSION}_x64.msi; do
             if [ -f "$f" ]; then cp "$f" "staging/$STAGE/"; found=1; fi
           done
           if [ "$found" != "1" ]; then
@@ -72,11 +72,11 @@ jobs:
           fi
           # 更新器产物（安装包本体 + .sig 签名）+ latest.json（应用内更新清单）
           shopt -s nullglob
-          for sigf in target/release/bundle/nsis/*-"${VERSION}"-x64-setup.exe.sig; do
+          for sigf in target/release/bundle/nsis/*_${VERSION}_x64-setup.exe.sig; do
             cp "$sigf" "staging/$STAGE/"
           done
           shopt -u nullglob
-          EXE=$(ls target/release/bundle/nsis/*-"${VERSION}"-x64-setup.exe | head -1)
+          EXE=$(ls target/release/bundle/nsis/*_${VERSION}_x64-setup.exe | head -1)
           if [ -n "$EXE" ] && [ -f "${EXE}.sig" ]; then
             UPD_URL="https://github.com/StarAsh042/AppUsageTracker/releases/download/v${VERSION}/$(basename "$EXE")"
             jq -n --arg v "$VERSION" \
