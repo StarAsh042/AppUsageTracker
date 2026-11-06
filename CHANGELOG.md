@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-07
+
+### Added
+- 应用内自动更新：tauri-plugin-updater + ed25519 签名校验，设置页检查/一键更新（Release 流水线自动生成 latest.json）
+- 全局热键自定义（保存时校验有效性/冲突）
+- 窗口标题记录（隐私开关默认关 + 排除规则），时间线页新增「Top 标题」
+- 效率趋势：效率评分按天成图（时长/效率切换，评分三档配色）
+- 周报导出：一键生成 Markdown 周报（汇总/分类/Top 应用/每日）到下载目录
+- i18n 中英双语：全界面（含托盘菜单/通知/悬浮窗）跟随设置切换，缺译回退中文
+- `--smoke N` 无界面冒烟模式（写 smoke-report.json，退出码 0/3）
+- 设置 schema_version 迁移链
+
+### Changed
+- 汇总卡合并（总活跃+日均+环比同卡），单/多日视图布局稳定
+- 分类树：「开发/前端」层级名，顶层汇总环形图 + 树形占比
+- 应用别名：详情弹窗改名，排行/悬浮窗/时间线读取层全局生效
+- 本地 HTTP API 5 端点（live/dashboard/timeline/settings/version）
+
 ## [0.3.0] - 2026-11-06
 
 ### 重写
