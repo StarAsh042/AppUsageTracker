@@ -100,6 +100,7 @@ export interface DashboardCategory {
 export interface DashboardTrendPoint {
   date: string;
   seconds: number;
+  score: number | null;
 }
 
 export interface DashboardData {
@@ -148,6 +149,7 @@ export const api = {
     invoke<void>('set_app_category', { appKey, category }),
   saveCategoryRules: (rules: CategoryRule[]) => invoke<void>('save_category_rules', { rules }),
   exportCsv: (from: string, to: string) => invoke<string>('export_csv', { from, to }),
+  exportWeeklyReport: () => invoke<string>('export_weekly_report'),
   clearAllData: () => invoke<void>('clear_all_data'),
   listCategories: () => invoke<string[]>('list_available_categories'),
   openPath: (path: string) => invoke<void>('open_path', { path }),

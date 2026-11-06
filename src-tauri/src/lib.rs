@@ -97,6 +97,8 @@ struct DashboardCategory {
 struct DashboardTrendPoint {
     date: String,
     seconds: f64,
+    /// 当日效率评分（0-100，仅当存在已标记性质的分类时才有值）
+    score: Option<f64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -175,6 +177,7 @@ pub fn run() {
             check_update,
             install_update,
             get_top_titles,
+            export_weekly_report,
             scan_installed_apps,
             export_backup_json,
             import_backup_json,
@@ -251,6 +254,48 @@ pub fn run() {
 
             purge_expired(&handle);
             spawn_api_server(&handle);
+
+            // --smoke N：无界面监控 N 秒后落库、写摘要并退出（供自动化验证）
+            if let Some(secs) = std::env::args()
+                .nth(std::env::args().position(|a| a == "--smoke").map(|i| i + 1).unwrap_or(usize::MAX))
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                let h = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(secs.max(1)));
+                    flush_state(&h);
+                    let st = h.state::<AppState>();
+                    let (total, apps) = {
+                        let agg = st.aggregator.lock().unwrap();
+                        let today = Local::now().format("%Y-%m-%d").to_string();
+                        let rows: Vec<&DailyUsage> =
+                            agg.daily.values().filter(|d| d.usage_date == today).collect();
+                        (
+                            rows.iter().map(|d| d.active_seconds).sum::<f64>(),
+                            rows.len(),
+                        )
+                    };
+                    let report = serde_json::json!({
+                        "mode": "smoke",
+                        "seconds": secs,
+                        "today_total_seconds": total,
+                        "apps": apps,
+                        "healthy": total > 0.0 && apps > 0,
+                    });
+                    let dir = {
+                        let s = st.settings.lock().unwrap();
+                        s.data_directory.clone()
+                    };
+                    let path = std::path::Path::new(&dir).join("smoke-report.json");
+                    let _ = std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap());
+                    println!("smoke-report: {}", path.display());
+                    if report["healthy"].as_bool().unwrap_or(false) {
+                        h.exit(0);
+                    } else {
+                        h.exit(3);
+                    }
+                });
+            }
             spawn_monitor(handle.clone());
             Ok(())
         })
@@ -1556,8 +1601,14 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
         exe_path: String,
         seconds: f64,
     }
+    let nature = {
+        let s = state.settings.lock().unwrap();
+        s.category_nature.clone()
+    };
     let mut per_app: HashMap<String, AggApp> = HashMap::new();
     let mut trend: HashMap<String, f64> = HashMap::new();
+    // 每日每分类秒数（算当日效率评分）
+    let mut day_cat: HashMap<(String, String), f64> = HashMap::new();
     let mut total = 0.0;
     for (_, r) in by_key {
         let e = per_app.entry(r.app_key.clone()).or_insert(AggApp {
@@ -1572,8 +1623,34 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
             e.exe_path = r.exe_path.clone();
         }
         *trend.entry(r.usage_date.clone()).or_insert(0.0) += r.active_seconds;
+        let cat = resolver.resolve(&r.display_name, &r.process_name, &r.exe_path);
+        *day_cat
+            .entry((r.usage_date.clone(), cat))
+            .or_insert(0.0) += r.active_seconds;
         total += r.active_seconds;
     }
+    let day_score = |date: &str| -> Option<f64> {
+        let mut marked = 0.0;
+        let mut weighted = 0.0;
+        for ((d, cat), secs) in &day_cat {
+            if d != date {
+                continue;
+            }
+            match nature.get(cat).map(|x| x.as_str()) {
+                Some("productive") => {
+                    marked += secs;
+                    weighted += secs;
+                }
+                Some("distracting") => marked += secs,
+                _ => {}
+            }
+        }
+        if marked < 1.0 {
+            None
+        } else {
+            Some((weighted / marked * 100.0 * 10.0).round() / 10.0)
+        }
+    };
 
     let mut apps: Vec<DashboardApp> = per_app
         .into_iter()
@@ -1628,7 +1705,11 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
 
     let mut trend: Vec<DashboardTrendPoint> = trend
         .into_iter()
-        .map(|(date, seconds)| DashboardTrendPoint { date, seconds })
+        .map(|(date, seconds)| DashboardTrendPoint {
+            score: day_score(&date),
+            date,
+            seconds,
+        })
         .collect();
     trend.sort_by(|a, b| a.date.cmp(&b.date));
 
@@ -1962,7 +2043,7 @@ fn get_app_detail(
     };
     let mut points: Vec<DashboardTrendPoint> = daily
         .into_iter()
-        .map(|(date, seconds)| DashboardTrendPoint { date, seconds })
+        .map(|(date, seconds)| DashboardTrendPoint { date, seconds, score: None })
         .collect();
     points.sort_by(|a, b| a.date.cmp(&b.date));
     let total_seconds = points.iter().map(|p| p.seconds).sum();
@@ -2182,6 +2263,55 @@ fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
             })
             .collect(),
     })
+}
+
+// ---------- 周报 ----------
+
+#[tauri::command]
+fn export_weekly_report(app: AppHandle) -> Result<String, String> {
+    let to = Local::now().format("%Y-%m-%d").to_string();
+    let from = (Local::now() - chrono::Duration::days(6))
+        .format("%Y-%m-%d")
+        .to_string();
+    let data = build_dashboard(&app, &from, &to)?;
+
+    let mut md = String::new();
+    md.push_str(&format!("# 使用周报（{from} ~ {to}）\n\n"));
+    md.push_str(&format!(
+        "- 总活跃：**{}**\n- 日均：**{}**\n- 应用数：{}\n\n",
+        fmt_hms(data.total_active_seconds),
+        fmt_hms(data.total_active_seconds / 7.0),
+        data.apps.len()
+    ));
+    md.push_str("## 分类占比\n\n| 分类 | 时长 | 占比 |\n|---|---:|---:|\n");
+    for c in &data.categories {
+        md.push_str(&format!(
+            "| {} | {} | {:.1}% |\n",
+            c.name,
+            fmt_hms(c.seconds),
+            c.percent
+        ));
+    }
+    md.push_str("\n## 应用 Top 15\n\n| # | 应用 | 分类 | 时长 | 占比 |\n|---|---|---|---:|---:|\n");
+    for (i, a) in data.apps.iter().take(15).enumerate() {
+        md.push_str(&format!(
+            "| {} | {} | {} | {} | {:.1}% |\n",
+            i + 1,
+            a.display_name,
+            a.category,
+            fmt_hms(a.active_seconds),
+            a.percent
+        ));
+    }
+    md.push_str("\n## 每日活跃\n\n| 日期 | 时长 |\n|---|---:|\n");
+    for t in &data.trend {
+        md.push_str(&format!("| {} | {} |\n", t.date, fmt_hms(t.seconds)));
+    }
+
+    let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
+    let file = dir.join(format!("使用周报_{from}_{to}.md"));
+    std::fs::write(&file, md).map_err(|e| e.to_string())?;
+    Ok(file.to_string_lossy().to_string())
 }
 
 // ---------- Top 标题 ----------

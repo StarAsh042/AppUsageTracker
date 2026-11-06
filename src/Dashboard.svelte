@@ -15,6 +15,7 @@
   let settings = $state<TrackerSettings | null>(null);
   let detail = $state<AppDetail | null>(null);
   let catColors = $state<Map<string, string>>(new Map());
+  let trendMode = $state<'duration' | 'score'>('duration');
   let aliases = $state<Map<string, string>>(new Map());
 
   function aliasName(key: string, fallback: string): string {
@@ -258,6 +259,11 @@
     await api.openPath(path);
   }
 
+  async function exportWeekly() {
+    const path = await api.exportWeeklyReport();
+    await api.openPath(path);
+  }
+
   function rowMenu(e: MouseEvent, appKey: string, current: string) {
     e.preventDefault();
     // 防止菜单被窗口边缘裁切：估算尺寸后翻转/钳制
@@ -323,6 +329,7 @@
     </div>
     <div class="spacer"></div>
     <button class="ghost" onclick={exportCsv}>导出 CSV</button>
+    <button class="ghost" onclick={exportWeekly}>周报</button>
   </div>
 
   {#if data}
@@ -452,14 +459,49 @@
         </div>
         {#if data.trend.length >= 2}
         <div class="panel trend">
-          <div class="panel-title">每日活跃</div>
+          <div class="panel-title trend-head">
+            <span>{trendMode === 'duration' ? '每日活跃' : '效率趋势'}</span>
+            <span class="t-switch">
+              <button class:on={trendMode === 'duration'} onclick={() => (trendMode = 'duration')}>时长</button>
+              <button class:on={trendMode === 'score'} onclick={() => (trendMode = 'score')}>效率</button>
+            </span>
+          </div>
           <div class="trend">
             {#each data.trend as t (t.date)}
-              <div class="t-col" title="{t.date} {fmtDuration(t.seconds)}">
+              {@const val =
+                trendMode === 'score'
+                  ? t.score === null
+                    ? 0
+                    : t.score
+                  : t.seconds}
+              {@const pct =
+                trendMode === 'score'
+                  ? Math.min(100, val)
+                  : (val / trendMax(data.trend)) * 100}
+              <div
+                class="t-col"
+                title="{t.date} {trendMode === 'score'
+                  ? t.score === null
+                    ? '无评分'
+                    : `效率 ${t.score}%`
+                  : fmtDuration(t.seconds)}"
+              >
                 <div class="t-bar-wrap">
-                  <div class="t-fill" style="height:{(t.seconds / trendMax(data.trend)) * 100}%"></div>
+                  <div
+                    class="t-fill"
+                    class:score={trendMode === 'score'}
+                    class:good={trendMode === 'score' && val >= 60}
+                    class:bad={trendMode === 'score' && val < 40}
+                    style="height:{pct}%"
+                  ></div>
                 </div>
-                <div class="t-label">{t.date.slice(5)}</div>
+                <div class="t-label">
+                  {trendMode === 'score'
+                    ? t.score === null
+                      ? '·'
+                      : `${t.score}%`
+                    : t.date.slice(5)}
+                </div>
               </div>
             {:else}
               <div class="empty">暂无数据</div>
@@ -833,11 +875,50 @@
     overflow: hidden;
   }
 
+  .trend-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .t-switch {
+    display: inline-flex;
+    gap: 4px;
+  }
+
+  .t-switch button {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .t-switch button.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
   .t-fill {
     width: 100%;
     background: linear-gradient(180deg, #4f8cff, #3566cc);
     border-radius: 6px 6px 0 0;
     min-height: 2px;
+  }
+
+  .t-fill.score {
+    background: linear-gradient(180deg, #f5a623, #c77f10);
+  }
+
+  .t-fill.score.good {
+    background: linear-gradient(180deg, #3ecf8e, #23a56d);
+  }
+
+  .t-fill.score.bad {
+    background: linear-gradient(180deg, #ff5f5f, #c73e3e);
   }
 
   .t-label {
