@@ -186,6 +186,7 @@ pub fn run() {
             get_top_titles,
             get_top_titles,
             get_top_web,
+            db_maintenance,
             export_weekly_report,
             scan_installed_apps,
             export_backup_json,
@@ -2477,6 +2478,37 @@ fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
                 duration_seconds: s.duration_seconds,
             })
             .collect(),
+    })
+}
+
+// ---------- 数据库维护 ----------
+
+#[derive(Serialize, Clone)]
+struct DbMaintenance {
+    integrity: String,
+    vacuum_ok: bool,
+    page_count: i64,
+    freelist: i64,
+}
+
+#[tauri::command]
+fn db_maintenance(state: State<AppState>) -> Result<DbMaintenance, String> {
+    let st = state.store.lock().unwrap();
+    let integrity: String = st
+        .pragma("PRAGMA integrity_check")
+        .map_err(|e| e.to_string())?;
+    let vacuum_ok = st.vacuum().is_ok();
+    let page_count: i64 = st
+        .pragma_i64("PRAGMA page_count")
+        .map_err(|e| e.to_string())?;
+    let freelist: i64 = st
+        .pragma_i64("PRAGMA freelist_count")
+        .map_err(|e| e.to_string())?;
+    Ok(DbMaintenance {
+        integrity,
+        vacuum_ok,
+        page_count,
+        freelist,
     })
 }
 

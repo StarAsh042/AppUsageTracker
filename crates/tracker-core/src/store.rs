@@ -264,6 +264,23 @@ impl SqliteStore {
         rows.collect()
     }
 
+    /// 执行单值 PRAGMA 查询（integrity_check / page_count 等）。
+    pub fn pragma(&self, pragma: &str) -> Result<String, rusqlite::Error> {
+        self.conn
+            .query_row(pragma, [], |row| row.get::<_, String>(0))
+            .map_err(|e| e.into())
+    }
+
+    /// 执行单值数值 PRAGMA。
+    pub fn pragma_i64(&self, pragma: &str) -> Result<i64, rusqlite::Error> {
+        self.conn.query_row(pragma, [], |row| row.get::<_, i64>(0))
+    }
+
+    /// VACUUM 整理数据库文件。
+    pub fn vacuum(&self) -> Result<(), rusqlite::Error> {
+        self.conn.execute_batch("VACUUM;")
+    }
+
     /// 删除某应用的全部记录（用于剔除统计程序自身的历史行）。
     pub fn delete_app_rows(&self, app_key: &str) -> Result<(), rusqlite::Error> {
         self.conn.execute_batch(&format!(
