@@ -1410,7 +1410,15 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
             match extract_domain(&hb.url) {
                 Some(domain) => {
                     heartbeat_web(app, domain, hb.title);
-                    api_json(&mut stream, 200, r#"{"ok":true}"#.into());
+                    let interval = {
+                        let s = st.settings.lock().unwrap();
+                        s.web_heartbeat_interval_secs
+                    };
+                    api_json(
+                        &mut stream,
+                        200,
+                        serde_json::json!({ "ok": true, "interval": interval }).to_string(),
+                    );
                 }
                 None => api_json(&mut stream, 400, r#"{"error":"bad url"}"#.into()),
             }

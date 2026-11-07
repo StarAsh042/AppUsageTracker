@@ -41,6 +41,9 @@ pub struct TrackerSettings {
     /// 浏览器网页统计（隐私敏感，默认关闭；打开后浏览器扩展的心跳才被接受）。
     #[serde(default)]
     pub record_web: bool,
+    /// 网页心跳间隔（秒，扩展据此自适应上报频率；MV3 下限 30s）。
+    #[serde(default = "default_web_interval")]
+    pub web_heartbeat_interval_secs: u32,
     /// 标题排除规则（子串匹配，不区分大小写；命中即不记录）。
     #[serde(default)]
     pub title_exclude_patterns: Vec<String>,
@@ -75,6 +78,10 @@ fn default_hotkey_widget() -> String {
 
 fn default_schema_version() -> u32 {
     1
+}
+
+fn default_web_interval() -> u32 {
+    10
 }
 
 /// 悬浮窗偏好（右键菜单可调：置顶/锁定/贴边/缩略/透明度/配色）。
@@ -135,6 +142,7 @@ impl Default for TrackerSettings {
             app_display_names: Default::default(),
             record_window_titles: false,
             record_web: false,
+            web_heartbeat_interval_secs: 10,
             title_exclude_patterns: Default::default(),
             language: "system".to_string(),
             update_channel: "auto".to_string(),

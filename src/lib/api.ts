@@ -64,6 +64,7 @@ export interface TrackerSettings {
   app_display_names: Record<string, string>;
   record_window_titles: boolean;
   record_web: boolean;
+  web_heartbeat_interval_secs: number;
   title_exclude_patterns: string[];
   language: string;
   update_channel: string;

@@ -193,6 +193,19 @@
     }
   }
 
+  async function openExtensionsPage() {
+    try {
+      await api.openPath('chrome://extensions');
+    } catch {
+      // chrome:// 协议无法从外部打开时退化
+      window.open('chrome://extensions', '_blank');
+    }
+  }
+
+  async function openExtensionFolder() {
+    await api.openPath('extension');
+  }
+
   async function clearData() {
     if (confirm('确定清空全部统计数据？此操作不可恢复。')) {
       await api.clearAllData();
@@ -225,6 +238,15 @@
 <div class="settings">
   {#if s}
     <div class="sections">
+      <section class="panel">
+        <h3>{t('界面语言')}</h3>
+        <div class="lang-switch">
+          <button class:on={s.language !== 'en'} onclick={() => { s.language = 'zh-CN'; save(); }}>中文</button>
+          <button class:on={s.language === 'en'} onclick={() => { s.language = 'en'; save(); }}>English</button>
+        </div>
+        <p class="hint" style="margin-top:6px">{t('语言切换即时生效，托盘菜单重启后应用')}</p>
+      </section>
+
       <section class="panel">
         <h3>{t('常规')}</h3>
         <div class="grid2">
@@ -310,6 +332,14 @@
           <input type="checkbox" bind:checked={s.record_web} />
           <span>{t('网页浏览统计')}（{t('需安装浏览器扩展')}）</span>
         </label>
+        {#if s.record_web}
+          <div class="grid2" style="margin-top:8px">
+            <label>
+              <span>{t('网页心跳间隔（秒，MV3 下限 30）')}</span>
+              <input type="number" min="30" max="3600" bind:value={s.web_heartbeat_interval_secs} />
+            </label>
+          </div>
+        {/if}
         {#if s.record_window_titles}
           <p class="hint">{t('排除规则')}——{t('每行一条子串')}。</p>
           <textarea
@@ -319,6 +349,15 @@
             placeholder={t('排除规则示例')}
           ></textarea>
         {/if}
+      </section>
+
+      <section class="panel">
+        <h3>{t('浏览器扩展')}</h3>
+        <p class="hint">{t('安装说明')}</p>
+        <div class="row-actions">
+          <button class="ghost" onclick={openExtensionsPage}>{t('打开浏览器扩展页')}</button>
+          <button class="ghost" onclick={openExtensionFolder}>{t('打开扩展目录')}</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -460,16 +499,6 @@
 
       <section class="panel">
         <h3>{t('外观')}</h3>
-        <div class="grid2" style="margin-bottom:12px">
-          <label>
-            <span>{t('界面语言')}</span>
-            <select bind:value={s.language} onchange={save}>
-              <option value="system">{t('跟随系统')}</option>
-              <option value="zh-CN">中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-        </div>
         <div class="theme-row">
           <label class="check-row">
             <input
@@ -677,6 +706,27 @@
   .theme-row {
     display: flex;
     gap: 24px;
+  }
+
+  .lang-switch {
+    display: inline-flex;
+    gap: 4px;
+  }
+
+  .lang-switch button {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 7px;
+    padding: 8px 22px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .lang-switch button.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
   }
 
   select {
