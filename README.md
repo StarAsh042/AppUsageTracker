@@ -74,6 +74,18 @@ npm run tauri build
     └── lib/api.ts              # IPC 封装与类型
 ```
 
+## 浏览器扩展（可选）
+
+统计浏览器标签页的网页浏览时长（按域名聚合）：
+
+1. 设置 → 隐私 → 开启「网页浏览统计」（默认关闭）
+2. Chrome/Edge 打开 `chrome://extensions` → 开发者模式 → 「加载已解压的扩展程序」→ 选择仓库的 `extension/` 目录
+3. 扩展每 60s 把活动标签页 URL+标题发到本地 API，时间线页出现「Top 网页」
+
+## 数据库维护
+
+设置 → 数据库维护 → 「完整性检查 + VACUUM」：一键检查数据库完整性并压缩文件。
+
 ## 本地 HTTP API
 
 设置中开启后（默认开，仅监听 `127.0.0.1:59598`），第三方工具可读取统计：
@@ -85,6 +97,8 @@ GET /api/dashboard?from=&to=                   区间聚合（应用排行/分�
 GET /api/timeline?date=YYYY-MM-DD              单日时间线（明细片段 + 状态区间）
 GET /api/settings                              当前设置
 GET /api/version                               版本
+POST /api/web-heartbeat                        浏览器心跳 {url, title}（需开启网页统计）
+GET /api/web-top?from=&to=                     Top 网页（按域名+标题聚合）
 ```
 
 ## 数据存储
