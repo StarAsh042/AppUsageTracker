@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-11-07
+
+### Changed
+- 更新链路端到端验证版（无功能变化；用于验证 0.5.0 → 0.5.1 应用内自动更新全流程）
+
 ## [0.5.0] - 2026-11-07
 
 ### Added
