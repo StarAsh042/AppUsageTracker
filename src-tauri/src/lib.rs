@@ -71,6 +71,8 @@ struct AppState {
     web_open: Mutex<Option<(String, String, chrono::DateTime<Local>)>>,
     /// 浏览器心跳待写入明细。
     web_pending: Mutex<Vec<WebInterval>>,
+    /// 分类解析器缓存（save_settings 时重建，避免每秒克隆规则）。
+    resolver: Mutex<std::sync::Arc<CategoryResolver>>,
 }
 
 struct TrayHandles {
@@ -240,6 +242,10 @@ pub fn run() {
                     .insert(format!("{}|{}", r.usage_date, r.app_key), r);
             }
 
+            let resolver = std::sync::Arc::new(CategoryResolver::new(
+                settings.category_rules.clone(),
+                settings.app_category_overrides.clone(),
+            ));
             app.manage(AppState {
                 settings: Mutex::new(settings),
                 aggregator: Mutex::new(agg),
@@ -253,6 +259,7 @@ pub fn run() {
                 api_last: Mutex::new(None),
                 web_open: Mutex::new(None),
                 web_pending: Mutex::new(Vec::new()),
+                resolver: Mutex::new(resolver),
             });
 
             let handle = app.handle().clone();
@@ -1541,18 +1548,14 @@ fn purge_expired(app: &AppHandle) {
 
 fn check_limits(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let (limits, rules, overrides) = {
+    let limits = {
         let s = state.settings.lock().unwrap();
-        (
-            s.category_daily_limit_minutes.clone(),
-            s.category_rules.clone(),
-            s.app_category_overrides.clone(),
-        )
+        s.category_daily_limit_minutes.clone()
     };
     if limits.is_empty() {
         return;
     }
-    let resolver = CategoryResolver::new(rules, overrides);
+    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
     let mut per_cat: HashMap<String, f64> = HashMap::new();
     {
@@ -1580,11 +1583,7 @@ fn check_limits(app: &AppHandle) {
 
 fn live_status(app: &AppHandle) -> LiveStatus {
     let state = app.state::<AppState>();
-    let (rules, overrides) = {
-        let s = state.settings.lock().unwrap();
-        (s.category_rules.clone(), s.app_category_overrides.clone())
-    };
-    let resolver = CategoryResolver::new(rules, overrides);
+    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
     let agg = state.aggregator.lock().unwrap();
@@ -1849,11 +1848,7 @@ fn get_dashboard(app: AppHandle, from: String, to: String) -> Result<DashboardDa
 
 fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardData, String> {
     let state = app.state::<AppState>();
-    let (rules, overrides) = {
-        let s = state.settings.lock().unwrap();
-        (s.category_rules.clone(), s.app_category_overrides.clone())
-    };
-    let resolver = CategoryResolver::new(rules, overrides);
+    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
 
     let store_rows = {
         let st = state.store.lock().unwrap();
@@ -2074,6 +2069,11 @@ fn save_settings(
     apply_locale(&app);
     apply_hotkeys(&app);
     spawn_api_server(&app);
+    // 分类规则/覆盖变化 → 重建 resolver 缓存
+    *app.state::<AppState>().resolver.lock().unwrap() = std::sync::Arc::new(CategoryResolver::new(
+        settings.category_rules.clone(),
+        settings.app_category_overrides.clone(),
+    ));
 
     // 悬浮窗可见性同步
     let want = state.settings.lock().unwrap().show_floating_widget;
@@ -2281,11 +2281,7 @@ fn get_app_detail(
     to: String,
 ) -> Result<AppDetail, String> {
     let state = app.state::<AppState>();
-    let (rules, overrides) = {
-        let s = state.settings.lock().unwrap();
-        (s.category_rules.clone(), s.app_category_overrides.clone())
-    };
-    let resolver = CategoryResolver::new(rules, overrides);
+    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
 
     let store_rows = {
         let st = state.store.lock().unwrap();
@@ -2363,12 +2359,7 @@ struct ScannedApp {
 fn scan_installed_apps(app: AppHandle) -> Result<Vec<ScannedApp>, String> {
     #[cfg(windows)]
     {
-        let state = app.state::<AppState>();
-        let (rules, overrides) = {
-            let s = state.settings.lock().unwrap();
-            (s.category_rules.clone(), s.app_category_overrides.clone())
-        };
-        let resolver = CategoryResolver::new(rules, overrides);
+        let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
 
         let mut dirs: Vec<(std::path::PathBuf, &str)> = Vec::new();
         if let Ok(profile) = std::env::var("USERPROFILE") {
@@ -2513,11 +2504,7 @@ fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
     let app = app.clone();
     let date = date.to_string();
     let state = app.state::<AppState>();
-    let (rules, overrides) = {
-        let s = state.settings.lock().unwrap();
-        (s.category_rules.clone(), s.app_category_overrides.clone())
-    };
-    let resolver = CategoryResolver::new(rules, overrides);
+    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
     let (intervals, states) = {
         let st = state.store.lock().unwrap();
         (
@@ -2656,15 +2643,8 @@ fn get_top_titles(
     limit: i64,
 ) -> Result<Vec<TopTitle>, String> {
     let state = app.state::<AppState>();
-    let (rules, overrides, aliases_map) = {
-        let s = state.settings.lock().unwrap();
-        (
-            s.category_rules.clone(),
-            s.app_category_overrides.clone(),
-            s.app_display_names.clone(),
-        )
-    };
-    let resolver = CategoryResolver::new(rules, overrides);
+    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
+    let aliases_map = state.settings.lock().unwrap().app_display_names.clone();
     let rows = {
         let st = state.store.lock().unwrap();
         st.top_titles(&from, &to, limit.clamp(1, 200))
