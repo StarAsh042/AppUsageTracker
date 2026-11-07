@@ -111,6 +111,21 @@
 
   const yearMax = $derived(Math.max(1, ...[...trend.values()]));
 
+  // 月份标签（在年热力图上方，按周位置分布）
+  const yearMonths = $derived.by(() => {
+    const y = yearCursor;
+    const months: { name: string; weeks: number }[] = [];
+    const MONTH_NAMES = $lang === 'en'
+      ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      : ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+    // 每月占的周数（近似：该月天数 / 7 向上取整）
+    for (let m = 0; m < 12; m++) {
+      const days = new Date(y, m + 1, 0).getDate();
+      months.push({ name: MONTH_NAMES[m], weeks: Math.ceil(days / 7) });
+    }
+    return months;
+  });
+
   const todayKey = $derived(localDateKey());
 
   function heat(seconds: number | undefined, max: number): string {
@@ -145,29 +160,48 @@
 
   {#if mode === 'year'}
     <div class="panel">
-      <div class="year-grid">
-        {#each yearGrid as week, wi (wi)}
-          <div class="y-week">
-            {#each week as cell (cell.date)}
-              <button
-                class="y-cell"
-                class:today={cell.date === todayKey}
-                style="background:{heat(cell.seconds, yearMax)}"
-                onclick={() => pickDate(cell.date)}
-                title="{cell.date}{cell.seconds !== undefined && cell.seconds > 0 ? ' · ' + fmtDuration(cell.seconds) : ''}"
-              ></button>
+      <div class="year-heatmap">
+        <div class="yh-months">
+          <span class="yh-spacer"></span>
+          {#each yearMonths as m (m.name)}
+            <span class="yh-month" style="flex-grow:{m.weeks}">{m.name}</span>
+          {/each}
+        </div>
+        <div class="yh-body">
+          <div class="yh-days">
+            {#each ['一','','三','','五','','日'] as d, i (i)}
+              <span class="yh-day" class:visible={i % 2 === 0}>{d}</span>
             {/each}
           </div>
-        {/each}
-      </div>
-      <div class="scale">
-        <span>{t('少')}</span>
-        <span class="sw" style="background:color-mix(in srgb, var(--accent) 25%, transparent)"></span>
-        <span class="sw" style="background:color-mix(in srgb, var(--accent) 50%, transparent)"></span>
-        <span class="sw" style="background:color-mix(in srgb, var(--accent) 75%, transparent)"></span>
-        <span class="sw" style="background:var(--accent)"></span>
-        <span>{t('多')}</span>
-        {#if loading}<span class="loading-inline">{t('加载中')}…</span>{/if}
+          <div class="yh-grid">
+            {#each yearGrid as week, wi (wi)}
+              <div class="yh-col">
+                {#each week as cell (cell.date)}
+                  {#if cell}
+                    <button
+                      class="yh-cell"
+                      class:today={cell.date === todayKey}
+                      style="background:{heat(cell.seconds, yearMax)}"
+                      onclick={() => pickDate(cell.date)}
+                      title="{cell.date}{cell.seconds !== undefined && cell.seconds > 0 ? ' · ' + fmtDuration(cell.seconds) : ''}"
+                    ></button>
+                  {:else}
+                    <span class="yh-cell empty"></span>
+                  {/if}
+                {/each}
+              </div>
+            {/each}
+          </div>
+        </div>
+        <div class="yh-scale">
+          <span>{t('少')}</span>
+          <span class="yh-sw" style="background:color-mix(in srgb, var(--accent) 25%, transparent)"></span>
+          <span class="yh-sw" style="background:color-mix(in srgb, var(--accent) 50%, transparent)"></span>
+          <span class="sw" style="background:color-mix(in srgb, var(--accent) 75%, transparent)"></span>
+          <span class="yh-sw" style="background:var(--accent)"></span>
+          <span>{t('多')}</span>
+          {#if loading}<span class="loading-inline">{t('加载中')}…</span>{/if}
+        </div>
       </div>
     </div>
   {:else}
@@ -339,44 +373,105 @@
     color: var(--text-dim);
   }
 
-  /* 年热力图：GitHub contribution 风格小方块 */
-  .year-grid {
-    display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(7, 13px);
-    gap: 3px;
-    overflow-x: auto;
-    padding-bottom: 6px;
+  /* 年热力图：GitHub contribution 风格，铺满面板 */
+  .year-heatmap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .y-week {
+  .yh-months {
+    display: flex;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--text-dim);
+    padding-left: 28px;
+  }
+
+  .yh-month {
+    text-align: left;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .yh-spacer {
+    width: 24px;
+    flex: none;
+  }
+
+  .yh-body {
+    display: flex;
+    gap: 4px;
+  }
+
+  .yh-days {
     display: flex;
     flex-direction: column;
     gap: 3px;
+    width: 24px;
+    flex: none;
   }
 
-  .y-cell {
-    width: 13px;
-    height: 13px;
-    border-radius: 3px;
-    border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-    background: transparent;
+  .yh-day {
+    height: 12px;
+    font-size: 9px;
+    color: var(--text-dim);
+    line-height: 12px;
+    text-align: right;
+  }
+
+  .yh-grid {
+    flex: 1;
+    display: flex;
+    gap: 3px;
+  }
+
+  .yh-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .yh-cell {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 2px;
+    border: none;
+    background: color-mix(in srgb, var(--border) 40%, transparent);
     cursor: pointer;
     padding: 0;
+    min-width: 8px;
   }
 
-  .y-cell:hover {
-    border-color: var(--accent);
+  .yh-cell.empty {
+    background: transparent;
+    cursor: default;
   }
 
-  .y-cell.today {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+  .yh-cell:hover {
+    outline: 1px solid var(--accent);
   }
 
-  .y-empty {
-    width: 13px;
-    height: 13px;
+  .yh-cell.today {
+    outline: 1.5px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  .yh-scale {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  .yh-sw {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
   }
 
   .scale {
