@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-07
+
+### Added
+- 备份文件删除按钮（左移至文字前）
+- 日历年热力图（GitHub contribution 风格小方块，月/年切换）
+- 界面配色实时切换（6 色按钮，设置页选色即改全界面+悬浮窗）
+- 更新下载通道（自动=官方→镜像回退 / 仅官方 / 仅镜像，gh-proxy 加速）
+- 浏览器扩展安装引导按钮（打开扩展页 + 打开扩展目录）
+- 网页心跳间隔可调（默认 10s，MV3 下限 30s）
+- 语言切换提升到设置页首屏（中文/English 分段按钮）
+
+### Fixed
+- 更新镜像失败：下载 URL 走 gh-proxy 代理，绕过失效系统代理
+- 日历年视图正确渲染
 ## [0.5.1] - 2026-11-07
 
 ### Changed
