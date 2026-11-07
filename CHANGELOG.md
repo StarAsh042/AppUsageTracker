@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-07
+
+### Added
+- 浏览器扩展（Chrome/Edge MV3）：每 60s 心跳当前标签页 URL+标题到本地 API，按域名聚合网页浏览时长；隐私开关 record_web 默认关（关闭时心跳 403 拒绝）
+- 时间线页新增「Top 网页」面板（按域名+标题聚合）；本地 API 新增 /api/web-heartbeat（POST）与 /api/web-top
+- 数据库维护：设置页一键完整性检查 + VACUUM + 页数/空闲页统计（db_maintenance 命令）
+- i18n 收尾：全部静态 title/placeholder 属性接入翻译（审计清零）；英文模式时长 1h23m/12m30s 格式
+
+### Fixed
+- 并行同名工具链项目共用数据目录导致的配置互踩问题定位与规避
+
 ## [0.4.0] - 2026-11-07
 
 ### Added
