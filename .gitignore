@@ -34,3 +34,4 @@ x86/
 # Frontend
 /node_modules/
 /dist/
+tmp/
