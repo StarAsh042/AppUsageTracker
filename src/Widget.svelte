@@ -151,7 +151,7 @@
   onmouseleave={onLeave}
 >
   {#if collapsed}
-    <div class="edge-line" title="使用时长悬浮窗"></div>
+    <div class="edge-line" title={t('软件使用时间统计')}></div>
   {:else}
     <div class="row top">
       <span class="dot {live?.state.toLowerCase() ?? ''}"></span>

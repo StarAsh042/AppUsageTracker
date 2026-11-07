@@ -305,7 +305,7 @@
             rows="4"
             bind:value={titlePatternsText}
             spellcheck="false"
-            placeholder="例如：银行｜密码｜ tokens"
+            placeholder={t('排除规则示例')}
           ></textarea>
         {/if}
       </section>
@@ -349,8 +349,8 @@
         <div class="rules-editor">
           {#each rules as r, i (`${r.name}-${i}`)}
             <div class="rule-row">
-              <input class="rule-name" placeholder="分类名" bind:value={r.name} spellcheck="false" />
-              <input class="rule-kw" placeholder="关键词1|关键词2|…" bind:value={r.keywords} spellcheck="false" />
+              <input class="rule-name" placeholder={t('分类名')} bind:value={r.name} spellcheck="false" />
+              <input class="rule-kw" placeholder={t('关键词1')} bind:value={r.keywords} spellcheck="false" />
               <button class="rule-del" title="删除分类" onclick={() => delRule(i)}>✕</button>
             </div>
           {/each}

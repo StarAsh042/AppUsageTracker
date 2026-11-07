@@ -189,6 +189,9 @@ const en05: Record<string, string> = {
   '完整性检查 + 压缩 (VACUUM)': 'Integrity check + VACUUM',
   '页数': 'pages',
   '空闲页': 'free pages',
+  '排除规则示例': 'e.g. bank | password | tokens',
+  '分类名': 'Category name',
+  '关键词1': 'keyword1 | keyword2 | …',
 };
 Object.assign(en, en05);
 

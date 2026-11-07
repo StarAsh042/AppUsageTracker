@@ -182,7 +182,7 @@
     <button class="ghost" onclick={() => (date = localDateKey())}>今天</button>
     <button class="ghost" onclick={resetZoom} disabled={view[0] === 0 && view[1] === 86400}>重置缩放</button>
     <span class="hint">滚轮缩放 · 拖动平移 · 悬停查看详情</span>
-    <input class="search" placeholder="搜索应用/分类…" bind:value={search} spellcheck="false" />
+    <input class="search" placeholder={t('搜索应用')} bind:value={search} spellcheck="false" />
     <button class="ghost" onclick={() => (showTable = !showTable)}>{showTable ? '收起明细' : '展开明细'}</button>
   </div>
 
