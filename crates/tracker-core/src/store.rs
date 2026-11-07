@@ -198,7 +198,13 @@ impl SqliteStore {
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         for r in rows {
-            stmt.execute(rusqlite::params![r.app_key, r.title, r.start_time, r.end_time, r.duration_seconds])?;
+            stmt.execute(rusqlite::params![
+                r.app_key,
+                r.title,
+                r.start_time,
+                r.end_time,
+                r.duration_seconds
+            ])?;
         }
         Ok(())
     }
@@ -234,7 +240,13 @@ impl SqliteStore {
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         for r in rows {
-            stmt.execute(rusqlite::params![r.domain, r.title, r.start_time, r.end_time, r.duration_seconds])?;
+            stmt.execute(rusqlite::params![
+                r.domain,
+                r.title,
+                r.start_time,
+                r.end_time,
+                r.duration_seconds
+            ])?;
         }
         Ok(())
     }
@@ -268,7 +280,6 @@ impl SqliteStore {
     pub fn pragma(&self, pragma: &str) -> Result<String, rusqlite::Error> {
         self.conn
             .query_row(pragma, [], |row| row.get::<_, String>(0))
-            .map_err(|e| e.into())
     }
 
     /// 执行单值数值 PRAGMA。

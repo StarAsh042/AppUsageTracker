@@ -144,6 +144,17 @@
     }
   }
 
+  async function deleteBackup(name: string) {
+    if (!confirm(`${t('删除备份')} ${name}？`)) return;
+    try {
+      await api.deleteBackup(name);
+      backups = await api.listBackups();
+      status = t('备份已删除');
+    } catch (e) {
+      status = String(e);
+    }
+  }
+
   async function importBackup() {
     if (!confirm('导入将清空当前全部数据并以最新备份替换，确定继续？')) return;
     status = '';
@@ -393,6 +404,16 @@
 
       <section class="panel">
         <h3>{t('更新')}</h3>
+        <div class="grid2" style="margin-bottom:12px">
+          <label>
+            <span>{t('下载通道')}</span>
+            <select bind:value={s.update_channel} onchange={save}>
+              <option value="auto">{t('自动（官方→镜像回退）')}</option>
+              <option value="official">{t('仅官方')}</option>
+              <option value="mirror">{t('仅镜像')}</option>
+            </select>
+          </label>
+        </div>
         <div class="row-actions">
           <button class="ghost" disabled={updateChecking} onclick={checkUpdateNow}>
             {updateChecking ? t('检查中') + '…' : t('检查更新')}
@@ -422,7 +443,14 @@
         {#if backups.length}
           <div class="backup-list">
             {#each backups.slice(0, 5) as b (b)}
-              <span class="backup-item">📄 {b}</span>
+              <div class="backup-item">
+                📄 {b}
+                <button
+                  class="backup-del"
+                  title={t('删除备份')}
+                  onclick={() => deleteBackup(b)}
+                >✕</button>
+              </div>
             {/each}
           </div>
         {:else}
@@ -626,6 +654,24 @@
   .backup-item {
     font-size: 12px;
     color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .backup-del {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--danger);
+    border-radius: 6px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+
+  .backup-del:hover {
+    background: rgba(255, 95, 95, 0.12);
   }
 
   .theme-row {

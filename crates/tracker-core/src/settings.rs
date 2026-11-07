@@ -47,6 +47,9 @@ pub struct TrackerSettings {
     /// 界面语言：system（=中文）/ en。
     #[serde(default)]
     pub language: String,
+    /// 更新下载通道：auto（官方→镜像回退）/ official / mirror。
+    #[serde(default)]
+    pub update_channel: String,
     /// 设置结构版本（迁移链用）。
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -134,6 +137,7 @@ impl Default for TrackerSettings {
             record_web: false,
             title_exclude_patterns: Default::default(),
             language: "system".to_string(),
+            update_channel: "auto".to_string(),
             schema_version: 1,
             widget: Default::default(),
         }

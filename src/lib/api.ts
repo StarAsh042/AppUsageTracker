@@ -66,6 +66,7 @@ export interface TrackerSettings {
   record_web: boolean;
   title_exclude_patterns: string[];
   language: string;
+  update_channel: string;
   schema_version: number;
   widget: WidgetPrefs;
 }
@@ -175,6 +176,7 @@ export const api = {
   exportBackupJson: () => invoke<string>('export_backup_json'),
   importBackupJson: () => invoke<string>('import_backup_json'),
   listBackups: () => invoke<string[]>('list_backups'),
+  deleteBackup: (name: string) => invoke<void>('delete_backup', { name }),
 };
 
 export interface TopWeb {

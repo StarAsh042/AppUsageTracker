@@ -85,6 +85,8 @@ jobs:
                   --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                   '{version: $v, notes: ("AppUsageTracker " + $v), pub_date: $date, platforms: { "windows-x86_64": { signature: $sig, url: $url } } }' \
               > "staging/$STAGE/latest.json"
+            # 镜像清单：资产 URL 走 gh-proxy（国内直连可下载）
+            jq -n --arg v "$VERSION"                   --arg sig "$(cat "${EXE}.sig")"                   --arg url "https://gh-proxy.com/$UPD_URL"                   --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)"                   '{version: $v, notes: ("AppUsageTracker " + $v), pub_date: $date, platforms: { "windows-x86_64": { signature: $sig, url: $url } } }'               > "staging/$STAGE/latest-mirror.json"
           else
             echo "::warning::no updater signature; latest.json skipped"
           fi

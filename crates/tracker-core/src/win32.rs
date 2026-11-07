@@ -59,7 +59,11 @@ mod imp {
             }
             let s = String::from_utf16_lossy(&buf[..len as usize]);
             let s = s.trim();
-            if s.is_empty() { None } else { Some(s.to_string()) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
         }
     }
 

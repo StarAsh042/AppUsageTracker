@@ -5,6 +5,8 @@
   let { onPick = () => {} }: { onPick?: (date: string) => void } = $props();
 
   let cursor = $state(new Date());
+  let mode = $state<'month' | 'year'>('month');
+  let yearCursor = $state(new Date().getFullYear());
   let trend = $state<Map<string, number>>(new Map());
   let total = $state(0);
   let loading = $state(false);
@@ -12,7 +14,9 @@
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
   const WEEK_CN = $derived(
-    $lang === 'en' ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['一', '二', '三', '四', '五', '六', '日'],
+    $lang === 'en'
+      ? ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+      : ['一', '二', '三', '四', '五', '六', '日'],
   );
 
   $effect(() => {
@@ -22,13 +26,20 @@
   async function load() {
     loading = true;
     try {
-      const y = cursor.getFullYear();
-      const m = cursor.getMonth();
       const p = (n: number) => String(n).padStart(2, '0');
-      const from = `${y}-${p(m + 1)}-01`;
-      const to = `${y}-${p(m + 1)}-${p(new Date(y, m + 1, 0).getDate())}`;
+      let from: string;
+      let to: string;
+      if (mode === 'year') {
+        from = `${yearCursor}-01-01`;
+        to = `${yearCursor}-12-31`;
+      } else {
+        const y = cursor.getFullYear();
+        const m = cursor.getMonth();
+        from = `${y}-${p(m + 1)}-01`;
+        to = `${y}-${p(m + 1)}-${p(new Date(y, m + 1, 0).getDate())}`;
+      }
       const data: DashboardData = await api.getDashboard(from, to);
-      trend = new Map(data.trend.map((t) => [t.date, t.seconds]));
+      trend = new Map(data.trend.map((x) => [x.date, x.seconds]));
       total = data.total_active_seconds;
     } finally {
       loading = false;
@@ -41,12 +52,24 @@
     cursor = d;
   }
 
+  function shiftYear(offset: number) {
+    yearCursor += offset;
+  }
+
+  function pick(d: number) {
+    onPick(keyOf(grid.y, grid.m, d));
+  }
+
+  function pickDate(date: string) {
+    onPick(date);
+  }
+
   function keyOf(y: number, m: number, d: number): string {
     const p = (n: number) => String(n).padStart(2, '0');
     return `${y}-${p(m + 1)}-${p(d)}`;
   }
 
-  // 月历网格：周一开头
+  // 月视图网格：周一开头
   const grid = $derived.by(() => {
     const y = cursor.getFullYear();
     const m = cursor.getMonth();
@@ -60,68 +83,131 @@
   });
 
   const maxSeconds = $derived(Math.max(1, ...[...trend.values()]));
+
+  // 年热力图：按周分列的小方块（GitHub contribution 风格）
+  const yearGrid = $derived.by(() => {
+    const y = yearCursor;
+    const jan1 = new Date(y, 0, 1);
+    const lead = (jan1.getDay() + 6) % 7;
+    const dec31 = new Date(y, 11, 31);
+    const totalDays = Math.round((dec31.getTime() - jan1.getTime()) / 86400000) + 1;
+    const p = (n: number) => String(n).padStart(2, '0');
+    const weeks: { date: string; d: number; seconds?: number }[][] = [];
+    let wk: ({ date: string; d: number; seconds?: number } | null)[] = Array(lead).fill(null);
+    for (let i = 0; i < totalDays; i++) {
+      const d = new Date(y, 0, 1 + i);
+      const key = `${y}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+      wk.push({ date: key, d: d.getDate(), seconds: trend.get(key) });
+      if (wk.length === 7) {
+        weeks.push(wk.filter((c): c is { date: string; d: number; seconds?: number } => c !== null));
+        wk = [];
+      }
+    }
+    if (wk.length) {
+      weeks.push(wk.filter((c): c is { date: string; d: number; seconds?: number } => c !== null));
+    }
+    return weeks;
+  });
+
+  const yearMax = $derived(Math.max(1, ...[...trend.values()]));
+
   const todayKey = $derived(localDateKey());
 
-  function heat(seconds: number | undefined): string {
+  function heat(seconds: number | undefined, max: number): string {
     if (seconds === undefined) return 'transparent';
-    const r = seconds / maxSeconds;
+    const r = seconds / max;
     if (r <= 0) return 'transparent';
     return `color-mix(in srgb, var(--accent) ${Math.round(18 + r * 82)}%, transparent)`;
-  }
-
-  function pick(d: number) {
-    onPick(keyOf(grid.y, grid.m, d));
   }
 </script>
 
 <div class="cal">
   <div class="toolbar">
-    <button class="nav" onclick={() => shiftMonth(-1)}>◀</button>
-    <span class="month">
-      {$lang === 'en'
-        ? cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-        : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`}
-    </span>
-    <button class="nav" onclick={() => shiftMonth(1)}>▶</button>
-    <span class="total">{t('本月活跃')} {fmtDuration(total)}</span>
+    <div class="mode-switch">
+      <button class:on={mode === 'month'} onclick={() => { mode = 'month'; load(); }}>{t('月')}</button>
+      <button class:on={mode === 'year'} onclick={() => { mode = 'year'; load(); }}>{t('年')}</button>
+    </div>
+    {#if mode === 'month'}
+      <button class="nav" onclick={() => shiftMonth(-1)}>◀</button>
+      <span class="month">
+        {$lang === 'en'
+          ? cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+          : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`}
+      </span>
+      <button class="nav" onclick={() => shiftMonth(1)}>▶</button>
+    {:else}
+      <button class="nav" onclick={() => shiftYear(-1)}>◀</button>
+      <span class="month">{yearCursor} 年</span>
+      <button class="nav" onclick={() => shiftYear(1)}>▶</button>
+    {/if}
+    <span class="total">{fmtDuration(total)}</span>
   </div>
 
-  <div class="panel">
-    <div class="week-head">
-      {#each WEEK_CN as w (w)}<span>{w}</span>{/each}
+  {#if mode === 'year'}
+    <div class="panel">
+      <div class="year-grid">
+        {#each yearGrid as week, wi (wi)}
+          <div class="y-week">
+            {#each week as cell (cell.date)}
+              <button
+                class="y-cell"
+                class:today={cell.date === todayKey}
+                style="background:{heat(cell.seconds, yearMax)}"
+                onclick={() => pickDate(cell.date)}
+                title="{cell.date}{cell.seconds !== undefined && cell.seconds > 0 ? ' · ' + fmtDuration(cell.seconds) : ''}"
+              ></button>
+            {/each}
+          </div>
+        {/each}
+      </div>
+      <div class="scale">
+        <span>{t('少')}</span>
+        <span class="sw" style="background:color-mix(in srgb, var(--accent) 25%, transparent)"></span>
+        <span class="sw" style="background:color-mix(in srgb, var(--accent) 50%, transparent)"></span>
+        <span class="sw" style="background:color-mix(in srgb, var(--accent) 75%, transparent)"></span>
+        <span class="sw" style="background:var(--accent)"></span>
+        <span>{t('多')}</span>
+        {#if loading}<span class="loading-inline">{t('加载中')}…</span>{/if}
+      </div>
     </div>
-    <div class="grid">
-      {#each grid.cells as d, i (i)}
-        {#if d === null}
-          <span class="cell empty-cell"></span>
-        {:else}
-          {@const key = keyOf(grid.y, grid.m, d)}
-          {@const seconds = trend.get(key)}
-          <button
-            class="cell"
-            class:today={key === todayKey}
-            style="background:{heat(seconds)}"
-            onclick={() => pick(d)}
-            title="{key}{seconds !== undefined ? ' · ' + fmtDuration(seconds) : ''}"
-          >
-            <span class="day">{d}</span>
-            {#if seconds !== undefined && seconds > 0}
-              <span class="min">{Math.round(seconds / 60)}分</span>
-            {/if}
-          </button>
-        {/if}
-      {/each}
+  {:else}
+    <div class="panel">
+      <div class="week-head">
+        {#each WEEK_CN as w (w)}<span>{w}</span>{/each}
+      </div>
+      <div class="grid">
+        {#each grid.cells as d, i (i)}
+          {#if d === null}
+            <span class="cell empty-cell"></span>
+          {:else}
+            {@const key = keyOf(grid.y, grid.m, d)}
+            {@const seconds = trend.get(key)}
+            <button
+              class="cell"
+              class:today={key === todayKey}
+              style="background:{heat(seconds, maxSeconds)}"
+              onclick={() => pick(d)}
+              title="{key}{seconds !== undefined ? ' · ' + fmtDuration(seconds) : ''}"
+            >
+              <span class="day">{d}</span>
+              {#if seconds !== undefined && seconds > 0}
+                <span class="min">{Math.round(seconds / 60)}分</span>
+              {/if}
+            </button>
+          {/if}
+        {/each}
+      </div>
+      <div class="scale">
+        <span>{t('少')}</span>
+        <span class="sw" style="background:color-mix(in srgb, var(--accent) 25%, transparent)"></span>
+        <span class="sw" style="background:color-mix(in srgb, var(--accent) 50%, transparent)"></span>
+        <span class="sw" style="background:color-mix(in srgb, var(--accent) 75%, transparent)"></span>
+        <span class="sw" style="background:var(--accent)"></span>
+        <span>{t('多')}</span>
+        {#if loading}<span class="loading-inline">{t('加载中')}…</span>{/if}
+      </div>
     </div>
-    <div class="scale">
-      <span>{t('少')}</span>
-      <span class="sw" style="background:color-mix(in srgb, var(--accent) 25%, transparent)"></span>
-      <span class="sw" style="background:color-mix(in srgb, var(--accent) 50%, transparent)"></span>
-      <span class="sw" style="background:color-mix(in srgb, var(--accent) 75%, transparent)"></span>
-      <span class="sw" style="background:var(--accent)"></span>
-      <span>{t('多')}</span>
-      {#if loading}<span class="loading-inline">{t('加载中')}…</span>{/if}
-    </div>
-  </div>
+  {/if}
 </div>
 
 <style>
@@ -140,8 +226,30 @@
     gap: 12px;
   }
 
+  .mode-switch {
+    display: inline-flex;
+    gap: 4px;
+    margin-right: 6px;
+  }
+
+  .mode-switch button {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 7px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .mode-switch button.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
   .nav {
-    background: var(--glass-card, var(--card));
+    background: var(--card);
     border: 1px solid var(--border);
     color: var(--text-dim);
     border-radius: 7px;
@@ -229,6 +337,46 @@
   .min {
     font-size: 10px;
     color: var(--text-dim);
+  }
+
+  /* 年热力图：GitHub contribution 风格小方块 */
+  .year-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 13px);
+    gap: 3px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+
+  .y-week {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .y-cell {
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .y-cell:hover {
+    border-color: var(--accent);
+  }
+
+  .y-cell.today {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .y-empty {
+    width: 13px;
+    height: 13px;
   }
 
   .scale {

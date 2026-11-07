@@ -4,6 +4,22 @@ mod version_info;
 rust_i18n::i18n!("locales", fallback = "zh-CN");
 use rust_i18n::t;
 
+const OFFICIAL_LATEST: &str =
+    "https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest.json";
+const MIRROR_LATEST: &str = "https://gh-proxy.com/https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest-mirror.json";
+
+/// 按下载通道返回更新端点（auto = 官方优先、镜像回退）。
+fn updater_endpoints(channel: &str) -> Vec<url::Url> {
+    use std::str::FromStr;
+    let official = url::Url::from_str(OFFICIAL_LATEST).expect("valid url");
+    let mirror = url::Url::from_str(MIRROR_LATEST).expect("valid url");
+    match channel {
+        "official" => vec![official],
+        "mirror" => vec![mirror],
+        _ => vec![official, mirror],
+    }
+}
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -21,7 +37,8 @@ use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
 use tracker_core::limits::categories_to_notify;
 use tracker_core::models::{
-    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TitleInterval, TrackingState, WebInterval,
+    AppIdentity, DailyUsage, ForegroundInterval, StateInterval, TitleInterval, TrackingState,
+    WebInterval,
 };
 use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
@@ -187,6 +204,7 @@ pub fn run() {
             get_top_titles,
             get_top_web,
             db_maintenance,
+            delete_backup,
             export_weekly_report,
             scan_installed_apps,
             export_backup_json,
@@ -270,7 +288,12 @@ pub fn run() {
 
             // --smoke N：无界面监控 N 秒后落库、写摘要并退出（供自动化验证）
             if let Some(secs) = std::env::args()
-                .nth(std::env::args().position(|a| a == "--smoke").map(|i| i + 1).unwrap_or(usize::MAX))
+                .nth(
+                    std::env::args()
+                        .position(|a| a == "--smoke")
+                        .map(|i| i + 1)
+                        .unwrap_or(usize::MAX),
+                )
                 .and_then(|v| v.parse::<u64>().ok())
             {
                 let h = handle.clone();
@@ -281,8 +304,11 @@ pub fn run() {
                     let (total, apps) = {
                         let agg = st.aggregator.lock().unwrap();
                         let today = Local::now().format("%Y-%m-%d").to_string();
-                        let rows: Vec<&DailyUsage> =
-                            agg.daily.values().filter(|d| d.usage_date == today).collect();
+                        let rows: Vec<&DailyUsage> = agg
+                            .daily
+                            .values()
+                            .filter(|d| d.usage_date == today)
+                            .collect();
                         (
                             rows.iter().map(|d| d.active_seconds).sum::<f64>(),
                             rows.len(),
@@ -440,8 +466,17 @@ struct UpdateInfo {
 
 #[tauri::command]
 async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let channel = {
+        let st = app.state::<AppState>();
+        let v = st.settings.lock().unwrap().update_channel.clone();
+        v
+    };
     let update = app
-        .updater()
+        .updater_builder()
+        .endpoints(updater_endpoints(&channel))
+        .map_err(|e| format!("端点配置失败: {e}"))?
+        .no_proxy()
+        .build()
         .map_err(|e| format!("初始化更新器失败: {e}"))?
         .check()
         .await
@@ -449,17 +484,23 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     Ok(update.map(|u| UpdateInfo {
         version: u.version.clone(),
         notes: u.body.clone().unwrap_or_default(),
-        date: u
-            .date
-            .map(|d| d.to_string())
-            .unwrap_or_default(),
+        date: u.date.map(|d| d.to_string()).unwrap_or_default(),
     }))
 }
 
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
+    let channel = {
+        let st = app.state::<AppState>();
+        let v = st.settings.lock().unwrap().update_channel.clone();
+        v
+    };
     let update = app
-        .updater()
+        .updater_builder()
+        .endpoints(updater_endpoints(&channel))
+        .map_err(|e| format!("端点配置失败: {e}"))?
+        .no_proxy()
+        .build()
         .map_err(|e| format!("初始化更新器失败: {e}"))?
         .check()
         .await
@@ -1325,7 +1366,11 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
     let body = String::from_utf8_lossy(
-        &data[data.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4).unwrap_or(data.len())..],
+        &data[data
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .map(|p| p + 4)
+            .unwrap_or(data.len())..],
     )
     .to_string();
     let (path, query) = match target.split_once('?') {
@@ -1347,7 +1392,11 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
                 (s.api_enabled, s.record_web)
             };
             if !api_on || !record {
-                return api_json(&mut stream, 403, r#"{"error":"web tracking disabled"}"#.into());
+                return api_json(
+                    &mut stream,
+                    403,
+                    r#"{"error":"web tracking disabled"}"#.into(),
+                );
             }
             #[derive(serde::Deserialize)]
             struct Hb {
@@ -1370,7 +1419,9 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
             let today = Local::now().format("%Y-%m-%d").to_string();
             let from = qs("from").unwrap_or_else(|| today.clone());
             let to = qs("to").unwrap_or(today);
-            let limit = qs("limit").and_then(|v| v.parse::<i64>().ok()).unwrap_or(15);
+            let limit = qs("limit")
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(15);
             let st = app.state::<AppState>();
             let rows = {
                 let s = st.store.lock().unwrap();
@@ -1385,7 +1436,11 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
                             serde_json::json!({ "domain": domain, "title": title, "seconds": seconds })
                         })
                         .collect();
-                    api_json(&mut stream, 200, serde_json::Value::Array(items).to_string())
+                    api_json(
+                        &mut stream,
+                        200,
+                        serde_json::Value::Array(items).to_string(),
+                    )
                 }
                 Err(e) => api_json(&mut stream, 500, format!("{{\"error\":\"{e}\"}}")),
             }
@@ -1702,7 +1757,8 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
     let snap_i = check("w.snap", &t!("贴边收起"), prefs.edge_snap)?;
     let compact_i = check("w.compact", &t!("缩略模式"), prefs.compact)?;
 
-    let op_menu = Submenu::with_id(&app, "w.opacity", &t!("透明度"), true).map_err(|e| e.to_string())?;
+    let op_menu =
+        Submenu::with_id(&app, "w.opacity", &t!("透明度"), true).map_err(|e| e.to_string())?;
     for (v, label) in [
         (85u8, &t!("高 85%")),
         (70, &t!("中 70%")),
@@ -1712,7 +1768,8 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
         let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
         op_menu.append(&item).map_err(|e| e.to_string())?;
     }
-    let color_menu = Submenu::with_id(&app, "w.color", &t!("配色"), true).map_err(|e| e.to_string())?;
+    let color_menu =
+        Submenu::with_id(&app, "w.color", &t!("配色"), true).map_err(|e| e.to_string())?;
     for (k, label) in [
         ("blue", &t!("蓝色")),
         ("cyan", &t!("青色")),
@@ -1831,9 +1888,7 @@ fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardDat
         }
         *trend.entry(r.usage_date.clone()).or_insert(0.0) += r.active_seconds;
         let cat = resolver.resolve(&r.display_name, &r.process_name, &r.exe_path);
-        *day_cat
-            .entry((r.usage_date.clone(), cat))
-            .or_insert(0.0) += r.active_seconds;
+        *day_cat.entry((r.usage_date.clone(), cat)).or_insert(0.0) += r.active_seconds;
         total += r.active_seconds;
     }
     let day_score = |date: &str| -> Option<f64> {
@@ -1938,7 +1993,11 @@ fn get_settings(state: State<AppState>) -> TrackerSettings {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, state: State<AppState>, settings: TrackerSettings) -> Result<(), String> {
+fn save_settings(
+    app: AppHandle,
+    state: State<AppState>,
+    settings: TrackerSettings,
+) -> Result<(), String> {
     // 热键组合合法性校验（解析失败或重复即拒绝）
     if settings.hotkeys_enabled {
         let main_hk: Shortcut = settings
@@ -2065,8 +2124,7 @@ fn exclude_app(app: AppHandle, state: State<AppState>, app_key: String) -> Resul
         agg.apply_settings(idle, excluded);
         agg.daily.retain(|_, v| v.app_key != app_key);
         agg.pending_intervals.retain(|v| v.app_key != app_key);
-        agg.pending_title_intervals
-            .retain(|v| v.app_key != app_key);
+        agg.pending_title_intervals.retain(|v| v.app_key != app_key);
     }
     state
         .store
@@ -2259,7 +2317,11 @@ fn get_app_detail(
     };
     let mut points: Vec<DashboardTrendPoint> = daily
         .into_iter()
-        .map(|(date, seconds)| DashboardTrendPoint { date, seconds, score: None })
+        .map(|(date, seconds)| DashboardTrendPoint {
+            date,
+            seconds,
+            score: None,
+        })
         .collect();
     points.sort_by(|a, b| a.date.cmp(&b.date));
     let total_seconds = points.iter().map(|p| p.seconds).sum();
@@ -2573,7 +2635,12 @@ struct TopTitle {
 }
 
 #[tauri::command]
-fn get_top_titles(app: AppHandle, from: String, to: String, limit: i64) -> Result<Vec<TopTitle>, String> {
+fn get_top_titles(
+    app: AppHandle,
+    from: String,
+    to: String,
+    limit: i64,
+) -> Result<Vec<TopTitle>, String> {
     let state = app.state::<AppState>();
     let (rules, overrides, aliases_map) = {
         let s = state.settings.lock().unwrap();
@@ -2592,7 +2659,7 @@ fn get_top_titles(app: AppHandle, from: String, to: String, limit: i64) -> Resul
     let mut out: Vec<TopTitle> = Vec::new();
     for (app_key, title, seconds) in rows {
         // 行所属应用可能已被排除/删除——标题表同步清理过，直接呈现即可
-        let (display, cat) = {
+        let (display, _cat) = {
             let st = state.store.lock().unwrap();
             match st.query_daily(&from, &to).ok() {
                 Some(rows) => {
@@ -2638,7 +2705,12 @@ struct TopWeb {
 }
 
 #[tauri::command]
-fn get_top_web(app: AppHandle, from: String, to: String, limit: i64) -> Result<Vec<TopWeb>, String> {
+fn get_top_web(
+    app: AppHandle,
+    from: String,
+    to: String,
+    limit: i64,
+) -> Result<Vec<TopWeb>, String> {
     let state = app.state::<AppState>();
     let rows = {
         let st = state.store.lock().unwrap();
@@ -2704,6 +2776,18 @@ fn export_backup_json(app: AppHandle) -> Result<String, String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
+}
+
+/// 删除指定备份文件（防路径逃逸：仅允许 backups 目录内的 json）。
+#[tauri::command]
+fn delete_backup(app: AppHandle, name: String) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let data_dir = state.settings.lock().unwrap().data_directory.clone();
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err("非法备份名".into());
+    }
+    let path = backups_dir(&data_dir).join(&name);
+    std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
