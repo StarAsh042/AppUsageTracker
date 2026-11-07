@@ -498,30 +498,18 @@
       </section>
 
       <section class="panel">
-        <h3>{t('外观')}</h3>
-        <div class="theme-row">
-          <label class="check-row">
-            <input
-              type="radio"
-              name="theme"
-              checked={s.theme !== 'light'}
-              onchange={() => {
-                if (s) s.theme = 'dark';
-              }}
-            />
-            <span>深色</span>
-          </label>
-          <label class="check-row">
-            <input
-              type="radio"
-              name="theme"
-              checked={s.theme === 'light'}
-              onchange={() => {
-                if (s) s.theme = 'light';
-              }}
-            />
-            <span>浅色</span>
-          </label>
+        <h3>{t('界面配色')}</h3>
+        <p class="hint" style="margin-bottom:8px">{t('配色实时生效（界面 + 悬浮窗）')}</p>
+        <div class="accent-row">
+          {#each [['blue','#4f8cff'],['cyan','#22d3ee'],['violet','#a78bfa'],['green','#34d399'],['orange','#fb923c'],['pink','#f472b6']] as [key, color] (key)}
+            <button
+              class="accent-btn"
+              class:sel={s.widget.accent === key}
+              style="background:{color}"
+              title={key}
+              onclick={() => { if (s) { s.widget.accent = key; save(); } }}
+            ></button>
+          {/each}
         </div>
       </section>
     </div>
