@@ -241,8 +241,8 @@
       <section class="panel">
         <h3>{t('界面语言')}</h3>
         <div class="lang-switch">
-          <button class:on={s.language !== 'en'} onclick={() => { s.language = 'zh-CN'; save(); }}>中文</button>
-          <button class:on={s.language === 'en'} onclick={() => { s.language = 'en'; save(); }}>English</button>
+          <button class:on={s?.language !== 'en'} onclick={() => { if (s) { s.language = 'zh-CN'; save(); } }}>中文</button>
+          <button class:on={s?.language === 'en'} onclick={() => { if (s) { s.language = 'en'; save(); } }}>English</button>
         </div>
         <p class="hint" style="margin-top:6px">{t('语言切换即时生效，托盘菜单重启后应用')}</p>
       </section>

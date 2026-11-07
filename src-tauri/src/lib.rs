@@ -495,7 +495,7 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
         let v = st.settings.lock().unwrap().update_channel.clone();
         v
     };
-    let update = app
+    let mut update = app
         .updater_builder()
         .endpoints(updater_endpoints(&channel))
         .map_err(|e| format!("端点配置失败: {e}"))?
@@ -506,6 +506,10 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("检查更新失败: {e}"))?
         .ok_or("当前已是最新版本")?;
+    // 下载 URL 走 gh-proxy（国内直连可达）
+    let original = update.download_url.to_string();
+    update.download_url = url::Url::parse(&format!("https://gh-proxy.com/{}", original))
+        .map_err(|e| format!("URL 重写失败: {e}"))?;
     let version = update.version.clone();
     update
         .download_and_install(|_, _| {}, || {})
@@ -1410,10 +1414,12 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
             match extract_domain(&hb.url) {
                 Some(domain) => {
                     heartbeat_web(app, domain, hb.title);
-                    let interval = {
-                        let s = st.settings.lock().unwrap();
-                        s.web_heartbeat_interval_secs
-                    };
+                    let interval = app
+                        .state::<AppState>()
+                        .settings
+                        .lock()
+                        .unwrap()
+                        .web_heartbeat_interval_secs;
                     api_json(
                         &mut stream,
                         200,
