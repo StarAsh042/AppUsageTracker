@@ -2723,7 +2723,7 @@ fn open_browser_ext_page(browser: String) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         // start 命令打开 chrome:// 或 edge:// 内部页面
         std::process::Command::new("cmd")
-            .args(["/C", "start", "", url.as_str()])
+            .args(["/C", "start", "", url])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()
             .map_err(|e| e.to_string())?;
