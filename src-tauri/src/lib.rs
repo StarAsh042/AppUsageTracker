@@ -205,6 +205,8 @@ pub fn run() {
             get_top_titles,
             get_top_titles,
             get_top_web,
+            get_extension_path,
+            open_browser_ext_page,
             db_maintenance,
             delete_backup,
             export_weekly_report,
@@ -2687,6 +2689,50 @@ fn get_top_titles(
         });
     }
     Ok(out)
+}
+
+// ---------- 浏览器扩展安装 ----------
+
+/// 返回扩展目录路径（开发/生产自适应）。
+#[tauri::command]
+fn get_extension_path() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // 生产: <安装目录>/extension/  开发: <repo>/extension/
+    let candidates = [
+        exe.parent().unwrap().join("extension"),
+        exe.parent().unwrap().join("../../extension"),
+    ];
+    for c in &candidates {
+        if c.join("manifest.json").exists() {
+            return Ok(c.to_string_lossy().to_string());
+        }
+    }
+    Err("扩展目录未找到".into())
+}
+
+/// 打开浏览器扩展管理页（chrome://extensions 或 edge://extensions）。
+#[tauri::command]
+fn open_browser_ext_page(browser: String) -> Result<(), String> {
+    let url = match browser.as_str() {
+        "chrome" => "chrome://extensions",
+        "edge" => "edge://extensions",
+        _ => return Err("未知浏览器".into()),
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // start 命令打开 chrome:// 或 edge:// 内部页面
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+    }
+    Ok(())
 }
 
 // ---------- Top 网页 ----------

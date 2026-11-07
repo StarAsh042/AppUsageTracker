@@ -20,6 +20,16 @@
   let updateStatus = $state('');
   let updateChecking = $state(false);
   let updateInstalling = $state(false);
+  let showExtInstall = $state(false);
+  let extPathCopied = $state(false);
+  let extPath = $state('');
+
+  $effect(() => {
+    if (showExtInstall) {
+      extPathCopied = false;
+      api.getExtensionPath().then((p) => (extPath = p)).catch(() => (extPath = ''));
+    }
+  });
 
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
   let scanned = $state<ScannedApp[] | null>(null);
@@ -193,6 +203,21 @@
     }
   }
 
+  async function initExtInstall() {
+    extPath = await api.getExtensionPath();
+    showExtInstall = true;
+  }
+
+  async function installExt(browser: string) {
+    await api.openBrowserExtPage(browser);
+    extPathCopied = true;
+    try { await navigator.clipboard.writeText(extPath); } catch {}
+  }
+
+  async function copyExtPath() {
+    try { await navigator.clipboard.writeText(extPath); extPathCopied = true; } catch {}
+  }
+
   async function openExtensionsPage() {
     try {
       await api.openPath('chrome://extensions');
@@ -353,10 +378,8 @@
 
       <section class="panel">
         <h3>{t('浏览器扩展')}</h3>
-        <p class="hint">{t('安装说明')}</p>
         <div class="row-actions">
-          <button class="ghost" onclick={openExtensionsPage}>{t('打开浏览器扩展页')}</button>
-          <button class="ghost" onclick={openExtensionFolder}>{t('打开扩展目录')}</button>
+          <button class="primary" onclick={() => (showExtInstall = true)}>{t('安装浏览器扩展')}</button>
         </div>
       </section>
 
@@ -513,6 +536,36 @@
         </div>
       </section>
     </div>
+
+    {#if showExtInstall}
+      <div class="modal-mask" onclick={() => (showExtInstall = false)}>
+        <div class="modal" onclick={(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div class="m-name">{t('安装浏览器扩展')}</div>
+            <button class="m-close" onclick={() => (showExtInstall = false)}>✕</button>
+          </div>
+          <p class="hint" style="margin:12px 0">{t('选择你的浏览器，将打开扩展管理页')}</p>
+          <div class="ext-browser-row">
+            <button class="ext-browser-btn" onclick={() => installExt('chrome')}>
+              <span class="ext-icon">🌐</span> Chrome
+            </button>
+            <button class="ext-browser-btn" onclick={() => installExt('edge')}>
+              <span class="ext-icon">⚡</span> Edge
+            </button>
+          </div>
+          <div class="ext-steps">
+            <p>{t('扩展管理页打开后：')}</p>
+            <p>1. {t('开启「开发者模式」')}</p>
+            <p>2. {t('点击「加载已解压的扩展程序」')}</p>
+            <p>3. {t('选择以下目录（已复制到剪贴板）')}</p>
+            <code class="ext-path">{extPathCopied ? t('已复制到剪贴板 ✓') : extPath}</code>
+          </div>
+          <button class="primary" style="margin-top:12px;width:100%" onclick={() => copyExtPath()}>
+            {extPathCopied ? t('已复制到剪贴板 ✓') : t('复制扩展目录路径')}
+          </button>
+        </div>
+      </div>
+    {/if}
 
     <div class="save-bar">
       {#if status}<span class="status">{status}</span>{/if}
@@ -675,6 +728,60 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+  }
+
+  .ext-browser-row {
+    display: flex;
+    gap: 10px;
+    margin: 12px 0;
+  }
+
+  .ext-browser-btn {
+    flex: 1;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: border-color 0.12s;
+  }
+
+  .ext-browser-btn:hover {
+    border-color: var(--accent);
+  }
+
+  .ext-icon {
+    font-size: 18px;
+  }
+
+  .ext-steps {
+    background: var(--card2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .ext-steps p {
+    margin: 2px 0;
+  }
+
+  .ext-path {
+    display: block;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    color: var(--accent);
+    word-break: break-all;
   }
 
   .backup-del {
