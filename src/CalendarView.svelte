@@ -131,7 +131,6 @@
   function heat(seconds: number | undefined, max: number): string {
     if (seconds === undefined) return 'transparent';
     const r = seconds / max;
-    if (r <= 0) return 'transparent';
     return `color-mix(in srgb, var(--accent) ${Math.round(18 + r * 82)}%, transparent)`;
   }
 </script>
@@ -181,7 +180,7 @@
                     <button
                       class="yh-cell"
                       class:today={cell.date === todayKey}
-                      style="background:{heat(cell.seconds, yearMax)}"
+                      style="background:{cell.seconds !== undefined ? heat(cell.seconds, yearMax) : 'color-mix(in srgb, var(--border) 30%, transparent)'}"
                       onclick={() => pickDate(cell.date)}
                       title="{cell.date}{cell.seconds !== undefined && cell.seconds > 0 ? ' · ' + fmtDuration(cell.seconds) : ''}"
                     ></button>
@@ -439,7 +438,7 @@
     aspect-ratio: 1;
     border-radius: 2px;
     border: none;
-    background: color-mix(in srgb, var(--border) 40%, transparent);
+    background: color-mix(in srgb, var(--border) 35%, transparent);
     cursor: pointer;
     padding: 0;
     min-width: 8px;
