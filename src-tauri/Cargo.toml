@@ -1,0 +1,36 @@
+[package]
+name = "app-usage-tracker"
+version = "0.6.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "unstable"] }
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+rust-i18n = "3"
+url = "2"
+tauri-plugin-global-shortcut = "2"
+lnk = "0.6"
+encoding_rs = "0.8"
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tracker-core = { path = "../crates/tracker-core" }
+window-vibrancy = "0.5"
+dirs = "5"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_Storage_FileSystem",
+] }
+winreg = "0.52"
+
+[lib]
+name = "app_usage_tracker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
