@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "AppUsageTracker",
+  "version": "0.6.1",
+  "identifier": "com.starash042.app-usage-tracker",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "软件使用时间统计",
+        "width": 1080,
+        "height": 760,
+        "minWidth": 920,
+        "minHeight": 580,
+        "center": true,
+        "visible": false,
+        "theme": "Dark",
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk1OTM4RjhCQjQ5MzcxNTcKUldSWGNaTzBpNCtUbFJwMlFlZ2tibWxJYXdldjNiZ3dMSWFYQjJNUDNLSitsWXBZeHE0YnVwemIK",
+      "endpoints": [
+        "https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

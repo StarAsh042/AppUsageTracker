@@ -27,3 +27,11 @@ x86/
 
 # Visual Studio cache/options
 .vs/
+
+# Rust
+/target/
+
+# Frontend
+/node_modules/
+/dist/
+tmp/
