@@ -36,7 +36,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 它解决的是「想客观回顾自己每天把时间花在哪些软件上」这一个问题；数据只落在本机 SQLite 文件里，不依赖账号或云端服务。目标用户是个人使用者；它不是员工监控工具，也不做跨设备同步。
 
-当前发布版本为 `0.6.0`（2026-11-07），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
+当前发布版本为 `0.6.1`（2026-11-08），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
 
 ## 功能
 
@@ -109,7 +109,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 从已发布安装包安装（推荐给使用者）：
 
-1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.0` 中下载 `AppUsageTracker_0.6.0_x64-setup.exe`（NSIS 安装包）。
+1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.1` 中下载 `AppUsageTracker_0.6.1_x64-setup.exe`（NSIS 安装包）。
 2. 双击运行安装向导，按提示完成安装。
 3. 从开始菜单启动。
 
@@ -121,11 +121,11 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 curl -s http://127.0.0.1:59598/api/version
 ```
 
-预期返回包含当前版本号 `0.6.0` 的 JSON（字段结构以实际响应为准）。系统托盘出现图标、主界面显示仪表盘属于界面现象，标记【未验证】，请你手动确认。
+预期返回包含当前版本号 `0.6.1` 的 JSON（字段结构以实际响应为准）。系统托盘出现图标、主界面显示仪表盘属于界面现象，标记【未验证】，请你手动确认。
 
 > 安装包未做 Windows Authenticode 代码签名；发布流水线只生成 Tauri 更新器使用的 `.sig` 签名。首次运行可能触发 SmartScreen 提示（【推测】，未在真机验证）。
 
-从源码构建（面向开发者）见「快速开始」；构建产物为 `target/release/app-usage-tracker.exe`（独立 exe）与 `target/release/bundle/nsis/*_0.6.0_x64-setup.exe`（安装包）。
+从源码构建（面向开发者）见「快速开始」；构建产物为 `target/release/app-usage-tracker.exe`（独立 exe）与 `target/release/bundle/nsis/*_0.6.1_x64-setup.exe`（安装包）。
 
 ## 快速开始
 
@@ -333,8 +333,8 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 
 ## 维护状态与已知限制
 
-- 单人维护；当前发布版本 `v0.6.0`，发布日期 2026-11-07。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.0`，且与 tag `v0.6.0` 及 Latest Release 一致。
-- `dev` 已合入 Rust + Tauri 2 + Svelte 5 重写版（PR #2）；`main` 上的旧 C#/WPF 文档将在 `dev` → `main` 合并后由重写版替换。
+- 单人维护；当前发布版本 `v0.6.1`，发布日期 2026-11-08。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.1`，且与 tag `v0.6.1` 及 Latest Release 一致。
+- Rust + Tauri 2 + Svelte 5 重写版已取代旧 C#/WPF 实现；`main` 为发布分支，与集成分支 `dev` 保持同步。
 - `dev` 分支最新一次 CI（`feat: integrate Rust/Tauri 2 rewrite and docs into dev (#2)`）全部检查通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 的必需检查 `ci` 为准。
 - 已补齐 `docs/assets/` 下的真实窗口截图（主窗口仪表盘与桌面悬浮窗），见「截图与演示」。
 - `CHANGELOG.md` 的 `0.1.0` / `0.2.0` 属于旧 C# 版历史记录，没有对应的 Git tag 与 GitHub Release，因此没有 compare 链接；`0.3.0` 为破坏性全量重写，仓库未提供旧版数据到新版数据的迁移说明。

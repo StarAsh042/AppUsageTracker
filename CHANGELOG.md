@@ -8,9 +8,12 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-08
+
 ### Added
 
 - **frontend:** 新增浏览器扩展一键安装引导弹窗，可选择 Chrome 或 Edge 并自动复制扩展目录路径，替代原来的简单按钮。
+- **docs:** README 补充真实界面截图（主窗口仪表盘 / 桌面悬浮窗），并修正过时的分支状态说明。
 
 ### Changed
 
@@ -143,7 +146,8 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.4.0...v0.5.0
