@@ -1,0 +1,66 @@
+:root {
+  color-scheme: dark;
+  --bg: #14151a;
+  --card: #1e2027;
+  --card2: #262932;
+  --border: #2f3340;
+  --text: #e8eaf0;
+  --text-dim: #9aa1b0;
+  --accent: #4f8cff;
+  --ok: #3ecf8e;
+  --warn: #f5a623;
+  --danger: #ff5f5f;
+}
+
+/* 浅色主题（设置 → 外观 → 浅色） */
+/* 玻璃质感：卡片半透明 */
+:root {
+  --glass-card: rgba(30, 32, 39, 0.72);
+}
+
+:root.theme-light {
+  --glass-card: rgba(255, 255, 255, 0.78);
+}
+
+:root.theme-light {
+  color-scheme: light;
+  --bg: #eef0f4;
+  --card: #ffffff;
+  --card2: #e7e9ef;
+  --border: #d3d7e0;
+  --text: #1c1f26;
+  --text-dim: #626879;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+body {
+  font-family: 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  color: var(--text);
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  height: 100vh;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}

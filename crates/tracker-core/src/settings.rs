@@ -1,0 +1,476 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackerSettings {
+    pub idle_threshold_seconds: u32,
+    pub foreground_poll_ms: u64,
+    pub start_with_windows: bool,
+    pub excluded_app_keys: Vec<String>,
+    pub data_directory: String,
+    pub theme: String,
+    pub rest_reminder_minutes: u32,
+    pub retention_days: u32,
+    pub show_floating_widget: bool,
+    pub category_daily_limit_minutes: std::collections::HashMap<String, u32>,
+    pub app_category_overrides: std::collections::HashMap<String, String>,
+    pub category_rules: Vec<CategoryRuleDef>,
+    /// 每日活跃目标（分钟，0 = 关闭）。
+    #[serde(default)]
+    pub daily_goal_minutes: u32,
+    /// 全局热键（默认 Ctrl+Alt+D 主界面 / Ctrl+Alt+W 悬浮窗，可在设置中自定义）。
+    #[serde(default = "default_true")]
+    pub hotkeys_enabled: bool,
+    #[serde(default = "default_hotkey_main")]
+    pub hotkey_main: String,
+    #[serde(default = "default_hotkey_widget")]
+    pub hotkey_widget: String,
+    /// 本地 HTTP API（仅监听 127.0.0.1，供第三方工具读取统计）。
+    #[serde(default = "default_true")]
+    pub api_enabled: bool,
+    #[serde(default = "default_api_port")]
+    pub api_port: u16,
+    /// 分类性质：productive / neutral / distracting（效率评分用）。
+    #[serde(default)]
+    pub category_nature: std::collections::HashMap<String, String>,
+    /// 应用显示名别名（app_key → 别名，读取时应用，不改历史数据）。
+    #[serde(default)]
+    pub app_display_names: std::collections::HashMap<String, String>,
+    /// 窗口标题记录（隐私敏感，默认关闭；打开后 TitleIntervals 才有数据）。
+    #[serde(default)]
+    pub record_window_titles: bool,
+    /// 浏览器网页统计（隐私敏感，默认关闭；打开后浏览器扩展的心跳才被接受）。
+    #[serde(default)]
+    pub record_web: bool,
+    /// 网页心跳间隔（秒，扩展据此自适应上报频率；MV3 下限 30s）。
+    #[serde(default = "default_web_interval")]
+    pub web_heartbeat_interval_secs: u32,
+    /// 标题排除规则（子串匹配，不区分大小写；命中即不记录）。
+    #[serde(default)]
+    pub title_exclude_patterns: Vec<String>,
+    /// 界面语言：system（=中文）/ en。
+    #[serde(default)]
+    pub language: String,
+    /// 更新下载通道：auto（官方→镜像回退）/ official / mirror。
+    #[serde(default)]
+    pub update_channel: String,
+    /// 设置结构版本（迁移链用）。
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub widget: WidgetPrefs,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_api_port() -> u16 {
+    59598
+}
+
+fn default_hotkey_main() -> String {
+    "Ctrl+Alt+D".to_string()
+}
+
+fn default_hotkey_widget() -> String {
+    "Ctrl+Alt+W".to_string()
+}
+
+fn default_schema_version() -> u32 {
+    1
+}
+
+fn default_web_interval() -> u32 {
+    10
+}
+
+/// 悬浮窗偏好（右键菜单可调：置顶/锁定/贴边/缩略/透明度/配色）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WidgetPrefs {
+    pub always_on_top: bool,
+    pub locked: bool,
+    pub edge_snap: bool,
+    pub compact: bool,
+    /// 内容底色不透明度百分比（40–100）。
+    pub opacity: u8,
+    /// 配色预设 key：blue/cyan/violet/green/orange/pink。
+    pub accent: String,
+}
+
+impl Default for WidgetPrefs {
+    fn default() -> Self {
+        Self {
+            always_on_top: true,
+            locked: false,
+            edge_snap: false,
+            compact: true,
+            opacity: 85,
+            accent: "blue".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryRuleDef {
+    pub name: String,
+    pub keywords: Vec<String>,
+}
+
+impl Default for TrackerSettings {
+    fn default() -> Self {
+        Self {
+            idle_threshold_seconds: 180,
+            foreground_poll_ms: 1000,
+            start_with_windows: false,
+            excluded_app_keys: vec![r"c:\windows\explorer.exe".to_string()],
+            data_directory: default_data_dir(),
+            theme: "auto".to_string(),
+            rest_reminder_minutes: 60,
+            retention_days: 365,
+            show_floating_widget: true,
+            category_daily_limit_minutes: Default::default(),
+            app_category_overrides: Default::default(),
+            category_rules: default_category_rules(),
+            daily_goal_minutes: 0,
+            hotkeys_enabled: true,
+            hotkey_main: default_hotkey_main(),
+            hotkey_widget: default_hotkey_widget(),
+            api_enabled: true,
+            api_port: default_api_port(),
+            category_nature: Default::default(),
+            app_display_names: Default::default(),
+            record_window_titles: false,
+            record_web: false,
+            web_heartbeat_interval_secs: 10,
+            title_exclude_patterns: Default::default(),
+            language: "system".to_string(),
+            update_channel: "auto".to_string(),
+            schema_version: 1,
+            widget: Default::default(),
+        }
+    }
+}
+
+fn default_data_dir() -> String {
+    dirs::data_local_dir()
+        .map(|d| d.join("AppUsageTracker").to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string())
+}
+
+fn rule(name: &str, keywords: &[&str]) -> CategoryRuleDef {
+    CategoryRuleDef {
+        name: name.to_string(),
+        keywords: keywords.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+fn default_category_rules() -> Vec<CategoryRuleDef> {
+    vec![
+        rule(
+            "开发",
+            &[
+                "code",
+                "visual studio",
+                "vscode",
+                "devenv",
+                "cursor",
+                "git",
+                "github",
+                "bash",
+                "cmd",
+                "powershell",
+                "terminal",
+                "idea",
+                "pycharm",
+                "rider",
+                "dotnet",
+                "node",
+                "npm",
+                "python",
+                "sublime",
+                "notepad++",
+                "postman",
+                "docker",
+                "sql",
+                "ssms",
+                "wireshark",
+                "nmap",
+                "zcode",
+                "dsh",
+                "deepseek",
+                "harness",
+                "chatgpt",
+                "openai",
+                "claude",
+                "copilot",
+                "ollama",
+                "qoder",
+                "opencode",
+                "workbuddy",
+                "tortoisegit",
+                "mathematica",
+                "obsidian",
+                "typora",
+            ],
+        ),
+        rule(
+            "浏览器",
+            &[
+                "chrome",
+                "chromium",
+                "edge",
+                "msedge",
+                "webview2",
+                "firefox",
+                "browser",
+                "浏览器",
+                "opera",
+                "brave",
+                "vivaldi",
+                "safari",
+                "arc",
+                "360se",
+                "qqbrowser",
+                "夸克",
+            ],
+        ),
+        rule(
+            "办公",
+            &[
+                "word",
+                "excel",
+                "powerpoint",
+                "outlook",
+                "onenote",
+                "wps",
+                "office",
+                "notepad",
+                "acrobat",
+                "pdf",
+                "xmind",
+                "visio",
+                "ppt",
+                "libreoffice",
+                "onlyoffice",
+                "有道云",
+                "obsidian",
+            ],
+        ),
+        rule(
+            "沟通",
+            &[
+                "wechat",
+                "weixin",
+                "微信",
+                "qq",
+                "tim",
+                "dingtalk",
+                "钉钉",
+                "feishu",
+                "lark",
+                "飞书",
+                "slack",
+                "teams",
+                "telegram",
+                "discord",
+                "zoom",
+                "腾讯会议",
+                "mail",
+                "邮箱",
+                "thunderbird",
+                "foxmail",
+            ],
+        ),
+        rule(
+            "设计",
+            &[
+                "photoshop",
+                "illustrator",
+                "indesign",
+                "lightroom",
+                "premiere",
+                "after effects",
+                "figma",
+                "sketch",
+                "blender",
+                "davinci",
+                "剪映",
+                "affinity",
+                "inkscape",
+                "canva",
+                "gimp",
+                "krita",
+                "stablediffusion",
+                "comfyui",
+                "aigc",
+                "daz ",
+                "marmoset",
+                "speedtree",
+                "worldcreator",
+                "gaea",
+                "pmxeditor",
+                "mikumikudance",
+                "kingdraw",
+                "billfish",
+                "pureref",
+                "booru",
+                "naiprompt",
+            ],
+        ),
+        rule(
+            "娱乐",
+            &[
+                "game",
+                "steam",
+                "epic games",
+                "battle.net",
+                "战网",
+                "wegame",
+                "minecraft",
+                "原神",
+                "genshin",
+                "lol",
+                "英雄联盟",
+                "cs2",
+                "valorant",
+                "dota",
+                "yuzu",
+                "mumu",
+                "ldplayer",
+                "nox",
+                "bluestacks",
+                "cloudmusic",
+                "网易云",
+                "spotify",
+                "qqmusic",
+                "kugou",
+                "bilibili",
+                "哔哩哔哩",
+                "iqiyi",
+                "爱奇艺",
+                "优酷",
+                "芒果tv",
+                "腾讯视频",
+                "youtube",
+                "netflix",
+                "douyu",
+                "斗鱼",
+                "huya",
+                "虎牙",
+                "douyin",
+                "抖音",
+                "potplayer",
+                "vlc",
+                "fl studio",
+                "kontakt",
+                "pianoteq",
+                "ace studio",
+                "everyonepiano",
+                "bodian",
+                "斗罗",
+                "dldl",
+                "hollow knight",
+                "honeyselect",
+                "oxygen not included",
+                "pal7",
+                "sword and fairy",
+                "warframe",
+                "modmanager",
+                "米喵",
+            ],
+        ),
+        rule(
+            "工具",
+            &[
+                "everything",
+                "listary",
+                "utools",
+                "quicker",
+                "snipaste",
+                "pixpin",
+                "sharex",
+                "7-zip",
+                "winrar",
+                "bandizip",
+                "motrix",
+                "idm",
+                "clash",
+                "v2ray",
+                "mihomo",
+                "vpn",
+                "proxy",
+                "deskbox",
+                "netlimiter",
+                "defraggler",
+                "formatfactory",
+                "screentogif",
+                "小丸",
+                "按键精灵",
+                "程序窗口控制",
+                "synctrayzor",
+                "syncthing",
+                "baidunetdisk",
+                "百度网盘",
+                "adrive",
+                "阿里云盘",
+                "cheat engine",
+                "ghostcat",
+                "dev-sidecar",
+            ],
+        ),
+        rule(
+            "系统",
+            &[
+                "explorer",
+                "资源管理器",
+                "windows",
+                "task manager",
+                "任务管理器",
+                "regedit",
+                "注册表",
+                "控制面板",
+                "settings",
+                "store",
+                "shell",
+                "host",
+                "widget",
+                "runtime broker",
+                "csrss",
+                "dwm",
+                "conhost",
+                "ime",
+                "输入法",
+                "ctfmon",
+                "sihost",
+                "security",
+                "defender",
+                "smartscreen",
+                "svchost",
+                "svc",
+                "services",
+                "服务",
+                "打印",
+                "print",
+                "audio",
+                "音频",
+                "登录应用",
+                "启动应用",
+                "会话管理器",
+                "桌面窗口管理器",
+                "后台处理",
+                "winlogon",
+                "lsass",
+                "fontdrvhost",
+                "driverstore",
+                "lamparray",
+                "livecaptions",
+                "voiceaccess",
+                "oobe",
+                "wudfhost",
+                "unsecapp",
+                "wmiprvse",
+            ],
+        ),
+    ]
+}

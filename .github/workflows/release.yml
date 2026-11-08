@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    name: check-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag matches tauri.conf.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CONF_VERSION=$(node -e "console.log(require('./src-tauri/tauri.conf.json').version)")
+          echo "tag=$TAG_VERSION conf=$CONF_VERSION"
+          if [ "$TAG_VERSION" != "$CONF_VERSION" ]; then
+            echo "::error::tag v$TAG_VERSION != tauri.conf.json $CONF_VERSION"
+            exit 1
+          fi
+
+  build:
+    name: build (${{ matrix.os }})
+    needs: check-version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Build bundle (sign updater artifacts)
+        run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Stage artifacts (version + platform + commit)
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          STAGE="AppUsageTracker_${VERSION}_${{ matrix.os }}_${SHORT_SHA}"
+          mkdir -p "staging/$STAGE"
+          found=0
+          for f in target/release/bundle/nsis/*_${VERSION}_x64-setup.exe \
+                   target/release/bundle/msi/*_${VERSION}_x64.msi; do
+            if [ -f "$f" ]; then cp "$f" "staging/$STAGE/"; found=1; fi
+          done
+          if [ "$found" != "1" ]; then
+            echo "::error::no bundle artifacts found"
+            exit 1
+          fi
+          # 更新器产物（安装包本体 + .sig 签名）+ latest.json（应用内更新清单）
+          shopt -s nullglob
+          for sigf in target/release/bundle/nsis/*_${VERSION}_x64-setup.exe.sig; do
+            cp "$sigf" "staging/$STAGE/"
+          done
+          shopt -u nullglob
+          EXE=$(ls target/release/bundle/nsis/*_${VERSION}_x64-setup.exe | head -1)
+          if [ -n "$EXE" ] && [ -f "${EXE}.sig" ]; then
+            UPD_URL="https://github.com/StarAsh042/AppUsageTracker/releases/download/v${VERSION}/$(basename "$EXE")"
+            jq -n --arg v "$VERSION" \
+                  --arg sig "$(cat "${EXE}.sig")" \
+                  --arg url "$UPD_URL" \
+                  --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  '{version: $v, notes: ("AppUsageTracker " + $v), pub_date: $date, platforms: { "windows-x86_64": { signature: $sig, url: $url } } }' \
+              > "staging/$STAGE/latest.json"
+            # 镜像清单：资产 URL 走 gh-proxy（国内直连可下载）
+            jq -n --arg v "$VERSION"                   --arg sig "$(cat "${EXE}.sig")"                   --arg url "https://gh-proxy.com/$UPD_URL"                   --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)"                   '{version: $v, notes: ("AppUsageTracker " + $v), pub_date: $date, platforms: { "windows-x86_64": { signature: $sig, url: $url } } }'               > "staging/$STAGE/latest-mirror.json"
+          else
+            echo "::warning::no updater signature; latest.json skipped"
+          fi
+          cd "staging/$STAGE"
+          sha256sum * > SHA256SUMS
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}-${{ github.ref_name }}
+          path: staging/
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+          merge-multiple: true
+      - name: Create release and upload bundles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "AppUsageTracker $TAG" --generate-notes
+          gh release upload "$TAG" staging/*/* --clobber
