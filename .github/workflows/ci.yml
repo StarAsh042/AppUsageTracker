@@ -81,21 +81,20 @@ jobs:
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a
       - name: Install frontend dependencies
         run: npm ci
+      # bundle.targets is ["nsis"] (Windows-only); a Linux tauri build verifies
+      # compilation but produces no target/release/bundle/ artifacts to upload.
       - name: Build bundle
         run: npm run tauri build
-      - name: Upload bundle artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-bundle
-          path: target/release/bundle/
-          if-no-files-found: error
 
   cross-check:
     name: cross-check (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, macos-14]
+        # macos-14 is unavailable on this account ("macos-14-arm64-us-default"
+        # is not supported) and is cancelled before any step runs; keep the
+        # Windows leg, which actually verifies cargo check.
+        os: [windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
