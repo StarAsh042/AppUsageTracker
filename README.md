@@ -36,7 +36,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 它解决的是「想客观回顾自己每天把时间花在哪些软件上」这一个问题；数据只落在本机 SQLite 文件里，不依赖账号或云端服务。目标用户是个人使用者；它不是员工监控工具，也不做跨设备同步。
 
-当前发布版本为 `0.6.0`（2026-11-07）。本仓库工作区位于 `rewrite/rust-tauri2` 分支，即 Rust + Tauri 2 全量重写版；远端 `main` / `dev` 目前仍是旧 C#/WPF 版本，重写尚未合入，详见「维护状态与已知限制」。
+当前发布版本为 `0.6.0`（2026-11-07），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
 
 ## 功能
 
@@ -70,7 +70,17 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 ## 截图与演示
 
-暂无截图。本仓库当前没有任何真实窗口截图文件，按书写规范不放置占位图；补齐 `docs/assets/` 下的真实桌面窗口截图是一项待办，见「维护状态与已知限制」。界面外观相关描述均为【未验证】：AI 无法启动 GUI，请你在安装后手动核对。
+以下截图取自运行中的 v0.6.0 应用窗口，通过窗口句柄直接抓取，非占位图或效果图。
+
+**主窗口 · 仪表盘**（`docs/assets/dashboard.png`）：汇总卡、应用排行、分类占比与日期区间选择。
+
+![主窗口仪表盘](docs/assets/dashboard.png)
+
+**桌面悬浮窗**（`docs/assets/widget.png`）：实时显示统计状态、今日活跃、当前应用与 Top5 排行。
+
+![桌面悬浮窗](docs/assets/widget.png)
+
+截图仅展示这两处界面；时间线、日历热力图、对比与设置等页面请以安装后的实际界面为准。
 
 ## 不适用
 
@@ -299,7 +309,7 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 - [LICENSE](LICENSE)：MIT 许可证全文。
 - [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)：安装包与更新清单。
 - [GitHub Issues](https://github.com/StarAsh042/AppUsageTracker/issues)：问题反馈。
-- 贡献流程见本文「贡献」一节；远端 `main` 分支 README 的 [参与开发](https://github.com/StarAsh042/AppUsageTracker/blob/main/README.md#参与开发) 一节记录了当前仓库的 PR 约定。
+- 贡献流程见本文「贡献」一节。
 
 ## 贡献
 
@@ -315,7 +325,7 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 
 `main` 的更新来自 `dev` 的合并；版本标签 `vMAJOR.MINOR.PATCH` 在 `main` CI 全绿后由维护者手动推送。请勿直接向 `main` 推送或放宽分支保护。
 
-> 本次工作区位于 `rewrite/rust-tauri2` 分支（Rust 重写），远端 `main` / `dev` 仍是旧 C#/WPF 版本；贡献前请先确认目标分支的实际内容。
+> 贡献前请先确认目标分支的实际内容。
 
 ## 许可证
 
@@ -324,10 +334,10 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 ## 维护状态与已知限制
 
 - 单人维护；当前发布版本 `v0.6.0`，发布日期 2026-11-07。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.0`，且与 tag `v0.6.0` 及 Latest Release 一致。
-- 工作区在 `rewrite/rust-tauri2` 分支（Rust + Tauri 2 + Svelte 5 重写）；远端 `main` / `dev` 仍是旧 C#/WPF 实现（远端 `main` README 的构建段仍写「.NET 8 SDK」），重写尚未合入。
-- `main` 最近一次 CI（`docs: add contributing guide (#1)`）中 `ci` 与 `security` 检查失败、`build` 与 `test` 通过；后续 PR 的必需检查可能持续失败，需先修复 CI。
-- 仓库暂无真实窗口截图，按书写规范不放置占位图；补齐 `docs/assets/` 下的真实截图是发布前应完成的事项。
+- `dev` 已合入 Rust + Tauri 2 + Svelte 5 重写版（PR #2）；`main` 上的旧 C#/WPF 文档将在 `dev` → `main` 合并后由重写版替换。
+- `dev` 分支最新一次 CI（`feat: integrate Rust/Tauri 2 rewrite and docs into dev (#2)`）全部检查通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 的必需检查 `ci` 为准。
+- 已补齐 `docs/assets/` 下的真实窗口截图（主窗口仪表盘与桌面悬浮窗），见「截图与演示」。
 - `CHANGELOG.md` 的 `0.1.0` / `0.2.0` 属于旧 C# 版历史记录，没有对应的 Git tag 与 GitHub Release，因此没有 compare 链接；`0.3.0` 为破坏性全量重写，仓库未提供旧版数据到新版数据的迁移说明。
 - `src-tauri/tauri.conf.json` 中 `app.security.csp` 为 `null`、`tauri` 依赖启用 `unstable` feature，属于待收敛的技术债。
-- 界面外观、扩展上报间隔、更新回滚与未签名安装包的 SmartScreen 表现均为【未验证】或【推测】，需由你在真机手动验证；AI 无法启动 GUI。
+- 界面外观见「截图与演示」的真实截图；扩展上报间隔、更新回滚与未签名安装包的 SmartScreen 表现仍为【未验证】或【推测】，需由你在真机手动验证。
 - 本文件与 `CHANGELOG.md` 的命令、版本与配置默认值均取自仓库内 `package.json`、各 `Cargo.toml`、`tauri.conf.json`、`settings.rs` 与 `.github/workflows/`；未做外部联网核实，未在本机逐条运行，相关命令标【未验证】。
