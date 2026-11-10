@@ -5,6 +5,7 @@
     type CategoryRule,
     type ScannedApp,
     type UpdateInfo,
+    type ExtInstallResult,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
 
@@ -23,6 +24,8 @@
   let showExtInstall = $state(false);
   let extPathCopied = $state(false);
   let extPath = $state('');
+  let extInstalling = $state(false);
+  let extResults = $state<ExtInstallResult[]>([]);
 
   $effect(() => {
     if (showExtInstall) {
@@ -214,6 +217,38 @@
     try { await navigator.clipboard.writeText(extPath); } catch {}
   }
 
+  async function smartInstall() {
+    extInstalling = true;
+    extResults = [];
+    try {
+      extResults = await api.smartInstallExtension();
+      const okCount = extResults.filter((r) => r.ok).length;
+      status = okCount ? t('扩展已注册，重启浏览器后生效') : t('未能自动安装，请改用手动安装');
+      if (okCount && s) s.record_web = true;
+    } catch (e) {
+      status = `${t('安装失败')}: ${e}`;
+    } finally {
+      extInstalling = false;
+    }
+  }
+
+  function extResultText(r: ExtInstallResult): string {
+    switch (r.code) {
+      case 'ok':
+        return `${t('已注册，重启浏览器后生效')} · ${t('扩展 ID')} ${r.extension_id}`;
+      case 'not_found':
+        return t('未检测到该浏览器');
+      case 'pack_failed':
+        return `${t('打包失败')}：${r.message}`;
+      case 'bad_crx':
+        return t('打包产物无效，请改用手动安装');
+      case 'registry_failed':
+        return `${t('写入注册表失败')}：${r.message}`;
+      default:
+        return r.message;
+    }
+  }
+
   async function copyExtPath() {
     try { await navigator.clipboard.writeText(extPath); extPathCopied = true; } catch {}
   }
@@ -378,9 +413,26 @@
 
       <section class="panel">
         <h3>{t('浏览器扩展')}</h3>
+        <p class="hint" style="margin-bottom:8px">
+          {t('一键安装：自动识别 Chrome / Edge，打包并注册扩展，重启浏览器后生效')}
+        </p>
         <div class="row-actions">
-          <button class="primary" onclick={() => (showExtInstall = true)}>{t('安装浏览器扩展')}</button>
+          <button class="primary" disabled={extInstalling} onclick={smartInstall}>
+            {extInstalling ? t('安装中') + '…' : t('智能安装扩展（推荐）')}
+          </button>
+          <button class="ghost" onclick={() => (showExtInstall = true)}>{t('手动安装')}</button>
         </div>
+        {#if extResults.length}
+          <div class="ext-results">
+            {#each extResults as r (r.browser)}
+              <div class="ext-result" class:ok={r.ok}>
+                <span class="ext-badge">{r.ok ? '✓' : '·'}</span>
+                <span class="ext-name">{r.name}</span>
+                <span class="ext-msg">{extResultText(r)}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </section>
 
       <section class="panel">
@@ -476,6 +528,10 @@
             </select>
           </label>
         </div>
+        <label class="check-row" style="margin-bottom:12px">
+          <input type="checkbox" bind:checked={s.update_use_proxy} onchange={save} />
+          <span>{t('更新时使用系统代理')}（{t('默认关闭：强制直连、跳过代理')}）</span>
+        </label>
         <div class="row-actions">
           <button class="ghost" disabled={updateChecking} onclick={checkUpdateNow}>
             {updateChecking ? t('检查中') + '…' : t('检查更新')}
@@ -520,21 +576,6 @@
         {/if}
       </section>
 
-      <section class="panel">
-        <h3>{t('界面配色')}</h3>
-        <p class="hint" style="margin-bottom:8px">{t('配色实时生效（界面 + 悬浮窗）')}</p>
-        <div class="accent-row">
-          {#each [['blue','#4f8cff'],['cyan','#22d3ee'],['violet','#a78bfa'],['green','#34d399'],['orange','#fb923c'],['pink','#f472b6']] as [key, color] (key)}
-            <button
-              class="accent-btn"
-              class:sel={s.widget.accent === key}
-              style="background:{color}"
-              title={key}
-              onclick={() => { if (s) { s.widget.accent = key; save(); } }}
-            ></button>
-          {/each}
-        </div>
-      </section>
     </div>
 
     {#if showExtInstall}
@@ -783,6 +824,48 @@
     color: var(--accent);
     word-break: break-all;
   }
+  .ext-results {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ext-result {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    font-size: 12px;
+  }
+
+  .ext-result.ok {
+    border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  }
+
+  .ext-badge {
+    flex: none;
+    width: 12px;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .ext-result.ok .ext-badge {
+    color: var(--ok);
+  }
+
+  .ext-name {
+    flex: none;
+    font-weight: 600;
+  }
+
+  .ext-msg {
+    color: var(--text-dim);
+    word-break: break-all;
+  }
 
   .backup-del {
     background: transparent;
@@ -796,11 +879,6 @@
 
   .backup-del:hover {
     background: rgba(255, 95, 95, 0.12);
-  }
-
-  .theme-row {
-    display: flex;
-    gap: 24px;
   }
 
   .lang-switch {

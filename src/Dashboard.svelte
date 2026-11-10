@@ -643,8 +643,7 @@
   }
 
   .cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
     gap: 12px;
   }
 
@@ -662,6 +661,8 @@
   }
 
   .card {
+    flex: 1;
+    min-width: 0;
     background: var(--glass-card, var(--card));
     border: 1px solid var(--border);
     border-radius: 12px;

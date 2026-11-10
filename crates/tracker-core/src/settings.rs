@@ -53,6 +53,9 @@ pub struct TrackerSettings {
     /// 更新下载通道：auto（官方→镜像回退）/ official / mirror。
     #[serde(default)]
     pub update_channel: String,
+    /// 更新是否使用系统代理（默认关闭 = 强制跳过代理，直连）。
+    #[serde(default)]
+    pub update_use_proxy: bool,
     /// 设置结构版本（迁移链用）。
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -146,6 +149,7 @@ impl Default for TrackerSettings {
             title_exclude_patterns: Default::default(),
             language: "system".to_string(),
             update_channel: "auto".to_string(),
+            update_use_proxy: false,
             schema_version: 1,
             widget: Default::default(),
         }

@@ -2,10 +2,10 @@
   import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type DashboardData } from './lib/api';
   import { lang, en } from './lib/i18n';
 
-  let aFrom = $state(localDateKey(-6));
-  let aTo = $state(localDateKey());
-  let bFrom = $state(localDateKey(-13));
-  let bTo = $state(localDateKey(-7));
+  let aFrom = $state(localDateKey(-13));
+  let aTo = $state(localDateKey(-7));
+  let bFrom = $state(localDateKey(-6));
+  let bTo = $state(localDateKey());
   let aData = $state<DashboardData | null>(null);
   let bData = $state<DashboardData | null>(null);
   let loading = $state(false);
@@ -42,10 +42,10 @@
     const p = (n: number) => String(n).padStart(2, '0');
     const fmt = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
     if (kind === 'yesterday') {
-      aFrom = localDateKey(-1);
-      aTo = localDateKey(-1);
-      bFrom = localDateKey(-2);
-      bTo = localDateKey(-2);
+      aFrom = localDateKey(-2);
+      aTo = localDateKey(-2);
+      bFrom = localDateKey(-1);
+      bTo = localDateKey(-1);
     } else if (kind === 'week') {
       const d = new Date();
       const dow = (d.getDay() + 6) % 7;
@@ -55,16 +55,16 @@
       lastMon.setDate(mon.getDate() - 7);
       const lastSun = new Date(mon);
       lastSun.setDate(mon.getDate() - 1);
-      aFrom = fmt(mon);
-      aTo = localDateKey();
-      bFrom = fmt(lastMon);
-      bTo = fmt(lastSun);
+      aFrom = fmt(lastMon);
+      aTo = fmt(lastSun);
+      bFrom = fmt(mon);
+      bTo = localDateKey();
     } else {
       const d = new Date();
-      aFrom = fmt(new Date(d.getFullYear(), d.getMonth(), 1));
-      aTo = localDateKey();
-      bFrom = fmt(new Date(d.getFullYear(), d.getMonth() - 1, 1));
-      bTo = fmt(new Date(d.getFullYear(), d.getMonth(), 0));
+      aFrom = fmt(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+      aTo = fmt(new Date(d.getFullYear(), d.getMonth(), 0));
+      bFrom = fmt(new Date(d.getFullYear(), d.getMonth(), 1));
+      bTo = localDateKey();
     }
     load();
   }
@@ -128,18 +128,23 @@
     return CATEGORY_PALETTE[(idx < 0 ? 0 : idx) % CATEGORY_PALETTE.length];
   }
 
-  function deltaPct(a: number, b: number): number | null {
-    if (a <= 0) return null;
-    return ((b - a) / a) * 100;
+  // 变化率始终按「较新周期 vs 较旧周期」计算，避免 A/B 日期顺序导致负号颠倒
+  const aIsOlder = $derived(aFrom <= bFrom);
+
+  function orderedDelta(a: number, b: number): number | null {
+    const older = aIsOlder ? a : b;
+    const newer = aIsOlder ? b : a;
+    if (older <= 0) return null;
+    return ((newer - older) / older) * 100;
   }
 
   function deltaText(a: number, b: number): string {
-    const d = deltaPct(a, b);
+    const d = orderedDelta(a, b);
     return d === null ? '新增' : `${d >= 0 ? '+' : ''}${d.toFixed(0)}%`;
   }
 
   function deltaCls(a: number, b: number): string {
-    const d = deltaPct(a, b);
+    const d = orderedDelta(a, b);
     return d === null ? '' : d >= 0 ? 'up' : 'down';
   }
 
@@ -183,11 +188,11 @@
         <div
           class="value {deltaCls(aData.total_active_seconds, bData.total_active_seconds)}"
         >
-          {deltaPct(aData.total_active_seconds, bData.total_active_seconds) === null
+          {orderedDelta(aData.total_active_seconds, bData.total_active_seconds) === null
             ? '—'
             : deltaText(aData.total_active_seconds, bData.total_active_seconds)}
         </div>
-        <div class="hint2">B vs A</div>
+        <div class="hint2">{aIsOlder ? 'B vs A' : 'A vs B'}</div>
       </div>
     </div>
 
@@ -199,7 +204,7 @@
       </div>
       <div class="rows">
         {#each appRows as r (r.key)}
-          {@const d = deltaPct(r.a, r.b)}
+          {@const d = orderedDelta(r.a, r.b)}
           <div class="row" title={r.key}>
             <span class="c-name">{r.name}<span class="c-cat">{r.cat}</span></span>
             <span class="c-bars">
@@ -220,7 +225,7 @@
       <div class="panel-title">{t('分类对比')}</div>
       <div class="rows">
         {#each catRows as r (r.key)}
-          {@const d = deltaPct(r.a, r.b)}
+          {@const d = orderedDelta(r.a, r.b)}
           <div class="row">
             <span class="c-name">
               <span class="sw" style="background:{catColor(r.name)}"></span>{r.name}
