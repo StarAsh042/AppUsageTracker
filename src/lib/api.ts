@@ -68,6 +68,7 @@ export interface TrackerSettings {
   title_exclude_patterns: string[];
   language: string;
   update_channel: string;
+  update_use_proxy: boolean;
   schema_version: number;
   widget: WidgetPrefs;
 }
@@ -141,6 +142,16 @@ export interface TimelineData {
   states: TimelineState[];
 }
 
+export interface ExtInstallResult {
+  browser: string;
+  name: string;
+  ok: boolean;
+  /** ok / not_found / pack_failed / bad_crx / registry_failed */
+  code: string;
+  extension_id: string;
+  message: string;
+}
+
 export const api = {
   getLiveStatus: () => invoke<LiveStatus>('get_live_status'),
   getDashboard: (from: string, to: string) => invoke<DashboardData>('get_dashboard', { from, to }),
@@ -166,6 +177,9 @@ export const api = {
   showWidgetMenu: () => invoke<void>('show_widget_menu'),
   setWidgetCollapsed: (collapsed: boolean) => invoke<void>('set_widget_collapsed', { collapsed }),
   toggleMainWindow: () => invoke<void>('toggle_main_window'),
+  toggleWidget: () => invoke<boolean>('toggle_widget'),
+  closeWidget: () => invoke<void>('close_widget'),
+  smartInstallExtension: () => invoke<ExtInstallResult[]>('smart_install_extension'),
   excludeApp: (appKey: string) => invoke<void>('exclude_app', { appKey }),
   setAppDisplayName: (appKey: string, name: string) =>
     invoke<void>('set_app_display_name', { appKey, name }),

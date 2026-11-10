@@ -195,6 +195,8 @@ pub fn run() {
             show_widget_menu,
             set_widget_collapsed,
             update_widget_settings,
+            toggle_widget,
+            close_widget,
             get_timeline,
             toggle_main_window,
             get_app_detail,
@@ -207,6 +209,7 @@ pub fn run() {
             get_top_web,
             get_extension_path,
             open_browser_ext_page,
+            smart_install_extension,
             db_maintenance,
             delete_backup,
             export_weekly_report,
@@ -278,6 +281,7 @@ pub fn run() {
             if show_widget {
                 create_widget_window(&handle)?;
                 setup_widget_clamp(&handle);
+                let _ = handle.emit("widget://visibility", true);
                 if handle
                     .state::<AppState>()
                     .settings
@@ -475,16 +479,20 @@ struct UpdateInfo {
 
 #[tauri::command]
 async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let channel = {
+    let (channel, use_proxy) = {
         let st = app.state::<AppState>();
-        let v = st.settings.lock().unwrap().update_channel.clone();
-        v
+        let s = st.settings.lock().unwrap();
+        (s.update_channel.clone(), s.update_use_proxy)
     };
-    let update = app
+    let mut builder = app
         .updater_builder()
         .endpoints(updater_endpoints(&channel))
-        .map_err(|e| format!("端点配置失败: {e}"))?
-        .no_proxy()
+        .map_err(|e| format!("端点配置失败: {e}"))?;
+    // 关闭代理时强制跳过系统代理（直连）；开启时沿用系统代理设置。
+    if !use_proxy {
+        builder = builder.no_proxy();
+    }
+    let update = builder
         .build()
         .map_err(|e| format!("初始化更新器失败: {e}"))?
         .check()
@@ -499,16 +507,20 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
 
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
-    let channel = {
+    let (channel, use_proxy) = {
         let st = app.state::<AppState>();
-        let v = st.settings.lock().unwrap().update_channel.clone();
-        v
+        let s = st.settings.lock().unwrap();
+        (s.update_channel.clone(), s.update_use_proxy)
     };
-    let mut update = app
+    let mut builder = app
         .updater_builder()
         .endpoints(updater_endpoints(&channel))
-        .map_err(|e| format!("端点配置失败: {e}"))?
-        .no_proxy()
+        .map_err(|e| format!("端点配置失败: {e}"))?;
+    // 关闭代理时强制跳过系统代理（直连）；开启时沿用系统代理设置。
+    if !use_proxy {
+        builder = builder.no_proxy();
+    }
+    let mut update = builder
         .build()
         .map_err(|e| format!("初始化更新器失败: {e}"))?
         .check()
@@ -770,7 +782,10 @@ fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
     let gap_b = (mp.y + ms.height as i32 - anchor.1 - (eh * sf) as i32) as f64 / sf;
     let min = gap_l.min(gap_r).min(gap_t).min(gap_b);
     if min > 8.0 {
-        return; // 不贴边：保持展开，不吸附
+        // 不贴边：保持展开，并给前端一个明确的提示（旧实现直接 return 导致空白）
+        let _ = app.emit("widget://edge", "none");
+        let _ = app.emit("widget://hint", "edge_required");
+        return;
     }
     // 线沿边缘摆放的位置以锚点窗口中心为基准
     let cx = anchor.0 + ((ew * sf) as i32) / 2;
@@ -809,8 +824,9 @@ fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
         win.outer_size().map(|s| s.width as f64 / sf).unwrap_or(ew),
         win.outer_size().map(|s| s.height as f64 / sf).unwrap_or(eh),
     );
+    // 先切样式再收窗：前端只画一根 4px 居中细线，线随窗口一起收到边缘
     let _ = app.emit("widget://edge", edge);
-    animate_window(app, win, cur, (x as f64, y as f64, lw, lh), 160, None);
+    animate_window(app, win, cur, (x as f64, y as f64, lw, lh), 160, None, None);
 }
 
 /// 展开悬浮窗（正常 / 缩略），回到锚点位置。
@@ -870,8 +886,16 @@ fn expand_widget(app: &AppHandle, win: &WebviewWindow, compact: bool) {
         size.width as f64 / sf,
         size.height as f64 / sf,
     );
-    let _ = app.emit("widget://edge", "none");
-    animate_window(app, win, cur, (x as f64, y as f64, w, h), 160, Some((x, y)));
+    // 内容等窗口长回原尺寸后再显示，避免动画期间被压扁
+    animate_window(
+        app,
+        win,
+        cur,
+        (x as f64, y as f64, w, h),
+        160,
+        Some((x, y)),
+        Some("none"),
+    );
 }
 
 /// 窗口尺寸/位置动画（smoothstep，10 步；新动画会取消旧动画）。
@@ -883,6 +907,7 @@ fn animate_window(
     to: (f64, f64, f64, f64),
     ms: u64,
     end_anchor: Option<(i32, i32)>,
+    end_edge: Option<&'static str>,
 ) {
     let gen = ANIM_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let win = win.clone();
@@ -916,6 +941,10 @@ fn animate_window(
             let _ = win.set_position(PhysicalPosition::new(to.0 as i32, to.1 as i32));
             if let Some((ax, ay)) = end_anchor {
                 *app.state::<AppState>().widget_anchor.lock().unwrap() = (ax, ay);
+            }
+            // 收起/展开的样式在动画结束后才切换，避免窗口还是大尺寸时先套上蓝色细线导致闪烁
+            if let Some(e) = end_edge {
+                let _ = app.emit("widget://edge", e);
             }
         }
         app.state::<AppState>()
@@ -1729,6 +1758,7 @@ fn set_widget_visible(app: &AppHandle, visible: bool) {
         state.settings.lock().unwrap().show_floating_widget = visible;
     }
     save_settings_file(app);
+    let _ = app.emit("widget://visibility", visible);
 }
 
 fn set_paused_internal(app: &AppHandle, paused: bool) {
@@ -1783,19 +1813,6 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
         let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
         op_menu.append(&item).map_err(|e| e.to_string())?;
     }
-    let color_menu =
-        Submenu::with_id(&app, "w.color", &t!("配色"), true).map_err(|e| e.to_string())?;
-    for (k, label) in [
-        ("blue", &t!("蓝色")),
-        ("cyan", &t!("青色")),
-        ("violet", &t!("紫色")),
-        ("green", &t!("绿色")),
-        ("orange", &t!("橙色")),
-        ("pink", &t!("粉色")),
-    ] {
-        let item = check(&format!("w.color.{k}"), label, prefs.accent == k)?;
-        color_menu.append(&item).map_err(|e| e.to_string())?;
-    }
     let settings_i = MenuItem::with_id(&app, "w.settings", &t!("设置…"), true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
@@ -1807,13 +1824,36 @@ fn show_widget_menu(app: AppHandle) -> Result<(), String> {
             &snap_i,
             &compact_i,
             &op_menu,
-            &color_menu,
             &sep,
             &settings_i,
         ],
     )
     .map_err(|e| e.to_string())?;
     menu.popup(window).map_err(|e| e.to_string())
+}
+
+/// 主界面顶栏按钮：切换悬浮窗显示，返回切换后的可见状态。
+#[tauri::command]
+fn toggle_widget(app: AppHandle) -> bool {
+    let visible = app
+        .get_webview_window("widget")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+    let next = !visible;
+    set_widget_visible(&app, next);
+    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+        let _ = h.widget_toggle.set_checked(next);
+    }
+    next
+}
+
+/// 悬浮窗 ✕ 按钮：关闭（隐藏）悬浮窗并写回设置、同步托盘勾选。
+#[tauri::command]
+fn close_widget(app: AppHandle) {
+    set_widget_visible(&app, false);
+    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+        let _ = h.widget_toggle.set_checked(false);
+    }
 }
 
 /// 贴边收起模式下，鼠标悬停展开 / 离开收起。
@@ -2693,21 +2733,373 @@ fn get_top_titles(
 
 // ---------- 浏览器扩展安装 ----------
 
-/// 返回扩展目录路径（开发/生产自适应）。
-#[tauri::command]
-fn get_extension_path() -> Result<String, String> {
+/// 扩展目录（开发/生产自适应），打包与手动安装共用。
+fn extension_dir() -> Result<std::path::PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let parent = exe.parent().ok_or("无法定位程序目录")?;
     // 生产: <安装目录>/extension/  开发: <repo>/extension/
     let candidates = [
-        exe.parent().unwrap().join("extension"),
-        exe.parent().unwrap().join("../../extension"),
+        parent.join("extension"),
+        parent.join("../../extension"),
+        // 开发时 exe 在 src-tauri/target/debug/ 下，扩展目录在仓库根
+        parent.join("../../../extension"),
     ];
     for c in &candidates {
         if c.join("manifest.json").exists() {
-            return Ok(c.to_string_lossy().to_string());
+            return Ok(c.clone());
         }
     }
     Err("扩展目录未找到".into())
+}
+
+/// 返回扩展目录路径（开发/生产自适应）。
+#[tauri::command]
+fn get_extension_path() -> Result<String, String> {
+    Ok(extension_dir()?.to_string_lossy().to_string())
+}
+
+/// 单个浏览器的智能安装结果（前端逐条展示）。
+#[derive(Serialize, Clone)]
+struct ExtInstallResult {
+    browser: String,
+    name: String,
+    ok: bool,
+    /// ok / not_found / pack_failed / bad_crx / registry_failed
+    code: String,
+    extension_id: String,
+    message: String,
+}
+
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// 读 protobuf varint（只用来跳过/取长度）。
+fn read_varint(buf: &[u8], mut i: usize) -> Option<(u64, usize)> {
+    let mut value: u64 = 0;
+    let mut shift = 0u32;
+    while i < buf.len() && shift < 64 {
+        let b = buf[i];
+        i += 1;
+        value |= ((b & 0x7f) as u64) << shift;
+        if b & 0x80 == 0 {
+            return Some((value, i));
+        }
+        shift += 7;
+    }
+    None
+}
+
+/// CRX3 头部 → signed_header_data 里的 crx_id（= SHA256(公钥) 前 16 字节）。
+/// 结构：magic "Cr24" | uint32 LE 版本(=3) | uint32 LE header 长度 | CrxFileHeader。
+fn crx_id_bytes(crx: &[u8]) -> Option<Vec<u8>> {
+    if crx.len() < 16 || &crx[0..4] != b"Cr24" {
+        return None;
+    }
+    let version = u32::from_le_bytes([crx[4], crx[5], crx[6], crx[7]]);
+    if version != 3 {
+        return None;
+    }
+    let header_size = u32::from_le_bytes([crx[8], crx[9], crx[10], crx[11]]) as usize;
+    if header_size == 0 || 12 + header_size > crx.len() {
+        return None;
+    }
+    let header = &crx[12..12 + header_size];
+    let mut i = 0usize;
+    while i < header.len() {
+        let (key, next) = read_varint(header, i)?;
+        i = next;
+        let field = key >> 3;
+        match key & 7 {
+            0 => {
+                let (_, next) = read_varint(header, i)?;
+                i = next;
+            }
+            1 => i += 8,
+            2 => {
+                let (len, next) = read_varint(header, i)?;
+                i = next;
+                let end = i.checked_add(len as usize)?;
+                if end > header.len() {
+                    return None;
+                }
+                if field == 10000 {
+                    return signed_data_crx_id(&header[i..end]);
+                }
+                i = end;
+            }
+            5 => i += 4,
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn signed_data_crx_id(buf: &[u8]) -> Option<Vec<u8>> {
+    let mut i = 0usize;
+    while i < buf.len() {
+        let (key, next) = read_varint(buf, i)?;
+        i = next;
+        let field = key >> 3;
+        match key & 7 {
+            0 => {
+                let (_, next) = read_varint(buf, i)?;
+                i = next;
+            }
+            1 => i += 8,
+            2 => {
+                let (len, next) = read_varint(buf, i)?;
+                i = next;
+                let end = i.checked_add(len as usize)?;
+                if end > buf.len() {
+                    return None;
+                }
+                if field == 1 && len == 16 {
+                    return Some(buf[i..end].to_vec());
+                }
+                i = end;
+            }
+            5 => i += 4,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// 16 字节公钥哈希 → Chromium 扩展 ID（a-p 编码，32 字符）。
+fn extension_id_from_hash(hash: &[u8]) -> String {
+    const ALPHABET: &[u8; 16] = b"abcdefghijklmnop";
+    let mut id = String::with_capacity(32);
+    for b in hash {
+        id.push(ALPHABET[(b >> 4) as usize] as char);
+        id.push(ALPHABET[(b & 0x0f) as usize] as char);
+    }
+    id
+}
+
+fn browser_candidates() -> Vec<(&'static str, &'static str)> {
+    vec![("chrome", "Chrome"), ("edge", "Edge")]
+}
+
+fn find_browser_exe(browser: &str) -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for env_key in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+        if let Ok(base) = std::env::var(env_key) {
+            let base = std::path::PathBuf::from(base);
+            if browser == "chrome" {
+                candidates.push(base.join(r"Google\Chrome\Application\chrome.exe"));
+            } else {
+                candidates.push(base.join(r"Microsoft\Edge\Application\msedge.exe"));
+            }
+        }
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// 调用浏览器自带的 --pack-extension 生成 CRX3；复用同名 .pem 保持扩展 ID 稳定。
+fn pack_extension(
+    exe: &std::path::Path,
+    unpacked: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    let crx = unpacked.with_extension("crx");
+    let pem = unpacked.with_extension("pem");
+    let _ = std::fs::remove_file(&crx);
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg(format!("--pack-extension={}", unpacked.display()));
+    if pem.is_file() {
+        cmd.arg(format!("--pack-extension-key={}", pem.display()));
+    }
+    cmd.arg("--no-message-box")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let out = cmd.output().map_err(|e| format!("启动浏览器失败: {e}"))?;
+    if !crx.is_file() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let brief: String = stderr.chars().take(300).collect();
+        return Err(format!("打包失败: {}", brief.trim()));
+    }
+    Ok(crx)
+}
+
+/// 写注册表外部扩展键：HKCU\Software\{Google\Chrome|Microsoft\Edge}\Extensions\<id>。
+#[cfg(windows)]
+fn register_external_extension(
+    browser: &str,
+    id: &str,
+    crx: &std::path::Path,
+    version: &str,
+) -> Result<(), String> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    let vendor = if browser == "chrome" {
+        "Google\\Chrome"
+    } else {
+        "Microsoft\\Edge"
+    };
+    let key_path = format!("Software\\{vendor}\\Extensions\\{id}");
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (key, _) = hkcu
+        .create_subkey(&key_path)
+        .map_err(|e| format!("打开注册表失败: {e}"))?;
+    let crx_path = crx.to_string_lossy().to_string();
+    key.set_value("path", &crx_path)
+        .map_err(|e| format!("写入扩展路径失败: {e}"))?;
+    let ver = version.to_string();
+    key.set_value("version", &ver)
+        .map_err(|e| format!("写入扩展版本失败: {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn register_external_extension(
+    _browser: &str,
+    _id: &str,
+    _crx: &std::path::Path,
+    _version: &str,
+) -> Result<(), String> {
+    Err("当前平台不支持自动注册扩展".into())
+}
+
+/// 扩展源码内置副本：安装包不携带 extension/ 目录时也能自动安装。
+const EMBEDDED_MANIFEST: &str = include_str!("../../extension/manifest.json");
+const EMBEDDED_BACKGROUND: &str = include_str!("../../extension/background.js");
+
+/// 准备一份可打包的扩展目录：优先复制现有 extension/，否则写出内置副本。
+fn materialize_extension(dst: &std::path::Path) -> Result<(), String> {
+    if dst.exists() {
+        let _ = std::fs::remove_dir_all(dst);
+    }
+    if let Ok(src) = extension_dir() {
+        return copy_dir_all(&src, dst).map_err(|e| format!("复制扩展目录失败: {e}"));
+    }
+    std::fs::create_dir_all(dst).map_err(|e| format!("创建扩展目录失败: {e}"))?;
+    std::fs::write(dst.join("manifest.json"), EMBEDDED_MANIFEST)
+        .map_err(|e| format!("写出 manifest 失败: {e}"))?;
+    std::fs::write(dst.join("background.js"), EMBEDDED_BACKGROUND)
+        .map_err(|e| format!("写出 background 失败: {e}"))?;
+    Ok(())
+}
+
+/// 读扩展 manifest 里的版本号（注册表 version 值必须与 CRX 内一致）。
+fn manifest_version(dir: &std::path::Path) -> String {
+    std::fs::read(dir.join("manifest.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| {
+            v.get("version")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "1.0.0".to_string())
+}
+
+fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, String> {
+    let data_dir = {
+        let state = app.state::<AppState>();
+        let s = state.settings.lock().unwrap();
+        s.data_directory.clone()
+    };
+    let base = std::path::Path::new(&data_dir).join("browser-ext");
+    std::fs::create_dir_all(&base).map_err(|e| format!("创建目录失败: {e}"))?;
+
+    let mut results: Vec<ExtInstallResult> = Vec::new();
+    for (browser, name) in browser_candidates() {
+        let mut row = ExtInstallResult {
+            browser: browser.to_string(),
+            name: name.to_string(),
+            ok: false,
+            code: "not_found".into(),
+            extension_id: String::new(),
+            message: String::new(),
+        };
+        let Some(exe) = find_browser_exe(browser) else {
+            results.push(row);
+            continue;
+        };
+        // 每个浏览器独立一份解压目录与 .pem（扩展 ID 只取决于密钥）
+        let unpacked = base.join(browser).join("extension");
+        if unpacked.exists() {
+            let _ = std::fs::remove_dir_all(&unpacked);
+        }
+        if let Err(e) = materialize_extension(&unpacked) {
+            row.code = "pack_failed".into();
+            row.message = e;
+            results.push(row);
+            continue;
+        }
+        let version = manifest_version(&unpacked);
+        match pack_extension(&exe, &unpacked) {
+            Ok(crx) => match std::fs::read(&crx).ok().and_then(|b| crx_id_bytes(&b)) {
+                Some(hash) => {
+                    let id = extension_id_from_hash(&hash);
+                    row.extension_id = id.clone();
+                    match register_external_extension(browser, &id, &crx, &version) {
+                        Ok(()) => {
+                            row.ok = true;
+                            row.code = "ok".into();
+                            row.message = crx.to_string_lossy().to_string();
+                        }
+                        Err(e) => {
+                            row.code = "registry_failed".into();
+                            row.message = e;
+                        }
+                    }
+                }
+                None => {
+                    row.code = "bad_crx".into();
+                    row.message = "无法从 CRX 读取扩展 ID".into();
+                }
+            },
+            Err(e) => {
+                row.code = "pack_failed".into();
+                row.message = e;
+            }
+        }
+        results.push(row);
+    }
+
+    // 装好至少一个浏览器 → 自动开启网页统计并通知前端刷新设置
+    if results.iter().any(|r| r.ok) {
+        let need = {
+            let state = app.state::<AppState>();
+            let mut s = state.settings.lock().unwrap();
+            let need = !s.record_web;
+            if need {
+                s.record_web = true;
+            }
+            need
+        };
+        if need {
+            save_settings_file(app);
+            let snapshot = app.state::<AppState>().settings.lock().unwrap().clone();
+            let _ = app.emit("app://settings", &snapshot);
+        }
+    }
+    Ok(results)
+}
+
+/// 智能安装浏览器扩展：探测已装浏览器 → 打包 CRX3 → 写注册表外部扩展键。
+#[tauri::command]
+async fn smart_install_extension(app: AppHandle) -> Result<Vec<ExtInstallResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || install_extension_blocking(&app))
+        .await
+        .map_err(|e| format!("安装任务失败: {e}"))?
 }
 
 /// 打开浏览器扩展管理页（chrome://extensions 或 edge://extensions）。

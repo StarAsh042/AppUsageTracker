@@ -204,6 +204,29 @@ const en05: Record<string, string> = {
   '排除规则示例': 'e.g. bank | password | tokens',
   '分类名': 'Category name',
   '关键词1': 'keyword1 | keyword2 | …',
+  // 悬浮窗按钮 / 提示
+  '悬浮窗': 'Widget',
+  '关闭悬浮窗': 'Close widget',
+  '位置已锁定': 'Position locked',
+  '请先拖到屏幕边缘再离开': 'Drag the widget to a screen edge first',
+  // 设置页：更新代理
+  '更新时使用系统代理': 'Use system proxy for updates',
+  '默认关闭：强制直连、跳过代理': 'off by default: direct connection, proxy bypassed',
+  // 设置页：浏览器扩展智能安装
+  '安装浏览器扩展': 'Install Browser Extension',
+  '智能安装扩展（推荐）': 'Smart install (recommended)',
+  '一键安装：自动识别 Chrome / Edge，打包并注册扩展，重启浏览器后生效': 'One click: detects Chrome / Edge, packs and registers the extension. Restart the browser to activate.',
+  '手动安装': 'Manual install',
+  '安装中': 'Installing',
+  '已注册，重启浏览器后生效': 'registered, activate by restarting the browser',
+  '扩展 ID': 'extension ID',
+  '未检测到该浏览器': 'browser not detected',
+  '打包失败': 'packing failed',
+  '打包产物无效，请改用手动安装': 'invalid package, use manual install',
+  '写入注册表失败': 'registry write failed',
+  '扩展已注册，重启浏览器后生效': 'Extension registered; restart the browser to activate it',
+  '未能自动安装，请改用手动安装': 'Auto install failed; use manual install',
+  '安装失败': 'install failed',
 };
 Object.assign(en, en05);
 

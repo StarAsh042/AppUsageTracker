@@ -51,11 +51,11 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 ### 界面与导出
 
-- **桌面悬浮窗**：Win11 Mica 磨砂置顶小窗，实时显示统计状态、今日活跃、当前应用（含本轮秒表）与 Top5 排行；可整窗拖动，默认左上角，拖出屏幕自动钳回，不抢焦点。
+- **桌面悬浮窗**：Win11 Mica 磨砂置顶小窗，实时显示统计状态、今日活跃、当前应用（含本轮秒表）与 Top5 排行；可整窗拖动，默认左上角，拖出屏幕自动钳回，不抢焦点；主界面顶栏有「悬浮窗」开关按钮，悬停时右上角出现 ✕ 可直接关闭；可置顶、锁定、贴边收起（未贴边时会提示先拖到边缘）、紧凑模式与透明度调节。
 - **仪表盘**：今天 / 昨天 / 本周 / 本月 / 自定义区间，含汇总卡、应用排行、分类占比与每日活跃趋势；今日数据随秒级 tick 自动刷新。
 - **时间线**：24 小时色带，支持滚轮缩放、拖拽平移、明细表与搜索，并标注统计中 / 空闲 / 锁定 / 挂起状态区间。
-- **日历热力图与对比视图**：GitHub contribution 风格的年度热力图（月 / 年切换），以及双时段应用 / 分类并排对比。
-- **托盘**：左键打开主界面；右键菜单提供悬浮窗开关、暂停监控、设置与退出。
+- **日历热力图与对比视图**：GitHub contribution 风格的年度热力图（月 / 年切换），以及双时段应用 / 分类并排对比；默认 A 为更早的 7 天、B 为最近 7 天，变化率按时间先后自动判断。
+- **托盘**：左键打开主界面；右键菜单提供悬浮窗开关、暂停监控、设置与退出；关闭主窗口只隐藏到托盘。
 - **导出**：CSV（UTF-8 BOM，兼容 Excel，导出后自动打开所在目录）、JSON 全量备份 / 恢复、Markdown 周报。
 - **其他**：开机自启（HKCU Run）、单实例、关闭主窗隐藏到托盘、全局热键、休息提醒、中英双语界面。
 
@@ -186,14 +186,21 @@ npm run tauri build                         # 生产构建（NSIS 安装包 + �
 | `web_heartbeat_interval_secs` | 否 | `10` | 网页心跳间隔（秒）；MV3 定时器下限 30 秒 | `30` | 否 |
 | `language` | 否 | `system` | 界面语言：`system`（中文）/ `en` | `en` | 否 |
 | `update_channel` | 否 | `auto` | 更新下载通道：`auto` / `official` / `mirror` | `official` | 否 |
+| `update_use_proxy` | 否 | `false` | 检查与下载更新时是否使用系统代理；`false` 强制直连、跳过代理 | `true` | 否 |
 | `schema_version` | 否 | `1` | 设置结构版本，迁移链使用，不建议手改 | `1` | 否 |
-| `widget` | 否 | 见 `WidgetPrefs` | 悬浮窗偏好：置顶、锁定、贴边、缩略、透明度、配色 | — | 否 |
+| `widget` | 否 | 见 `WidgetPrefs` | 悬浮窗偏好：置顶、锁定、贴边收起、紧凑模式、透明度 | — | 否 |
 
 > 表格中的示例值仅用于说明，不覆盖默认值。改变 `data_directory` 会触发历史数据迁移，操作前请先做 JSON 备份。
 
 ## 浏览器扩展（可选）
 
 `extension/` 是一个 Manifest V3 扩展（`manifest.json` + `background.js`），把当前标签页的 URL 与标题通过本机回环地址上报给应用，按域名聚合浏览时长。
+
+安装方式有两条：**智能安装（推荐）** 与 **手动安装**。
+
+智能安装：设置 → 浏览器扩展 → 「智能安装扩展」。应用会探测本机已安装的 Chrome / Edge，复制扩展源码到数据目录，调用浏览器自带的 `--pack-extension` 打出 CRX3，再把自己写进该浏览器的外部扩展注册表项（`HKCU\Software\Google\Chrome\Extensions\<id>` 或 `HKCU\Software\Microsoft\Edge\Extensions\<id>`，值为 `path` + `version`）。成功后会自动打开按钮「网页浏览统计」开关。**安装后需要重启浏览器才会加载**；未检测到浏览器、打包失败或写注册表失败时，界面会按浏览器逐条显示原因，此时改用手动安装。
+
+手动安装：
 
 1. 在「设置 → 隐私」开启「网页浏览统计」（`record_web`，默认关闭；关闭时心跳返回 403）。
 2. Chrome / Edge 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选择仓库的 `extension/` 目录。
@@ -256,10 +263,10 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 
 ## 隐私说明
 
-- **默认不记录窗口标题，也不记录网页 URL 与标题**：`record_window_titles` 与 `record_web` 在 `crates/tracker-core/src/settings.rs:143-144` 中默认均为 `false`。
+- **默认不记录窗口标题，也不记录网页 URL 与标题**：`record_window_titles` 与 `record_web` 在 `crates/tracker-core/src/settings.rs:146-147` 中默认均为 `false`。
 - 打开 `record_window_titles` 后，前台窗口标题会写入标题区间，时间线出现「Top 标题」；可用 `title_exclude_patterns` 按子串排除。打开 `record_web` 并安装扩展后，网页 URL 与标题写入网页区间。两个开关都可在「设置 → 隐私」随时关闭。
 - **统计数据只保存在本机** `%LocalAppData%\AppUsageTracker\`，不上传第三方服务器，不提供账号体系。
-- **网络访问仅用于检查与下载更新**：更新清单 `latest.json` 来自 `https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest.json`；`mirror` / `auto` 通道会经 `https://gh-proxy.com/` 下载。浏览器扩展只访问本机 `127.0.0.1:59598`。除此之外不发起外发请求（【静态推断】：依据 `tauri.conf.json` 的 updater endpoints、`extension/manifest.json` 的 host_permissions 与 `src-tauri/src/lib.rs` 中的 `.no_proxy()` / 下载逻辑，未做抓包验证）。
+- **网络访问仅用于检查与下载更新**：更新清单 `latest.json` 来自 `https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest.json`；`mirror` / `auto` 通道会经 `https://gh-proxy.com/` 下载。浏览器扩展只访问本机 `127.0.0.1:59598`。更新请求默认绕过系统代理（`update_use_proxy` 为 `false` 时对更新下载器调用 `.no_proxy()`），仅在设置页显式打开该开关时才走系统代理。除此之外不发起外发请求（【静态推断】：依据 `tauri.conf.json` 的 updater endpoints、`extension/manifest.json` 的 host_permissions 与 `src-tauri/src/lib.rs` 中的代理判断 / 下载逻辑，未做抓包验证）。
 - 不记录键盘输入、屏幕截图或文件内容（【静态推断】：代码中未发现相关采集路径，未做动态验证）。
 - 安全问题：仓库暂无 `SECURITY.md`，请通过 [GitHub Issues](https://github.com/StarAsh042/AppUsageTracker/issues) 反馈，避免公开可复现的敏感细节。
 
@@ -270,6 +277,8 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 - `auto`（默认）：先尝试官方 GitHub Releases 地址，失败回退到镜像。
 - `official`：只用官方地址。
 - `mirror`：只用 `gh-proxy.com` 镜像地址。
+
+检查与下载更新时默认强制直连、跳过系统代理；如需让更新走系统代理，在设置中打开「更新时使用系统代理」（`update_use_proxy`）。
 
 回滚：自动更新不提供自动降级。需要回退时请手动下载旧版本安装包覆盖安装；数据目录与 `usage.db` 保持不变（【未验证】：仓库未提供回滚流程说明，未在真机验证）。
 
@@ -307,6 +316,7 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 
 - [CHANGELOG.md](CHANGELOG.md)：各版本用户可见变更。
 - [LICENSE](LICENSE)：MIT 许可证全文。
+- [docs/ROADMAP.md](docs/ROADMAP.md)：后续开发计划与待办优先级。
 - [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)：安装包与更新清单。
 - [GitHub Issues](https://github.com/StarAsh042/AppUsageTracker/issues)：问题反馈。
 - 贡献流程见本文「贡献」一节。
@@ -334,10 +344,13 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 ## 维护状态与已知限制
 
 - 单人维护；当前发布版本 `v0.6.1`，发布日期 2026-11-08。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.1`，且与 tag `v0.6.1` 及 Latest Release 一致。
+- `dev` 上已有一批未发布的改动（对比视图默认区间、悬浮窗开关与关闭按钮、贴边收起提示、动画闪烁、锁定徽标遮挡、更新代理开关、移除界面配色、扩展智能安装），详见 `CHANGELOG.md` 的 `[Unreleased]` 与 [docs/ROADMAP.md](docs/ROADMAP.md)。
 - Rust + Tauri 2 + Svelte 5 重写版已取代旧 C#/WPF 实现；`main` 为发布分支，与集成分支 `dev` 保持同步。
 - `dev` 分支最新一次 CI（`feat: integrate Rust/Tauri 2 rewrite and docs into dev (#2)`）全部检查通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 的必需检查 `ci` 为准。
 - 已补齐 `docs/assets/` 下的真实窗口截图（主窗口仪表盘与桌面悬浮窗），见「截图与演示」。
 - `CHANGELOG.md` 的 `0.1.0` / `0.2.0` 属于旧 C# 版历史记录，没有对应的 Git tag 与 GitHub Release，因此没有 compare 链接；`0.3.0` 为破坏性全量重写，仓库未提供旧版数据到新版数据的迁移说明。
 - `src-tauri/tauri.conf.json` 中 `app.security.csp` 为 `null`、`tauri` 依赖启用 `unstable` feature，属于待收敛的技术债。
 - 界面外观见「截图与演示」的真实截图；扩展上报间隔、更新回滚与未签名安装包的 SmartScreen 表现仍为【未验证】或【推测】，需由你在真机手动验证。
+- 扩展「智能安装」写的是浏览器外部扩展注册表项，需要重启浏览器才加载；该功能仅在装有 Chrome / Edge 的 Windows 上有意义，其他平台会返回「当前平台不支持自动注册扩展」。
+- 后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 - 本文件与 `CHANGELOG.md` 的命令、版本与配置默认值均取自仓库内 `package.json`、各 `Cargo.toml`、`tauri.conf.json`、`settings.rs` 与 `.github/workflows/`；未做外部联网核实，未在本机逐条运行，相关命令标【未验证】。
