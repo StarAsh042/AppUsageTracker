@@ -38,6 +38,8 @@
     const un3 = listen<{ theme?: string; language?: string }>('app://settings', (e) => {
       applyTheme(e.payload?.theme);
       lang.set(e.payload?.language === 'en' ? 'en' : 'zh');
+      // 分类 / 别名等设置变化会影响排行数据，重挂载数据视图重新拉取
+      dataEpoch += 1;
     });
     const un4 = listen('ui://rest', () => {
       restTip = true;

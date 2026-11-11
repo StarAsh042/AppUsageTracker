@@ -2295,11 +2295,13 @@ fn open_path(path: String) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let trimmed = path.trim_end_matches(['\\', '/']);
+        let quoted = format!("\"{trimmed}\"");
         let is_dir = std::path::Path::new(&path).is_dir();
         let arg = if is_dir {
-            path.clone()
+            quoted
         } else {
-            format!("/select,{path}")
+            format!("/select,{quoted}")
         };
         std::process::Command::new("explorer")
             .raw_arg(arg)
@@ -2773,7 +2775,7 @@ struct ExtInstallResult {
     browser: String,
     name: String,
     ok: bool,
-    /// ok / not_found / pack_failed / bad_crx / registry_failed
+    /// ok / pack_failed / bad_crx / registry_failed（not_found 保留兼容旧前端）
     code: String,
     extension_id: String,
     message: String,
@@ -3048,6 +3050,8 @@ fn pack_extension(
 ) -> Result<std::path::PathBuf, String> {
     let crx = unpacked.with_extension("crx");
     let _ = std::fs::remove_file(&crx);
+    // 上次失败可能留下 <name>.pem，Edge 会报「指定扩展的私钥已存在」；有共享密钥时不需要它
+    let _ = std::fs::remove_file(unpacked.with_extension("pem"));
     let mut cmd = std::process::Command::new(exe);
     cmd.arg(format!("--pack-extension={}", unpacked.display()));
     if shared_pem.is_file() {
@@ -3083,6 +3087,74 @@ fn pack_extension(
     }
     Ok(crx)
 }
+
+/// 打包优先级：优先用 Chrome / Edge，fork 通常基于同版 Chromium 但命令行支持不一。
+fn pack_priority(key: &str) -> usize {
+    match key {
+        "chrome" => 0,
+        "edge" => 1,
+        "chrome_beta" | "chrome_dev" | "chrome_canary" => 2,
+        "edge_beta" | "edge_dev" | "chromium" => 3,
+        "brave" => 4,
+        _ => 10,
+    }
+}
+
+/// 旧版把每个浏览器的 CRX / pem 放在 browser-ext/<browser>/ 下，新版统一放 browser-ext/ 根；
+/// 这些残留目录不再被读取，安装时清理掉。
+fn cleanup_legacy_dirs(base: &std::path::Path) {
+    for spec in browser_specs() {
+        let legacy = base.join(spec.key);
+        if legacy.is_dir() {
+            let _ = std::fs::remove_dir_all(&legacy);
+        }
+    }
+}
+
+/// 清理旧版本遗留的外部扩展注册表键：只删 path 指向本应用 browser-ext 目录、
+/// 且 ID 与当前正确扩展不同的键；其它软件注册的扩展一律不动。
+/// keep_id 为 None（打包失败、无正确 ID 可用）时删除全部指向本应用旧 CRX 的键。
+#[cfg(windows)]
+fn cleanup_stale_extensions(base: &std::path::Path, keep_id: Option<&str>, roots: &[&str]) {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_ALL_ACCESS};
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let marker = base.to_string_lossy().to_lowercase();
+    for &root in roots {
+        let ext_key = match hkcu
+            .open_subkey_with_flags(format!("Software\\{}\\Extensions", root), KEY_ALL_ACCESS)
+        {
+            Ok(k) => k,
+            Err(_) => continue,
+        };
+        let mut stale: Vec<String> = Vec::new();
+        for sub in ext_key.enum_keys().flatten() {
+            if let Some(k) = keep_id {
+                if k == sub.as_str() {
+                    continue;
+                }
+            }
+            let owned = match ext_key.open_subkey(&sub) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            let p: String = match owned.get_value("path") {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if p.to_lowercase().contains(&marker) {
+                stale.push(sub);
+            }
+        }
+        // 先收集再删，避免枚举过程中删除导致跳项
+        for id in stale {
+            let _ = ext_key.delete_subkey_all(&id);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn cleanup_stale_extensions(_base: &std::path::Path, _keep_id: Option<&str>, _roots: &[&str]) {}
 
 /// 写注册表外部扩展键：HKCU\Software\<root>\Extensions\<id>。
 /// roots 里任一写入成功即算成功（不同 fork 读取的根不同，逐个都写以兼容）。
@@ -3186,6 +3258,8 @@ fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, 
     };
     let base = std::path::Path::new(&data_dir).join("browser-ext");
     std::fs::create_dir_all(&base).map_err(|e| format!("创建目录失败: {e}"))?;
+    // 旧版残留：按浏览器分目录的 CRX / pem 已不再使用
+    cleanup_legacy_dirs(&base);
 
     // 只处理本机确实安装了的浏览器，避免结果列表被一堆「未检测到」刷屏
     let specs = browser_specs();
@@ -3197,19 +3271,76 @@ fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, 
         return Ok(vec![]);
     }
 
-    // 扩展内容只用内置副本，全局打包一次（共享密钥 → 所有浏览器同一扩展 ID）
+    // 汇总所有可能的注册表根（含未检测到的浏览器），用于清理旧版本残留键
+    let mut all_roots: Vec<&str> = Vec::new();
+    for spec in &specs {
+        for &root in spec.registry_roots {
+            if !all_roots.contains(&root) {
+                all_roots.push(root);
+            }
+        }
+    }
+
+    // 扩展内容只用内置副本；共享密钥 → 所有浏览器同一扩展 ID
     let unpacked = base.join("extension");
     materialize_extension(&unpacked)?;
     validate_extension_manifest(&unpacked)?;
     let version = manifest_version(&unpacked);
     let shared_pem = base.join("extension-key.pem");
-    let packer = &detected[0].1;
-    let crx = pack_extension(packer, &unpacked, &shared_pem)?;
-    let hash = std::fs::read(&crx)
-        .ok()
-        .and_then(|b| crx_id_bytes(&b))
-        .ok_or_else(|| "无法从 CRX 读取扩展 ID".to_string())?;
+
+    // 按 Chrome / Edge 优先顺序逐个尝试打包，任一成功即止；失败自动降级到下一款
+    let mut order: Vec<usize> = (0..detected.len()).collect();
+    order.sort_by_key(|&i| pack_priority(detected[i].0.key));
+    let mut crx: Option<std::path::PathBuf> = None;
+    let mut pack_errors: Vec<String> = Vec::new();
+    for &i in &order {
+        match pack_extension(&detected[i].1, &unpacked, &shared_pem) {
+            Ok(p) => {
+                crx = Some(p);
+                break;
+            }
+            Err(e) => pack_errors.push(format!("{}: {}", detected[i].0.name, e)),
+        }
+    }
+    let crx = match crx {
+        Some(p) => p,
+        None => {
+            cleanup_stale_extensions(&base, None, &all_roots);
+            let message = pack_errors.join("；");
+            return Ok(detected
+                .iter()
+                .map(|(spec, _)| ExtInstallResult {
+                    browser: spec.key.to_string(),
+                    name: spec.name.to_string(),
+                    ok: false,
+                    code: "pack_failed".into(),
+                    extension_id: String::new(),
+                    message: message.clone(),
+                })
+                .collect());
+        }
+    };
+    let hash = match std::fs::read(&crx).ok().and_then(|b| crx_id_bytes(&b)) {
+        Some(h) => h,
+        None => {
+            cleanup_stale_extensions(&base, None, &all_roots);
+            let message = "打包产物无效，请改用手动安装".to_string();
+            return Ok(detected
+                .iter()
+                .map(|(spec, _)| ExtInstallResult {
+                    browser: spec.key.to_string(),
+                    name: spec.name.to_string(),
+                    ok: false,
+                    code: "bad_crx".into(),
+                    extension_id: String::new(),
+                    message: message.clone(),
+                })
+                .collect());
+        }
+    };
     let id = extension_id_from_hash(&hash);
+    // 删除旧版本写入的、指向本应用旧 CRX 的错误注册表键（保留当前正确 ID）
+    cleanup_stale_extensions(&base, Some(id.as_str()), &all_roots);
 
     let mut results: Vec<ExtInstallResult> = Vec::new();
     for (spec, _exe) in &detected {
@@ -3321,10 +3452,14 @@ fn get_top_web(
 
 #[derive(Serialize, Deserialize)]
 struct BackupFile {
+    #[serde(default)]
     version: u32,
+    #[serde(default)]
     exported_at: String,
     daily: Vec<DailyUsage>,
+    #[serde(default)]
     intervals: Vec<ForegroundInterval>,
+    #[serde(default)]
     states: Vec<StateInterval>,
 }
 
@@ -3368,21 +3503,44 @@ fn export_backup_json(app: AppHandle) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+/// 解析备份名到 backups 目录内的 .json 文件，拒绝路径逃逸与非法文件名。
+fn backup_path(data_dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
+    if name.is_empty()
+        || name.contains("..")
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains(':')
+        || !name.to_lowercase().ends_with(".json")
+    {
+        return Err("非法备份名".into());
+    }
+    let dir = backups_dir(data_dir);
+    let path = dir.join(name);
+    if path.parent() != Some(dir.as_path()) {
+        return Err("非法备份名".into());
+    }
+    Ok(path)
+}
+
 /// 删除指定备份文件（防路径逃逸：仅允许 backups 目录内的 json）。
 #[tauri::command]
 fn delete_backup(app: AppHandle, name: String) -> Result<(), String> {
     let state = app.state::<AppState>();
     let data_dir = state.settings.lock().unwrap().data_directory.clone();
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err("非法备份名".into());
-    }
-    let path = backups_dir(&data_dir).join(&name);
+    let path = backup_path(&data_dir, &name)?;
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
 /// 共用恢复逻辑：清空当前库与内存态 → 写入备份 → 通知所有视图重新拉数据。
 fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, String> {
-    let backup: BackupFile = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    let backup: BackupFile =
+        serde_json::from_str(text).map_err(|e| format!("备份文件不是有效的应用备份（{e}）"))?;
+    if backup.version > 1 {
+        return Err(format!(
+            "备份文件版本 {} 高于当前支持的版本 1，请升级应用后再恢复",
+            backup.version
+        ));
+    }
     let state = app.state::<AppState>();
     {
         let st = state.store.lock().unwrap();
@@ -3433,9 +3591,6 @@ fn open_backup_dir(app: AppHandle) -> Result<(), String> {
 /// 恢复数据目录 backups/ 里指定的备份。
 #[tauri::command]
 fn restore_backup_named(app: AppHandle, name: String) -> Result<String, String> {
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err("非法备份名".into());
-    }
     let data_dir = app
         .state::<AppState>()
         .settings
@@ -3443,7 +3598,7 @@ fn restore_backup_named(app: AppHandle, name: String) -> Result<String, String> 
         .unwrap()
         .data_directory
         .clone();
-    let path = backups_dir(&data_dir).join(&name);
+    let path = backup_path(&data_dir, &name)?;
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     apply_backup(&app, &text, &name)
 }

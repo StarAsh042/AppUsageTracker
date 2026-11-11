@@ -198,7 +198,7 @@ npm run tauri build                         # 生产构建（NSIS 安装包 + �
 
 安装方式有两条：**智能安装（推荐）** 与 **手动安装**。
 
-智能安装：设置 → 浏览器扩展 → 「智能安装扩展」。应用用编译期内置的扩展副本（不读取磁盘上其它 extension/ 目录，避免误装），探测本机已安装的 Chromium 内核浏览器（Chrome / Edge / Chrome Beta·Dev·Canary / Edge Beta·Dev / Chromium / Brave / Vivaldi / Opera / Opera GX / Cent Browser / 360 极速 / Yandex / CocCoc / Naver Whale 等），用同一把共享密钥只打包一次 CRX3（保证扩展 ID 稳定），再按各浏览器对应的注册表根（`HKCU\Software\<root>\Extensions\<id>`，兼容 fork 时同时写 `Google\Chrome` 兜底，值为 `path` + `version`）逐个注册。打包前校验 `manifest.json` 的 `name` 必须为本项目扩展，否则中止。成功后会自动打开「网页浏览统计」开关。**安装后需要重启浏览器才会加载**；界面按检测到的浏览器逐条显示结果，失败时改用手动安装。
+智能安装：设置 → 浏览器扩展 → 「智能安装扩展」。应用用编译期内置的扩展副本（不读取磁盘上其它 extension/ 目录，避免误装），探测本机已安装的 Chromium 内核浏览器（Chrome / Edge / Chrome Beta·Dev·Canary / Edge Beta·Dev / Chromium / Brave / Vivaldi / Opera / Opera GX / Cent Browser / 360 极速 / Yandex / CocCoc / Naver Whale 等），用同一把共享密钥打包 CRX3（保证扩展 ID 稳定；按 Chrome / Edge 优先顺序挑选可用浏览器，失败自动降级到下一款），再按各浏览器对应的注册表根（`HKCU\Software\<root>\Extensions\<id>`，兼容 fork 时同时写 `Google\Chrome` 兜底，值为 `path` + `version`）逐个注册。打包前校验 `manifest.json` 的 `name` 必须为本项目扩展，否则中止。成功后会自动打开「网页浏览统计」开关。**安装后需要重启浏览器才会加载**；安装时还会清理旧版本按浏览器分目录保存的 CRX 与指向本应用旧 CRX 的错误注册表键（不影响其它扩展）；界面按检测到的浏览器逐条显示结果，失败时改用手动安装。
 
 手动安装：
 
