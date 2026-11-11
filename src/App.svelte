@@ -12,6 +12,7 @@
   let live = $state<LiveStatus | null>(null);
   let version = $state('');
   let paused = $state(false);
+  let widgetVisible = $state(false);
   let focusDate = $state<string | null>(null);
   let restTip = $state(false);
   let restTimer: ReturnType<typeof setTimeout> | undefined;
@@ -22,6 +23,7 @@
     api.getVersion().then((v) => (version = v));
     api.getSettings().then((s) => {
       applyTheme(s.theme);
+      widgetVisible = s.show_floating_widget;
       lang.set(s.language === 'en' ? 'en' : 'zh');
     });
     const un1 = listen<LiveStatus>('usage://tick', (e) => {
@@ -40,6 +42,10 @@
       clearTimeout(restTimer);
       restTimer = setTimeout(() => (restTip = false), 30_000);
     });
+    // 悬浮窗显示状态（顶栏按钮 / 托盘 / 悬浮窗自身关闭都会同步）
+    const un5 = listen<boolean>('widget://visibility', (e) => {
+      widgetVisible = e.payload === true;
+    });
     // 禁用 WebView 默认右键菜单（排行右键分类等自定义菜单不受影响）
     const prevent = (e: Event) => e.preventDefault();
     window.addEventListener('contextmenu', prevent);
@@ -48,6 +54,7 @@
       un2.then((f) => f());
       un3.then((f) => f());
       un4.then((f) => f());
+      un5.then((f) => f());
       window.removeEventListener('contextmenu', prevent);
     };
   });
@@ -64,6 +71,10 @@
   async function togglePause() {
     paused = !paused;
     await api.setPaused(paused);
+  }
+
+  async function toggleWidget() {
+    widgetVisible = await api.toggleWidget();
   }
 </script>
 
@@ -87,6 +98,7 @@
       <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>{t('日历')}</button>
       <button class:active={view === 'compare'} onclick={() => (view = 'compare')}>{t('对比')}</button>
       <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>{t('设置')}</button>
+      <button class:active={widgetVisible} onclick={toggleWidget}>{t('悬浮窗')}</button>
       <button onclick={togglePause}>{paused ? t('恢复监控') : t('暂停监控')}</button>
     </nav>
   </header>
