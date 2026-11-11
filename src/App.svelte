@@ -16,6 +16,8 @@
   let focusDate = $state<string | null>(null);
   let restTip = $state(false);
   let restTimer: ReturnType<typeof setTimeout> | undefined;
+  // 备份恢复 / 清空数据后自增，重挂载数据视图以重新拉数据
+  let dataEpoch = $state(0);
 
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
@@ -46,6 +48,9 @@
     const un5 = listen<boolean>('widget://visibility', (e) => {
       widgetVisible = e.payload === true;
     });
+    const un6 = listen('app://data', () => {
+      dataEpoch += 1;
+    });
     // 禁用 WebView 默认右键菜单（排行右键分类等自定义菜单不受影响）
     const prevent = (e: Event) => e.preventDefault();
     window.addEventListener('contextmenu', prevent);
@@ -55,6 +60,7 @@
       un3.then((f) => f());
       un4.then((f) => f());
       un5.then((f) => f());
+      un6.then((f) => f());
       window.removeEventListener('contextmenu', prevent);
     };
   });
@@ -111,16 +117,20 @@
   {/if}
 
   <main>
-    {#if view === 'dashboard'}
-      <Dashboard {focusDate} />
-    {:else if view === 'timeline'}
-      <TimelineView initialDate={focusDate ?? undefined} />
-    {:else if view === 'calendar'}
-      <CalendarView onPick={(d) => onPickDate(d)} />
-    {:else if view === 'compare'}
-      <CompareView />
-    {:else}
+    {#if view === 'settings'}
       <SettingsView />
+    {:else}
+      {#key dataEpoch}
+        {#if view === 'dashboard'}
+          <Dashboard {focusDate} />
+        {:else if view === 'timeline'}
+          <TimelineView initialDate={focusDate ?? undefined} />
+        {:else if view === 'calendar'}
+          <CalendarView onPick={(d) => onPickDate(d)} />
+        {:else if view === 'compare'}
+          <CompareView />
+        {/if}
+      {/key}
     {/if}
   </main>
 

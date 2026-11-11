@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AppUsageTracker Web Watcher",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "把当前标签页的 URL/标题心跳发送到本机 AppUsageTracker（127.0.0.1）。需在 AppUsageTracker 设置中开启「网页浏览统计」。",
   "permissions": ["alarms", "tabs"],
   "host_permissions": ["http://127.0.0.1:59598/*"],
