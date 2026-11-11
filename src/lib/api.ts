@@ -194,6 +194,9 @@ export const api = {
   importBackupJson: () => invoke<string>('import_backup_json'),
   listBackups: () => invoke<string[]>('list_backups'),
   deleteBackup: (name: string) => invoke<void>('delete_backup', { name }),
+  openBackupDir: () => invoke<void>('open_backup_dir'),
+  restoreBackupNamed: (name: string) => invoke<string>('restore_backup_named', { name }),
+  restoreBackupContent: (content: string) => invoke<string>('restore_backup_content', { content }),
 };
 
 export interface TopWeb {

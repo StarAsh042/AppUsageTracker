@@ -216,6 +216,9 @@ pub fn run() {
             export_backup_json,
             import_backup_json,
             list_backups,
+            open_backup_dir,
+            restore_backup_named,
+            restore_backup_content,
         ])
         .setup(|app| {
             let settings = load_settings();
@@ -2104,15 +2107,12 @@ fn save_settings(
 
     *state.settings.lock().unwrap() = settings.clone();
     save_settings_file(&app);
+    // 先重建 resolver 缓存，再通知前端，避免前端刷新时仍读到旧分类
+    rebuild_resolver(&app);
     let _ = app.emit("app://settings", &settings);
     apply_locale(&app);
     apply_hotkeys(&app);
     spawn_api_server(&app);
-    // 分类规则/覆盖变化 → 重建 resolver 缓存
-    *app.state::<AppState>().resolver.lock().unwrap() = std::sync::Arc::new(CategoryResolver::new(
-        settings.category_rules.clone(),
-        settings.app_category_overrides.clone(),
-    ));
 
     // 悬浮窗可见性同步
     let want = state.settings.lock().unwrap().show_floating_widget;
@@ -2188,6 +2188,16 @@ fn exclude_app(app: AppHandle, state: State<AppState>, app_key: String) -> Resul
     Ok(())
 }
 
+/// 分类规则/覆盖变化 → 重建 resolver 缓存（仪表盘、时间线、实时状态都读它）。
+fn rebuild_resolver(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let (rules, overrides) = {
+        let s = state.settings.lock().unwrap();
+        (s.category_rules.clone(), s.app_category_overrides.clone())
+    };
+    *state.resolver.lock().unwrap() = std::sync::Arc::new(CategoryResolver::new(rules, overrides));
+}
+
 #[tauri::command]
 fn set_app_category(app: AppHandle, state: State<AppState>, app_key: String, category: String) {
     {
@@ -2199,6 +2209,9 @@ fn set_app_category(app: AppHandle, state: State<AppState>, app_key: String, cat
         }
     }
     save_settings_file(&app);
+    rebuild_resolver(&app);
+    let settings = state.settings.lock().unwrap().clone();
+    let _ = app.emit("app://settings", &settings);
 }
 
 #[tauri::command]
@@ -2220,6 +2233,9 @@ fn save_category_rules(
         s.category_rules = rules;
     }
     save_settings_file(&app);
+    rebuild_resolver(&app);
+    let settings = state.settings.lock().unwrap().clone();
+    let _ = app.emit("app://settings", &settings);
     Ok(())
 }
 
@@ -2249,7 +2265,7 @@ fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> 
         state.web_pending.lock().unwrap().clear();
     }
     state.notified_limits.lock().unwrap().clear();
-    let _ = app;
+    let _ = app.emit("app://data", ());
     Ok(())
 }
 
@@ -2730,29 +2746,25 @@ fn get_top_titles(
 
 // ---------- 浏览器扩展安装 ----------
 
-/// 扩展目录（开发/生产自适应），打包与手动安装共用。
-fn extension_dir() -> Result<std::path::PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let parent = exe.parent().ok_or("无法定位程序目录")?;
-    // 生产: <安装目录>/extension/  开发: <repo>/extension/
-    let candidates = [
-        parent.join("extension"),
-        parent.join("../../extension"),
-        // 开发时 exe 在 src-tauri/target/debug/ 下，扩展目录在仓库根
-        parent.join("../../../extension"),
-    ];
-    for c in &candidates {
-        if c.join("manifest.json").exists() {
-            return Ok(c.clone());
-        }
-    }
-    Err("扩展目录未找到".into())
+/// 「加载已解压的扩展程序」用的目录（数据目录内）。
+/// 绝不去探测 exe 的相对路径：安装版会命中用户家目录下无关的 extension/ 目录。
+fn extension_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let data_dir = {
+        let state = app.state::<AppState>();
+        let x = state.settings.lock().unwrap().data_directory.clone();
+        x
+    };
+    Ok(std::path::Path::new(&data_dir)
+        .join("browser-ext")
+        .join("extension"))
 }
 
-/// 返回扩展目录路径（开发/生产自适应）。
+/// 把内置扩展写到数据目录，返回可供浏览器手动加载的目录。
 #[tauri::command]
-fn get_extension_path() -> Result<String, String> {
-    Ok(extension_dir()?.to_string_lossy().to_string())
+fn get_extension_path(app: AppHandle) -> Result<String, String> {
+    let dir = extension_dir(&app)?;
+    materialize_extension(&dir)?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 /// 单个浏览器的智能安装结果（前端逐条展示）。
@@ -2765,21 +2777,6 @@ struct ExtInstallResult {
     code: String,
     extension_id: String,
     message: String,
-}
-
-fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            copy_dir_all(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 /// 读 protobuf varint（只用来跳过/取长度）。
@@ -2885,87 +2882,251 @@ fn extension_id_from_hash(hash: &[u8]) -> String {
     id
 }
 
-fn browser_candidates() -> Vec<(&'static str, &'static str)> {
-    vec![("chrome", "Chrome"), ("edge", "Edge")]
+#[derive(Clone, Copy)]
+struct BrowserSpec {
+    key: &'static str,
+    name: &'static str,
+    /// 相对各安装基址的可执行文件路径（依次尝试）。
+    exe_paths: &'static [&'static str],
+    /// HKCU\Software 下的注册表根，外部扩展键写在 <root>\Extensions\<id>。
+    /// 多数 Chromium fork 未改 install_static，因此同时写 Google\Chrome 兜底。
+    registry_roots: &'static [&'static str],
+    /// 扩展管理页。
+    ext_page: &'static str,
 }
 
-fn find_browser_exe(browser: &str) -> Option<std::path::PathBuf> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+fn browser_specs() -> Vec<BrowserSpec> {
+    vec![
+        BrowserSpec {
+            key: "chrome",
+            name: "Chrome",
+            exe_paths: &[r"Google\Chrome\Application\chrome.exe"],
+            registry_roots: &[r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "edge",
+            name: "Edge",
+            exe_paths: &[r"Microsoft\Edge\Application\msedge.exe"],
+            registry_roots: &[r"Microsoft\Edge"],
+            ext_page: "edge://extensions",
+        },
+        BrowserSpec {
+            key: "chrome_beta",
+            name: "Chrome Beta",
+            exe_paths: &[r"Google\Chrome Beta\Application\chrome.exe"],
+            registry_roots: &[r"Google\Chrome Beta", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "chrome_dev",
+            name: "Chrome Dev",
+            exe_paths: &[r"Google\Chrome Dev\Application\chrome.exe"],
+            registry_roots: &[r"Google\Chrome Dev", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "chrome_canary",
+            name: "Chrome Canary",
+            exe_paths: &[r"Google\Chrome SxS\Application\chrome.exe"],
+            registry_roots: &[r"Google\Chrome SxS", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "edge_beta",
+            name: "Edge Beta",
+            exe_paths: &[r"Microsoft\Edge Beta\Application\msedge.exe"],
+            registry_roots: &[r"Microsoft\Edge Beta", r"Microsoft\Edge"],
+            ext_page: "edge://extensions",
+        },
+        BrowserSpec {
+            key: "edge_dev",
+            name: "Edge Dev",
+            exe_paths: &[r"Microsoft\Edge Dev\Application\msedge.exe"],
+            registry_roots: &[r"Microsoft\Edge Dev", r"Microsoft\Edge"],
+            ext_page: "edge://extensions",
+        },
+        BrowserSpec {
+            key: "chromium",
+            name: "Chromium",
+            exe_paths: &[r"Chromium\Application\chrome.exe"],
+            registry_roots: &[r"Chromium", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "brave",
+            name: "Brave",
+            exe_paths: &[r"BraveSoftware\Brave-Browser\Application\brave.exe"],
+            registry_roots: &[r"BraveSoftware\Brave-Browser", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "vivaldi",
+            name: "Vivaldi",
+            exe_paths: &[r"Vivaldi\Application\vivaldi.exe"],
+            registry_roots: &[r"Vivaldi", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "opera",
+            name: "Opera",
+            exe_paths: &[r"Opera Software\Opera Stable\opera.exe"],
+            registry_roots: &[r"Opera Software", r"Google\Chrome"],
+            ext_page: "opera://extensions",
+        },
+        BrowserSpec {
+            key: "opera_gx",
+            name: "Opera GX",
+            exe_paths: &[r"Opera Software\Opera GX Stable\opera.exe"],
+            registry_roots: &[r"Opera Software", r"Google\Chrome"],
+            ext_page: "opera://extensions",
+        },
+        BrowserSpec {
+            key: "cent",
+            name: "Cent Browser",
+            exe_paths: &[
+                r"cent\CentBrowser\Application\chrome.exe",
+                r"CentBrowser\Application\chrome.exe",
+            ],
+            registry_roots: &[r"CentBrowser", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "browser360",
+            name: "360 极速浏览器",
+            exe_paths: &[
+                r"360Chrome\Chrome\Application\360chrome.exe",
+                r"360\360Chrome\Chrome\Application\360chrome.exe",
+            ],
+            registry_roots: &[r"360\360se6\Chrome", r"360chrome\Chrome", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "yandex",
+            name: "Yandex Browser",
+            exe_paths: &[r"Yandex\YandexBrowser\Application\browser.exe"],
+            registry_roots: &[r"Yandex\YandexBrowser", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "coccoc",
+            name: "CocCoc",
+            exe_paths: &[r"CocCoc\Browser\Application\browser.exe"],
+            registry_roots: &[r"CocCoc\Browser", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+        BrowserSpec {
+            key: "whale",
+            name: "Naver Whale",
+            exe_paths: &[r"Naver\Naver Whale\Application\whale.exe"],
+            registry_roots: &[r"Naver\Naver Whale", r"Google\Chrome"],
+            ext_page: "chrome://extensions",
+        },
+    ]
+}
+
+fn find_browser_exe(spec: &BrowserSpec) -> Option<std::path::PathBuf> {
     for env_key in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
         if let Ok(base) = std::env::var(env_key) {
             let base = std::path::PathBuf::from(base);
-            if browser == "chrome" {
-                candidates.push(base.join(r"Google\Chrome\Application\chrome.exe"));
-            } else {
-                candidates.push(base.join(r"Microsoft\Edge\Application\msedge.exe"));
+            for rel in spec.exe_paths {
+                let p = base.join(rel);
+                if p.is_file() {
+                    return Some(p);
+                }
             }
         }
     }
-    candidates.into_iter().find(|p| p.is_file())
+    None
 }
 
-/// 调用浏览器自带的 --pack-extension 生成 CRX3；复用同名 .pem 保持扩展 ID 稳定。
+/// 调用浏览器自带的 --pack-extension 生成 CRX3；用共享 .pem 保证扩展 ID 跨浏览器/重装稳定。
 fn pack_extension(
     exe: &std::path::Path,
     unpacked: &std::path::Path,
+    shared_pem: &std::path::Path,
 ) -> Result<std::path::PathBuf, String> {
     let crx = unpacked.with_extension("crx");
-    let pem = unpacked.with_extension("pem");
     let _ = std::fs::remove_file(&crx);
     let mut cmd = std::process::Command::new(exe);
     cmd.arg(format!("--pack-extension={}", unpacked.display()));
-    if pem.is_file() {
-        cmd.arg(format!("--pack-extension-key={}", pem.display()));
+    if shared_pem.is_file() {
+        cmd.arg(format!("--pack-extension-key={}", shared_pem.display()));
     }
     cmd.arg("--no-message-box")
         .arg("--no-first-run")
         .arg("--no-default-browser-check");
+    // 独立用户目录：避免命令被转发给正在运行的浏览器实例而不产出 CRX
+    let profile = unpacked.parent().unwrap_or(unpacked).join("pack-profile");
+    cmd.arg(format!("--user-data-dir={}", profile.display()));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     let out = cmd.output().map_err(|e| format!("启动浏览器失败: {e}"))?;
+    let _ = std::fs::remove_dir_all(&profile);
     if !crx.is_file() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let brief: String = stderr.chars().take(300).collect();
         return Err(format!("打包失败: {}", brief.trim()));
     }
+    // 首次打包时浏览器会在扩展目录旁生成 <name>.pem，保存为共享密钥
+    if !shared_pem.is_file() {
+        let generated = unpacked.with_extension("pem");
+        if generated.is_file() {
+            if let Some(parent) = shared_pem.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::copy(&generated, shared_pem);
+        }
+    }
     Ok(crx)
 }
 
-/// 写注册表外部扩展键：HKCU\Software\{Google\Chrome|Microsoft\Edge}\Extensions\<id>。
+/// 写注册表外部扩展键：HKCU\Software\<root>\Extensions\<id>。
+/// roots 里任一写入成功即算成功（不同 fork 读取的根不同，逐个都写以兼容）。
 #[cfg(windows)]
 fn register_external_extension(
-    browser: &str,
+    roots: &[&str],
     id: &str,
     crx: &std::path::Path,
     version: &str,
 ) -> Result<(), String> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
-    let vendor = if browser == "chrome" {
-        "Google\\Chrome"
-    } else {
-        "Microsoft\\Edge"
-    };
-    let key_path = format!("Software\\{vendor}\\Extensions\\{id}");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let (key, _) = hkcu
-        .create_subkey(&key_path)
-        .map_err(|e| format!("打开注册表失败: {e}"))?;
     let crx_path = crx.to_string_lossy().to_string();
-    key.set_value("path", &crx_path)
-        .map_err(|e| format!("写入扩展路径失败: {e}"))?;
     let ver = version.to_string();
-    key.set_value("version", &ver)
-        .map_err(|e| format!("写入扩展版本失败: {e}"))?;
-    Ok(())
+    let mut last_err = String::new();
+    let mut any = false;
+    for root in roots {
+        let key_path = format!("Software\\{}\\Extensions\\{}", root, id);
+        match hkcu.create_subkey(&key_path) {
+            Ok((key, _)) => {
+                if let Err(e) = key.set_value("path", &crx_path) {
+                    last_err = format!("写入扩展路径失败: {e}");
+                    continue;
+                }
+                if let Err(e) = key.set_value("version", &ver) {
+                    last_err = format!("写入扩展版本失败: {e}");
+                    continue;
+                }
+                any = true;
+            }
+            Err(e) => last_err = format!("打开注册表失败: {e}"),
+        }
+    }
+    if any {
+        Ok(())
+    } else {
+        Err(last_err)
+    }
 }
 
 #[cfg(not(windows))]
 fn register_external_extension(
-    _browser: &str,
+    _roots: &[&str],
     _id: &str,
     _crx: &std::path::Path,
     _version: &str,
@@ -2977,19 +3138,30 @@ fn register_external_extension(
 const EMBEDDED_MANIFEST: &str = include_str!("../../extension/manifest.json");
 const EMBEDDED_BACKGROUND: &str = include_str!("../../extension/background.js");
 
-/// 准备一份可打包的扩展目录：优先复制现有 extension/，否则写出内置副本。
+/// 准备一份可打包的扩展目录：始终使用编译期内置副本。
+/// 不从磁盘上的 extension/ 目录复制，避免把用户机器里其它扩展误打包进来。
 fn materialize_extension(dst: &std::path::Path) -> Result<(), String> {
     if dst.exists() {
         let _ = std::fs::remove_dir_all(dst);
-    }
-    if let Ok(src) = extension_dir() {
-        return copy_dir_all(&src, dst).map_err(|e| format!("复制扩展目录失败: {e}"));
     }
     std::fs::create_dir_all(dst).map_err(|e| format!("创建扩展目录失败: {e}"))?;
     std::fs::write(dst.join("manifest.json"), EMBEDDED_MANIFEST)
         .map_err(|e| format!("写出 manifest 失败: {e}"))?;
     std::fs::write(dst.join("background.js"), EMBEDDED_BACKGROUND)
         .map_err(|e| format!("写出 background 失败: {e}"))?;
+    Ok(())
+}
+
+/// 打包前兜底校验：manifest 必须是本项目的扩展，否则宁可失败也不注册。
+fn validate_extension_manifest(dir: &std::path::Path) -> Result<(), String> {
+    let name = std::fs::read(dir.join("manifest.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.get("name").and_then(|x| x.as_str()).map(str::to_string))
+        .unwrap_or_default();
+    if !name.contains("AppUsageTracker") {
+        return Err(format!("扩展目录内容异常（name={name}），已中止安装"));
+    }
     Ok(())
 }
 
@@ -3015,58 +3187,47 @@ fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, 
     let base = std::path::Path::new(&data_dir).join("browser-ext");
     std::fs::create_dir_all(&base).map_err(|e| format!("创建目录失败: {e}"))?;
 
+    // 只处理本机确实安装了的浏览器，避免结果列表被一堆「未检测到」刷屏
+    let specs = browser_specs();
+    let detected: Vec<(&BrowserSpec, std::path::PathBuf)> = specs
+        .iter()
+        .filter_map(|s| find_browser_exe(s).map(|exe| (s, exe)))
+        .collect();
+    if detected.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // 扩展内容只用内置副本，全局打包一次（共享密钥 → 所有浏览器同一扩展 ID）
+    let unpacked = base.join("extension");
+    materialize_extension(&unpacked)?;
+    validate_extension_manifest(&unpacked)?;
+    let version = manifest_version(&unpacked);
+    let shared_pem = base.join("extension-key.pem");
+    let packer = &detected[0].1;
+    let crx = pack_extension(packer, &unpacked, &shared_pem)?;
+    let hash = std::fs::read(&crx)
+        .ok()
+        .and_then(|b| crx_id_bytes(&b))
+        .ok_or_else(|| "无法从 CRX 读取扩展 ID".to_string())?;
+    let id = extension_id_from_hash(&hash);
+
     let mut results: Vec<ExtInstallResult> = Vec::new();
-    for (browser, name) in browser_candidates() {
+    for (spec, _exe) in &detected {
         let mut row = ExtInstallResult {
-            browser: browser.to_string(),
-            name: name.to_string(),
+            browser: spec.key.to_string(),
+            name: spec.name.to_string(),
             ok: false,
-            code: "not_found".into(),
-            extension_id: String::new(),
+            code: "registry_failed".into(),
+            extension_id: id.clone(),
             message: String::new(),
         };
-        let Some(exe) = find_browser_exe(browser) else {
-            results.push(row);
-            continue;
-        };
-        // 每个浏览器独立一份解压目录与 .pem（扩展 ID 只取决于密钥）
-        let unpacked = base.join(browser).join("extension");
-        if unpacked.exists() {
-            let _ = std::fs::remove_dir_all(&unpacked);
-        }
-        if let Err(e) = materialize_extension(&unpacked) {
-            row.code = "pack_failed".into();
-            row.message = e;
-            results.push(row);
-            continue;
-        }
-        let version = manifest_version(&unpacked);
-        match pack_extension(&exe, &unpacked) {
-            Ok(crx) => match std::fs::read(&crx).ok().and_then(|b| crx_id_bytes(&b)) {
-                Some(hash) => {
-                    let id = extension_id_from_hash(&hash);
-                    row.extension_id = id.clone();
-                    match register_external_extension(browser, &id, &crx, &version) {
-                        Ok(()) => {
-                            row.ok = true;
-                            row.code = "ok".into();
-                            row.message = crx.to_string_lossy().to_string();
-                        }
-                        Err(e) => {
-                            row.code = "registry_failed".into();
-                            row.message = e;
-                        }
-                    }
-                }
-                None => {
-                    row.code = "bad_crx".into();
-                    row.message = "无法从 CRX 读取扩展 ID".into();
-                }
-            },
-            Err(e) => {
-                row.code = "pack_failed".into();
-                row.message = e;
+        match register_external_extension(spec.registry_roots, &id, &crx, &version) {
+            Ok(()) => {
+                row.ok = true;
+                row.code = "ok".into();
+                row.message = crx.to_string_lossy().to_string();
             }
+            Err(e) => row.message = e,
         }
         results.push(row);
     }
@@ -3099,14 +3260,14 @@ async fn smart_install_extension(app: AppHandle) -> Result<Vec<ExtInstallResult>
         .map_err(|e| format!("安装任务失败: {e}"))?
 }
 
-/// 打开浏览器扩展管理页（chrome://extensions 或 edge://extensions）。
+/// 打开浏览器扩展管理页。
 #[tauri::command]
 fn open_browser_ext_page(browser: String) -> Result<(), String> {
-    let url = match browser.as_str() {
-        "chrome" => "chrome://extensions",
-        "edge" => "edge://extensions",
-        _ => return Err("未知浏览器".into()),
-    };
+    let url = browser_specs()
+        .iter()
+        .find(|s| s.key == browser)
+        .map(|s| s.ext_page)
+        .ok_or("未知浏览器")?;
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -3219,20 +3380,10 @@ fn delete_backup(app: AppHandle, name: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn import_backup_json(app: AppHandle) -> Result<String, String> {
+/// 共用恢复逻辑：清空当前库与内存态 → 写入备份 → 通知所有视图重新拉数据。
+fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, String> {
+    let backup: BackupFile = serde_json::from_str(text).map_err(|e| e.to_string())?;
     let state = app.state::<AppState>();
-    let data_dir = state.settings.lock().unwrap().data_directory.clone();
-    let dir = backups_dir(&data_dir);
-    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
-        .map_err(|e| format!("没有可导入的备份: {e}"))?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
-        .collect();
-    files.sort();
-    let path = files.pop().ok_or("没有可导入的备份")?;
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let backup: BackupFile = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     {
         let st = state.store.lock().unwrap();
         st.clear_all().map_err(|e| e.to_string())?;
@@ -3248,15 +3399,84 @@ fn import_backup_json(app: AppHandle) -> Result<String, String> {
         agg.daily.clear();
         agg.pending_intervals.clear();
         agg.pending_state_intervals.clear();
+        agg.pending_title_intervals.clear();
     }
+    {
+        state.web_open.lock().unwrap().take();
+        state.web_pending.lock().unwrap().clear();
+    }
+    state.notified_limits.lock().unwrap().clear();
+    let _ = app.emit("app://data", ());
     Ok(format!(
         "已从 {} 恢复 {} 条日聚合 / {} 条明细",
-        path.file_name()
-            .map(|s| s.to_string_lossy())
-            .unwrap_or_default(),
+        label,
         backup.daily.len(),
         backup.intervals.len()
     ))
+}
+
+/// 打开备份目录（不存在则先创建）。
+#[tauri::command]
+fn open_backup_dir(app: AppHandle) -> Result<(), String> {
+    let data_dir = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .unwrap()
+        .data_directory
+        .clone();
+    let dir = backups_dir(&data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    open_path(dir.to_string_lossy().to_string())
+}
+
+/// 恢复数据目录 backups/ 里指定的备份。
+#[tauri::command]
+fn restore_backup_named(app: AppHandle, name: String) -> Result<String, String> {
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err("非法备份名".into());
+    }
+    let data_dir = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .unwrap()
+        .data_directory
+        .clone();
+    let path = backups_dir(&data_dir).join(&name);
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    apply_backup(&app, &text, &name)
+}
+
+/// 恢复从任意位置选择的备份 JSON（前端读取文件内容后传入）。
+#[tauri::command]
+fn restore_backup_content(app: AppHandle, content: String) -> Result<String, String> {
+    apply_backup(&app, &content, "所选文件")
+}
+
+#[tauri::command]
+fn import_backup_json(app: AppHandle) -> Result<String, String> {
+    let data_dir = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .unwrap()
+        .data_directory
+        .clone();
+    let dir = backups_dir(&data_dir);
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("没有可导入的备份: {e}"))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
+        .collect();
+    files.sort();
+    let path = files.pop().ok_or("没有可导入的备份")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let label = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    apply_backup(&app, &text, &label)
 }
 
 #[tauri::command]

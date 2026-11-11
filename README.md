@@ -56,7 +56,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 - **时间线**：24 小时色带，支持滚轮缩放、拖拽平移、明细表与搜索，并标注统计中 / 空闲 / 锁定 / 挂起状态区间。
 - **日历热力图与对比视图**：GitHub contribution 风格的年度热力图（月 / 年切换），以及双时段应用 / 分类并排对比；默认 A 为更早的 7 天、B 为最近 7 天，变化率按时间先后自动判断。
 - **托盘**：左键打开主界面；右键菜单提供悬浮窗开关、暂停监控、设置与退出；关闭主窗口只隐藏到托盘。
-- **导出**：CSV（UTF-8 BOM，兼容 Excel，导出后自动打开所在目录）、JSON 全量备份 / 恢复、Markdown 周报。
+- **导出**：CSV（UTF-8 BOM，兼容 Excel，导出后自动打开所在目录）、JSON 全量备份 / 恢复（可打开备份目录、在备份列表中点选任意一份恢复、或选择任意 JSON 备份文件恢复）、Markdown 周报。
 - **其他**：开机自启（HKCU Run）、单实例、关闭主窗隐藏到托盘、全局热键、休息提醒、中英双语界面。
 
 ### 可选记录
@@ -198,12 +198,12 @@ npm run tauri build                         # 生产构建（NSIS 安装包 + �
 
 安装方式有两条：**智能安装（推荐）** 与 **手动安装**。
 
-智能安装：设置 → 浏览器扩展 → 「智能安装扩展」。应用会探测本机已安装的 Chrome / Edge，复制扩展源码到数据目录，调用浏览器自带的 `--pack-extension` 打出 CRX3，再把自己写进该浏览器的外部扩展注册表项（`HKCU\Software\Google\Chrome\Extensions\<id>` 或 `HKCU\Software\Microsoft\Edge\Extensions\<id>`，值为 `path` + `version`）。成功后会自动打开按钮「网页浏览统计」开关。**安装后需要重启浏览器才会加载**；未检测到浏览器、打包失败或写注册表失败时，界面会按浏览器逐条显示原因，此时改用手动安装。
+智能安装：设置 → 浏览器扩展 → 「智能安装扩展」。应用用编译期内置的扩展副本（不读取磁盘上其它 extension/ 目录，避免误装），探测本机已安装的 Chromium 内核浏览器（Chrome / Edge / Chrome Beta·Dev·Canary / Edge Beta·Dev / Chromium / Brave / Vivaldi / Opera / Opera GX / Cent Browser / 360 极速 / Yandex / CocCoc / Naver Whale 等），用同一把共享密钥只打包一次 CRX3（保证扩展 ID 稳定），再按各浏览器对应的注册表根（`HKCU\Software\<root>\Extensions\<id>`，兼容 fork 时同时写 `Google\Chrome` 兜底，值为 `path` + `version`）逐个注册。打包前校验 `manifest.json` 的 `name` 必须为本项目扩展，否则中止。成功后会自动打开「网页浏览统计」开关。**安装后需要重启浏览器才会加载**；界面按检测到的浏览器逐条显示结果，失败时改用手动安装。
 
 手动安装：
 
 1. 在「设置 → 隐私」开启「网页浏览统计」（`record_web`，默认关闭；关闭时心跳返回 403）。
-2. Chrome / Edge 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选择仓库的 `extension/` 目录。
+2. 在 Chromium 内核浏览器打开扩展管理页（Chrome / Edge / Cent 等为 `chrome://extensions`，Edge 亦可为 `edge://extensions`，Opera 为 `opera://extensions`）→ 开启「开发者模式」→「加载已解压的扩展程序」→ 选择设置页「手动安装」给出的扩展目录（数据目录内由应用内置副本生成）。
 3. 扩展按 `web_heartbeat_interval_secs` 上报；默认 10 秒，但 MV3 定时器最小间隔为 30 秒，实际不会低于 30 秒（实际行为【未验证】）。
 4. 时间线页出现「Top 网页」面板。
 
@@ -351,6 +351,6 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 - `CHANGELOG.md` 的 `0.1.0` / `0.2.0` 属于旧 C# 版历史记录，没有对应的 Git tag 与 GitHub Release，因此没有 compare 链接；`0.3.0` 为破坏性全量重写，仓库未提供旧版数据到新版数据的迁移说明。
 - `src-tauri/tauri.conf.json` 中 `app.security.csp` 为 `null`、`tauri` 依赖启用 `unstable` feature，属于待收敛的技术债。
 - 界面外观见「截图与演示」的真实截图；扩展上报间隔、更新回滚与未签名安装包的 SmartScreen 表现仍为【未验证】或【推测】，需由你在真机手动验证。
-- 扩展「智能安装」写的是浏览器外部扩展注册表项，需要重启浏览器才加载；该功能仅在装有 Chrome / Edge 的 Windows 上有意义，其他平台会返回「当前平台不支持自动注册扩展」。
+- 扩展「智能安装」写的是浏览器外部扩展注册表项，需要重启浏览器才加载；该功能在装有 Chromium 内核浏览器的 Windows 上有意义（自动识别 17 款常见浏览器，含 Cent Browser / Brave / Vivaldi / Opera 等 fork），其他平台会返回「当前平台不支持自动注册扩展」。
 - 后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 - 本文件与 `CHANGELOG.md` 的命令、版本与配置默认值均取自仓库内 `package.json`、各 `Cargo.toml`、`tauri.conf.json`、`settings.rs` 与 `.github/workflows/`；未做外部联网核实，未在本机逐条运行，相关命令标【未验证】。

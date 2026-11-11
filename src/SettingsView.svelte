@@ -26,6 +26,7 @@
   let extPath = $state('');
   let extInstalling = $state(false);
   let extResults = $state<ExtInstallResult[]>([]);
+  let fileInput: HTMLInputElement | undefined = $state();
 
   $effect(() => {
     if (showExtInstall) {
@@ -175,6 +176,47 @@
       status = await api.importBackupJson();
     } catch (e) {
       status = String(e);
+    }
+  }
+
+  async function openBackupDir() {
+    try {
+      await api.openBackupDir();
+    } catch (e) {
+      status = String(e);
+    }
+  }
+
+  async function restoreBackup(name: string) {
+    if (!confirm(`${t('恢复备份')} ${name}？${t('将清空当前全部数据')}，确定继续？`)) return;
+    status = '';
+    try {
+      status = await api.restoreBackupNamed(name);
+    } catch (e) {
+      status = String(e);
+    }
+  }
+
+  function pickBackupFile() {
+    fileInput?.click();
+  }
+
+  async function onBackupFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!confirm(`${t('从所选文件恢复')} ${file.name}？${t('将清空当前全部数据')}，确定继续？`)) {
+      input.value = '';
+      return;
+    }
+    status = '';
+    try {
+      const content = await file.text();
+      status = await api.restoreBackupContent(content);
+    } catch (err) {
+      status = String(err);
+    } finally {
+      input.value = '';
     }
   }
 
@@ -414,7 +456,7 @@
       <section class="panel">
         <h3>{t('浏览器扩展')}</h3>
         <p class="hint" style="margin-bottom:8px">
-          {t('一键安装：自动识别 Chrome / Edge，打包并注册扩展，重启浏览器后生效')}
+          {t('一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效')}
         </p>
         <div class="row-actions">
           <button class="primary" disabled={extInstalling} onclick={smartInstall}>
@@ -556,13 +598,24 @@
         <p class="hint">{t('备份保存在数据目录')}</p>
         <div class="row-actions">
           <button class="ghost" onclick={exportBackup}>{t('导出全部数据')}</button>
-          <button class="ghost" onclick={importBackup}>{t('从最新备份恢复')}</button>
+          <button class="ghost" onclick={openBackupDir}>{t('打开备份目录')}</button>
         </div>
+        <div class="row-actions">
+          <button class="ghost" onclick={importBackup}>{t('从最新备份恢复')}</button>
+          <button class="ghost" onclick={pickBackupFile}>{t('选择备份文件恢复')}</button>
+        </div>
+        <input
+          class="backup-file-input"
+          type="file"
+          accept=".json,application/json"
+          bind:this={fileInput}
+          onchange={onBackupFile}
+        />
         {#if backups.length}
           <div class="backup-list">
-            {#each backups.slice(0, 5) as b (b)}
+            {#each backups as b (b)}
               <div class="backup-item">
-                📄 {b}
+                <button class="backup-restore" onclick={() => restoreBackup(b)}>📄 {b}</button>
                 <button
                   class="backup-del"
                   title={t('删除备份')}
@@ -865,6 +918,29 @@
   .ext-msg {
     color: var(--text-dim);
     word-break: break-all;
+  }
+
+  .backup-file-input {
+    display: none;
+  }
+
+  .backup-restore {
+    background: transparent;
+    border: 0;
+    color: var(--text-dim);
+    padding: 2px 4px;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .backup-restore:hover {
+    color: var(--accent);
   }
 
   .backup-del {
