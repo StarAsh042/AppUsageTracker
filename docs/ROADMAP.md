@@ -1,13 +1,13 @@
 # 后续开发计划
 
-> 状态快照：2026-11-11（本地时区 Asia/Shanghai）。
+> 状态快照：2026-11-11（本地时区 Asia/Shanghai）。`v0.6.2` 已于同日发布，P0 三项全部完成。
 > 本文件记录待办与优先级，**不是交付承诺**；每完成一项，就把用户可见的变化写进 [CHANGELOG.md](../CHANGELOG.md) 的 `## [Unreleased]`，从本文件删除或标记「已完成」。
 > 依据：仓库当前代码与配置（`package.json`、各 `Cargo.toml`、`src-tauri/tauri.conf.json`、`.github/workflows/`）、README 与 CHANGELOG。凡未在本机实际运行验证的判断都标注【推断】。
 
 ## 当前基线
 
-- 已发布版本 `v0.6.1`（2026-11-08），`main` 与 `dev` 的代码树一致。
-- `dev` 上有一批**已实现、已验证、尚未发布**的改动，详见 CHANGELOG `[Unreleased]`：主界面「悬浮窗」开关、悬浮窗 ✕ 关闭按钮、贴边收起未贴边提示、贴边动画去蓝闪、锁定徽标改行内、对比视图默认区间与变化率修正、仪表盘四卡单行、更新代理开关 `update_use_proxy`、移除界面配色、扩展智能安装。
+- 已发布版本 `v0.6.2`（2026-11-11），`main` 与 `dev` 的代码树一致。
+- `v0.6.2` 已发布这批改动，详见 CHANGELOG `[0.6.2]`：主界面「悬浮窗」开关、悬浮窗 ✕ 关闭按钮、贴边收起未贴边提示、贴边动画去蓝闪、锁定徽标改行内、对比视图默认区间与变化率修正、仪表盘四卡单行、更新代理开关 `update_use_proxy`、移除界面配色、扩展智能安装。
 - 代码规模（行）：
 
 | 位置 | 说明 |
@@ -23,7 +23,7 @@
 
 | 优先级 | 主题 | 目标 |
 | --- | --- | --- |
-| P0 | 发布 0.6.2 | 把 `dev` 上这批改动发出去，主干与标签回到一致 |
+| P0 | 发布 0.6.2 ✅ | 已完成：`v0.6.2` 已发布，主干与标签一致 |
 | P1 | 质量内建 | 让 `src-tauri` 与前端也有自动化测试，收敛既有告警 |
 | P2 | 架构收敛 | 拆 `lib.rs`、去掉 `tauri` 的 `unstable`、收紧 CSP |
 | P3 | 功能演进 | 国际化补全、跨平台、数据可迁移 |
@@ -33,11 +33,11 @@
 
 ## P0 发布 0.6.2
 
-- [ ] **发版**：四处版本号（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`crates/tracker-core/Cargo.toml`）从 `0.6.1` 提到 `0.6.2`，把 `[Unreleased]` 收进 `## [0.6.2]`，按既有流程 `dev` → `main`（受 `required_linear_history` 保护，需 rebase 出线性分支）→ 打 tag → 等 Release 工作流产包并核对资产（`AppUsageTracker_0.6.2_x64-setup.exe`、`.exe.sig`、`latest.json`、`latest-mirror.json`、`SHA256SUMS`）。
+- [x] **发版（`v0.6.2`，2026-11-11）**：四处版本号（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`crates/tracker-core/Cargo.toml`）从 `0.6.1` 提到 `0.6.2`，把 `[Unreleased]` 收进 `## [0.6.2]`，按既有流程 `dev` → `main`（受 `required_linear_history` 保护，需 rebase 出线性分支）→ 打 tag → 等 Release 工作流产包并核对资产（`AppUsageTracker_0.6.2_x64-setup.exe`、`.exe.sig`、`latest.json`、`latest-mirror.json`、`SHA256SUMS`）。
   - 验收：Release 页面 `v0.6.2` 为 Latest，五个资产齐全；`main` 与 `dev` 代码树一致；应用内「检查更新」能从 0.6.1 升到 0.6.2（真机验证）。
-- [ ] **去掉重复注册的 IPC 命令**：`src-tauri/src/lib.rs:207-208` 连续两行都是 `get_top_titles`。目前能编译也能通过检查，但属无意义重复，删掉其中一行。
+- [x] **去掉重复注册的 IPC 命令**：`src-tauri/src/lib.rs:207-208` 连续两行都是 `get_top_titles`。目前能编译也能通过检查，但属无意义重复，删掉其中一行。
   - 验收：`cargo clippy --all-targets -- -D warnings` 仍为 0；前端标题面板功能不变。
-- [ ] **删除配色残留死代码**：`src-tauri/src/lib.rs:989` 注释仍写 `w.color.X`、`:1012-1013` 仍保留 `id.strip_prefix("w.color.")` 分支（右键菜单已不产生该类 id）。`accent_tint`（`:957-968`）与 `WidgetPrefs.accent` 可保留——它仍用于 Windows 亚克力着色，只是没有 UI 入口，需在注释里写明这一点。
+- [x] **删除配色残留死代码**：`src-tauri/src/lib.rs:989` 注释仍写 `w.color.X`、`:1012-1013` 仍保留 `id.strip_prefix("w.color.")` 分支（右键菜单已不产生该类 id）。`accent_tint`（`:957-968`）与 `WidgetPrefs.accent` 可保留——它仍用于 Windows 亚克力着色，只是没有 UI 入口，需在注释里写明这一点。
   - 验收：右键菜单行为不变；`cargo test` 与 `npm run check` 全绿。
 
 ## P1 质量内建
