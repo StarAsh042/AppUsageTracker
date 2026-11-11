@@ -23,6 +23,9 @@
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
   let catColors = $state<Map<string, string>>(new Map());
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
+  // 未贴边就想收起时，Rust 发 widget://hint = "edge_required"
+  let hint = $state('');
+  let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
   function catColor(name: string): string {
     return catColors.get(name.split('/')[0].trim()) ?? '#aeb6c8';
@@ -62,6 +65,11 @@
       edge = (e.payload as typeof edge) ?? 'none';
       collapsedUi = edge !== 'none';
     });
+    const un4 = listen<string>('widget://hint', (e) => {
+      hint = e.payload === 'edge_required' ? t('请先拖到屏幕边缘再离开') : (e.payload ?? '');
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => (hint = ''), 2600);
+    });
     // 禁用 WebView 默认右键菜单（右键由原生菜单接管）
     const prevent = (e: Event) => e.preventDefault();
     window.addEventListener('contextmenu', prevent);
@@ -70,6 +78,8 @@
       un1.then((f) => f());
       un2.then((f) => f());
       un3.then((f) => f());
+      un4.then((f) => f());
+      clearTimeout(hintTimer);
       window.removeEventListener('contextmenu', prevent);
     };
   });
@@ -82,7 +92,7 @@
   function onEnter() {
     hovering = true;
     clearTimeout(leaveTimer);
-    collapsedUi = false;
+    // 展开后的样式等 Rust 动画结束发 widget://edge = "none" 再切，避免内容被压扁
     if (prefs?.edge_snap) api.setWidgetCollapsed(false);
   }
 
@@ -90,10 +100,8 @@
     hovering = false;
     clearTimeout(leaveTimer);
     leaveTimer = setTimeout(() => {
-      if (!hovering && prefs?.edge_snap) {
-        collapsedUi = true;
-        api.setWidgetCollapsed(true);
-      }
+      // 收不收由 Rust 判断：贴边才收起并回 widget://edge，未贴边回 "none" + 提示
+      if (!hovering && prefs?.edge_snap) api.setWidgetCollapsed(true);
     }, 260);
   }
 
@@ -156,9 +164,20 @@
     <div class="row top">
       <span class="dot {live?.state.toLowerCase() ?? ''}"></span>
       <span class="state">{live ? stateLabel(live.state, $lang) : '…'}</span>
+      {#if prefs?.locked === true}
+        <span class="lock" title={t('位置已锁定')}>🔒</span>
+      {/if}
       <span class="today">
         {t('今日')} {live ? fmtDuration(live.today_total_seconds) : '--'}{goalPct !== null ? ` · 🎯${goalPct}%` : ''}
       </span>
+      {#if hovering}
+        <button
+          class="close-btn"
+          title={t('关闭悬浮窗')}
+          onmousedown={(e) => e.stopPropagation()}
+          onclick={(e) => { e.stopPropagation(); api.closeWidget(); }}
+        >✕</button>
+      {/if}
     </div>
 
     <div class="current">
@@ -186,8 +205,8 @@
     {/if}
   {/if}
 
-  {#if prefs?.locked === true}
-    <span class="lock-badge">🔒</span>
+  {#if hint}
+    <div class="hint-bar">{hint}</div>
   {/if}
 </div>
 
@@ -221,7 +240,8 @@
     font-size: 12px;
   }
 
-  /* 贴边收起：整窗只剩一根渐变细线（横边横线 / 竖边竖线） */
+  /* 贴边收起：整窗透明，只留一根 4px 渐变细线（横边横线 / 竖边竖线）。
+     线始终按 4px 居中绘制：窗口还在收放动画时不会铺满整块蓝面（旧实现 inset:0 + 发光 = 蓝闪）。 */
   .widget.collapsed {
     padding: 0;
     border: none;
@@ -230,11 +250,14 @@
 
   .edge-line {
     position: absolute;
-    inset: 0;
     border-radius: 2px;
   }
 
   .widget.collapsed.h-edge .edge-line {
+    left: 0;
+    right: 0;
+    top: calc(50% - 2px);
+    height: 4px;
     background: linear-gradient(
       90deg,
       transparent,
@@ -242,10 +265,13 @@
       color-mix(in srgb, var(--ac, #4f8cff) 85%, transparent) 85%,
       transparent
     );
-    box-shadow: 0 0 6px color-mix(in srgb, var(--ac, #4f8cff) 60%, transparent);
   }
 
   .widget.collapsed.v-edge .edge-line {
+    top: 0;
+    bottom: 0;
+    left: calc(50% - 2px);
+    width: 4px;
     background: linear-gradient(
       180deg,
       transparent,
@@ -253,7 +279,6 @@
       color-mix(in srgb, var(--ac, #4f8cff) 85%, transparent) 85%,
       transparent
     );
-    box-shadow: 0 0 6px color-mix(in srgb, var(--ac, #4f8cff) 60%, transparent);
   }
 
   .row {
@@ -359,12 +384,45 @@
   }
 
 
-  .lock-badge {
-    position: absolute;
-    top: 6px;
-    right: 8px;
+  /* 锁徽标跟在状态文字后面（原来绝对定位压住「今日」） */
+  .lock {
     font-size: 10px;
     opacity: 0.75;
-    pointer-events: none;
+    line-height: 1;
+  }
+
+  .close-btn {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #cfd6e4;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .close-btn:hover {
+    background: rgba(248, 113, 113, 0.35);
+    color: #fff;
+  }
+
+  .hint-bar {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgba(245, 166, 35, 0.18);
+    border: 1px solid rgba(245, 166, 35, 0.45);
+    color: var(--warn);
+    font-size: 11px;
+    text-align: center;
   }
 </style>
