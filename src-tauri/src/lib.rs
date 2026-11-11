@@ -205,7 +205,6 @@ pub fn run() {
             check_update,
             install_update,
             get_top_titles,
-            get_top_titles,
             get_top_web,
             get_extension_path,
             open_browser_ext_page,
@@ -986,7 +985,7 @@ fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
     let _ = app.emit("widget://prefs", prefs);
 }
 
-/// 悬浮窗右键原生菜单事件（id: w.top / w.lock / w.snap / w.compact / w.op.N / w.color.X / w.settings）。
+/// 悬浮窗右键原生菜单事件（id: w.top / w.lock / w.snap / w.compact / w.op.N / w.settings）。
 fn handle_widget_menu_event(app: &AppHandle, id: &str) {
     let mut prefs = {
         app.state::<AppState>()
@@ -1009,8 +1008,6 @@ fn handle_widget_menu_event(app: &AppHandle, id: &str) {
         _ => {
             if let Some(v) = id.strip_prefix("w.op.").and_then(|v| v.parse::<u8>().ok()) {
                 prefs.opacity = v;
-            } else if let Some(c) = id.strip_prefix("w.color.") {
-                prefs.accent = c.to_string();
             } else {
                 return;
             }

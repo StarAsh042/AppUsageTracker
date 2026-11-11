@@ -97,7 +97,8 @@ pub struct WidgetPrefs {
     pub compact: bool,
     /// 内容底色不透明度百分比（40–100）。
     pub opacity: u8,
-    /// 配色预设 key：blue/cyan/violet/green/orange/pink。
+    /// 亚克力着色预设 key：blue/cyan/violet/green/orange/pink。
+    /// 目前没有 UI 入口（设置页与右键菜单的配色项均已移除），仅用于 Windows 亚克力 tint。
     pub accent: String,
 }
 
