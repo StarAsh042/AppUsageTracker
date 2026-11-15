@@ -76,6 +76,12 @@
     view = 'dashboard';
   }
 
+  // 日历选中的日期只消费一次：Dashboard 应用后立刻清空，
+  // 否则 from/to 会被永久钉在那一天，重新进入也回不到今天。
+  function consumeFocusDate() {
+    focusDate = null;
+  }
+
   async function togglePause() {
     paused = !paused;
     await api.setPaused(paused);
@@ -101,12 +107,12 @@
       {/if}
     </div>
     <nav>
+      <button class:active={widgetVisible} onclick={toggleWidget}>{t('悬浮窗')}</button>
       <button class:active={view === 'dashboard'} onclick={() => (view = 'dashboard')}>{t('仪表盘')}</button>
       <button class:active={view === 'timeline'} onclick={() => (view = 'timeline')}>{t('时间线')}</button>
       <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>{t('日历')}</button>
       <button class:active={view === 'compare'} onclick={() => (view = 'compare')}>{t('对比')}</button>
       <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>{t('设置')}</button>
-      <button class:active={widgetVisible} onclick={toggleWidget}>{t('悬浮窗')}</button>
       <button onclick={togglePause}>{paused ? t('恢复监控') : t('暂停监控')}</button>
     </nav>
   </header>
@@ -124,7 +130,7 @@
     {:else}
       {#key dataEpoch}
         {#if view === 'dashboard'}
-          <Dashboard {focusDate} />
+          <Dashboard {focusDate} onConsume={consumeFocusDate} />
         {:else if view === 'timeline'}
           <TimelineView initialDate={focusDate ?? undefined} />
         {:else if view === 'calendar'}

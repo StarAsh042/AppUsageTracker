@@ -19,7 +19,11 @@
   let data = $state<TimelineData | null>(null);
   let titles = $state<TopTitle[]>([]);
   let web = $state<TopWeb[]>([]);
-  let loading = $state(false);
+  // 首帧就是"加载中"：挂载时 load() 还没跑完，否则会先闪一下"暂无数据"。
+  let loading = $state(true);
+  // 加载失败要显式显示，避免空数组让 Top 标题/Top 网页整块静默消失。
+  let loadError = $state<string | null>(null);
+  let loadSeq = 0;
   let hover = $state<{ name: string; detail: string; x: number } | null>(null);
   // 可视窗口（秒 0-86400），滚轮缩放、拖动平移
   let view = $state<[number, number]>([0, 86400]);
@@ -33,16 +37,25 @@
   });
 
   async function load() {
+    // 快速翻日期时旧响应可能后到，用序号丢弃过期结果。
+    const seq = ++loadSeq;
     loading = true;
+    loadError = null;
     view = [0, 86400];
     try {
-      [data, titles, web] = await Promise.all([
+      const [d, ti, wb] = await Promise.all([
         api.getTimeline(date),
         api.getTopTitles(date, date, 15),
         api.getTopWeb(date, date, 10),
       ]);
+      if (seq !== loadSeq) return;
+      data = d;
+      titles = ti;
+      web = wb;
+    } catch (e) {
+      if (seq === loadSeq) loadError = String(e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -313,7 +326,19 @@
       </div>
     {/if}
   {:else}
-    <div class="loading">{loading ? '加载中…' : ''}</div>
+    <div class="loading">
+      {#if loading}
+        {t('加载中')}…
+      {:else if loadError}
+        <div class="load-failed">
+          <div>{t('加载失败')}</div>
+          <div class="err-text">{loadError}</div>
+          <button class="ghost" onclick={() => load()}>{t('重试')}</button>
+        </div>
+      {:else}
+        {t('暂无数据')}
+      {/if}
+    </div>
   {/if}
 
   {#if hover}
@@ -476,6 +501,21 @@
     align-items: center;
     justify-content: center;
     color: var(--text-dim);
+  }
+
+  .load-failed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: 520px;
+    text-align: center;
+  }
+
+  .err-text {
+    color: var(--text-dim);
+    font-size: 12px;
+    word-break: break-all;
   }
 
   .search {
