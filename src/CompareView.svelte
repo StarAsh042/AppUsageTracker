@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type DashboardData } from './lib/api';
+  import { api, fmtDuration, CATEGORY_PALETTE, type DashboardData } from './lib/api';
+  import {
+    deltaClass,
+    formatDelta,
+    localDateKey,
+    orderedDelta as rawDelta,
+    presetRange,
+    type ComparePreset,
+  } from './lib/compare';
   import { lang, en } from './lib/i18n';
 
   // 默认对比「今天」vs「昨天」：A = 昨天，B = 今天（A 仍是较早的一侧，变化率方向不变）
@@ -39,39 +47,12 @@
     load();
   }
 
-  function preset(kind: 'week' | 'month' | 'today' | 'yesterday') {
-    const p = (n: number) => String(n).padStart(2, '0');
-    const fmt = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-    if (kind === 'today') {
-      aFrom = localDateKey(-1);
-      aTo = localDateKey(-1);
-      bFrom = localDateKey();
-      bTo = localDateKey();
-    } else if (kind === 'yesterday') {
-      aFrom = localDateKey(-2);
-      aTo = localDateKey(-2);
-      bFrom = localDateKey(-1);
-      bTo = localDateKey(-1);
-    } else if (kind === 'week') {
-      const d = new Date();
-      const dow = (d.getDay() + 6) % 7;
-      const mon = new Date(d);
-      mon.setDate(d.getDate() - dow);
-      const lastMon = new Date(mon);
-      lastMon.setDate(mon.getDate() - 7);
-      const lastSun = new Date(mon);
-      lastSun.setDate(mon.getDate() - 1);
-      aFrom = fmt(lastMon);
-      aTo = fmt(lastSun);
-      bFrom = fmt(mon);
-      bTo = localDateKey();
-    } else {
-      const d = new Date();
-      aFrom = fmt(new Date(d.getFullYear(), d.getMonth() - 1, 1));
-      aTo = fmt(new Date(d.getFullYear(), d.getMonth(), 0));
-      bFrom = fmt(new Date(d.getFullYear(), d.getMonth(), 1));
-      bTo = localDateKey();
-    }
+  function preset(kind: ComparePreset) {
+    const r = presetRange(kind);
+    aFrom = r.a.from;
+    aTo = r.a.to;
+    bFrom = r.b.from;
+    bTo = r.b.to;
     load();
   }
 
@@ -138,20 +119,15 @@
   const aIsOlder = $derived(aFrom <= bFrom);
 
   function orderedDelta(a: number, b: number): number | null {
-    const older = aIsOlder ? a : b;
-    const newer = aIsOlder ? b : a;
-    if (older <= 0) return null;
-    return ((newer - older) / older) * 100;
+    return rawDelta(a, b, aIsOlder);
   }
 
   function deltaText(a: number, b: number): string {
-    const d = orderedDelta(a, b);
-    return d === null ? '新增' : `${d >= 0 ? '+' : ''}${d.toFixed(0)}%`;
+    return formatDelta(orderedDelta(a, b));
   }
 
   function deltaCls(a: number, b: number): string {
-    const d = orderedDelta(a, b);
-    return d === null ? '' : d >= 0 ? 'up' : 'down';
+    return deltaClass(orderedDelta(a, b));
   }
 
   function maxOf(rows: CmpRow[]): number {
