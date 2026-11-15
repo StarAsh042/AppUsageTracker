@@ -270,6 +270,19 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
+            // 老版本写进 HKCU Run 的是裸 exe 路径（无引号、无标记）。这里按当前
+            // 设置再写一次，把历史值就地规范化成 "exe" --autostart 的形式。
+            if handle
+                .state::<AppState>()
+                .settings
+                .lock()
+                .unwrap()
+                .start_with_windows
+            {
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = autostart::set(true, &exe.to_string_lossy());
+                }
+            }
             apply_locale(&handle);
             build_tray(&handle)?;
             apply_hotkeys(&handle);
@@ -277,8 +290,13 @@ pub fn run() {
             // 主窗口在 tauri.conf.json 里是 visible:false，此前只有二次启动
             // （single_instance 回调）或托盘点击才会点亮它：开过悬浮窗再重启、
             // 或从托盘隐藏后重启时，主界面根本不出现。这里补一次显式显示。
-            // --smoke 是无界面监控模式，跳过以免弹窗干扰自动化。
-            if !std::env::args().any(|a| a == "--smoke") {
+            // 例外：--smoke 是无界面监控模式，--autostart 是开机自启 —— 后者
+            // 应安安静静常驻托盘与悬浮窗，不该每次开机都弹一个窗口出来。
+            let args: Vec<String> = std::env::args().collect();
+            let headless = args
+                .iter()
+                .any(|a| a == "--smoke" || a == autostart::AUTOSTART_FLAG);
+            if !headless {
                 show_main(&handle);
             }
 
