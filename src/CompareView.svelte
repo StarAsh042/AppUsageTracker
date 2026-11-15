@@ -2,9 +2,10 @@
   import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type DashboardData } from './lib/api';
   import { lang, en } from './lib/i18n';
 
-  let aFrom = $state(localDateKey(-13));
-  let aTo = $state(localDateKey(-7));
-  let bFrom = $state(localDateKey(-6));
+  // 默认对比「今天」vs「昨天」：A = 昨天，B = 今天（A 仍是较早的一侧，变化率方向不变）
+  let aFrom = $state(localDateKey(-1));
+  let aTo = $state(localDateKey(-1));
+  let bFrom = $state(localDateKey());
   let bTo = $state(localDateKey());
   let aData = $state<DashboardData | null>(null);
   let bData = $state<DashboardData | null>(null);
@@ -38,10 +39,15 @@
     load();
   }
 
-  function preset(kind: 'week' | 'month' | 'yesterday') {
+  function preset(kind: 'week' | 'month' | 'today' | 'yesterday') {
     const p = (n: number) => String(n).padStart(2, '0');
     const fmt = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-    if (kind === 'yesterday') {
+    if (kind === 'today') {
+      aFrom = localDateKey(-1);
+      aTo = localDateKey(-1);
+      bFrom = localDateKey();
+      bTo = localDateKey();
+    } else if (kind === 'yesterday') {
       aFrom = localDateKey(-2);
       aTo = localDateKey(-2);
       bFrom = localDateKey(-1);
@@ -168,6 +174,7 @@
     <input type="date" bind:value={bTo} min={bFrom} />
     <button class="ghost" onclick={swap}>⇄ {t('交换')}</button>
     <div class="spacer"></div>
+    <button class="ghost" onclick={() => preset('today')}>{t('今天')} vs {t('昨天')}</button>
     <button class="ghost" onclick={() => preset('yesterday')}>{t('昨天')} vs {t('前日')}</button>
     <button class="ghost" onclick={() => preset('week')}>{t('本周')} vs {t('上周')}</button>
     <button class="ghost" onclick={() => preset('month')}>{t('本月')} vs {t('上月')}</button>

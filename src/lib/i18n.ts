@@ -13,6 +13,7 @@ export const en: Record<string, string> = {
   已保存: 'Saved',
   保存失败: 'Save failed',
   今日: 'Today',
+  今天: 'Today',
   昨天: 'Yesterday',
   本周: 'This Week',
   本月: 'This Month',
