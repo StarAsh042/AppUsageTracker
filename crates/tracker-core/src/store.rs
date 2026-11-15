@@ -209,6 +209,29 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub fn query_title_intervals(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<Vec<TitleInterval>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT AppKey, Title, StartTime, EndTime, DurationSeconds
+             FROM TitleIntervals
+             WHERE substr(StartTime, 1, 10) >= ?1 AND substr(StartTime, 1, 10) <= ?2
+             ORDER BY StartTime",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from, to], |row| {
+            Ok(TitleInterval {
+                app_key: row.get(0)?,
+                title: row.get(1)?,
+                start_time: row.get(2)?,
+                end_time: row.get(3)?,
+                duration_seconds: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     /// Top 标题：按 (应用, 标题) 聚合时长，最近出现时间排序辅助。
     pub fn top_titles(
         &self,
@@ -249,6 +272,29 @@ impl SqliteStore {
             ])?;
         }
         Ok(())
+    }
+
+    pub fn query_web_intervals(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<Vec<WebInterval>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT Domain, Title, StartTime, EndTime, DurationSeconds
+             FROM WebIntervals
+             WHERE substr(StartTime, 1, 10) >= ?1 AND substr(StartTime, 1, 10) <= ?2
+             ORDER BY StartTime",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from, to], |row| {
+            Ok(WebInterval {
+                domain: row.get(0)?,
+                title: row.get(1)?,
+                start_time: row.get(2)?,
+                end_time: row.get(3)?,
+                duration_seconds: row.get(4)?,
+            })
+        })?;
+        rows.collect()
     }
 
     /// Top 网页：按 (域名, 标题) 聚合时长。
@@ -318,6 +364,38 @@ impl SqliteStore {
              DELETE FROM TitleIntervals; DELETE FROM WebIntervals; DELETE FROM DailyAppUsage;",
         )
     }
+
+    /// 恢复备份：清空并写回五张表，全过程包在同一个事务里。
+    ///
+    /// 逐条 execute 会各自隐式提交（WAL 下每条一次 fsync），上万条明细时把
+    /// store 锁占住数十秒，监控线程的 flush_state 与前端查询全部排队，表现
+    /// 就是恢复时界面卡死。合进一个事务后耗时降到毫秒级，失败还能整体回滚，
+    /// 不会留下半套数据。
+    pub fn restore_replace(
+        &self,
+        daily: &[DailyUsage],
+        intervals: &[ForegroundInterval],
+        states: &[StateInterval],
+        titles: &[TitleInterval],
+        web: &[WebInterval],
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute_batch("BEGIN IMMEDIATE;")?;
+        let applied = (|| -> Result<(), rusqlite::Error> {
+            self.clear_all()?;
+            self.save_daily_replace(daily)?;
+            self.save_intervals(intervals)?;
+            self.save_state_intervals(states)?;
+            self.save_title_intervals(titles)?;
+            self.save_web_intervals(web)
+        })();
+        match applied {
+            Ok(()) => self.conn.execute_batch("COMMIT;"),
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK;");
+                Err(e)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -376,6 +454,103 @@ mod tests {
         store.save_daily_replace(&[grown]).unwrap();
         let rows = store.query_daily("2026-11-04", "2026-11-04").unwrap();
         assert_eq!(rows[0].active_seconds, 90.0, "重复 flush 不应累加");
+    }
+
+    #[test]
+    fn 恢复备份抹掉旧行并写回五张表() {
+        let store = temp_db();
+        // 先塞一份"旧数据"，恢复后应当彻底消失（而不是和备份混在一起）
+        store
+            .save_daily_replace(&[DailyUsage {
+                usage_date: "2026-01-01".into(),
+                app_key: "old".into(),
+                process_name: "old".into(),
+                display_name: "OLD".into(),
+                exe_path: "old.exe".into(),
+                active_seconds: 1.0,
+            }])
+            .unwrap();
+        store
+            .save_title_intervals(&[TitleInterval {
+                app_key: "old".into(),
+                title: "旧标题".into(),
+                start_time: "2026-01-01 10:00:00.000".into(),
+                end_time: "2026-01-01 10:00:10.000".into(),
+                duration_seconds: 10.0,
+            }])
+            .unwrap();
+
+        let daily = vec![DailyUsage {
+            usage_date: "2026-11-15".into(),
+            app_key: "a".into(),
+            process_name: "a".into(),
+            display_name: "A".into(),
+            exe_path: "a.exe".into(),
+            active_seconds: 120.0,
+        }];
+        let intervals = vec![ForegroundInterval {
+            app_key: "a".into(),
+            process_name: "a".into(),
+            display_name: "A".into(),
+            exe_path: "a.exe".into(),
+            start_time: "2026-11-15 09:00:00.000".into(),
+            end_time: "2026-11-15 09:02:00.000".into(),
+            duration_seconds: 120.0,
+        }];
+        let states = vec![StateInterval {
+            state: "Active".into(),
+            start_time: "2026-11-15 09:00:00.000".into(),
+            end_time: "2026-11-15 09:02:00.000".into(),
+            duration_seconds: 120.0,
+        }];
+        let titles = vec![TitleInterval {
+            app_key: "a".into(),
+            title: "新标题".into(),
+            start_time: "2026-11-15 09:00:00.000".into(),
+            end_time: "2026-11-15 09:02:00.000".into(),
+            duration_seconds: 120.0,
+        }];
+        let web = vec![WebInterval {
+            domain: "example.com".into(),
+            title: "示例".into(),
+            start_time: "2026-11-15 09:00:00.000".into(),
+            end_time: "2026-11-15 09:02:00.000".into(),
+            duration_seconds: 120.0,
+        }];
+
+        store
+            .restore_replace(&daily, &intervals, &states, &titles, &web)
+            .unwrap();
+
+        let all_daily = store.query_daily("0000-01-01", "9999-12-31").unwrap();
+        assert_eq!(all_daily.len(), 1, "旧日聚合应被清空");
+        assert_eq!(all_daily[0].usage_date, "2026-11-15");
+        assert_eq!(
+            store
+                .query_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .query_state_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .len(),
+            1
+        );
+        let all_titles = store
+            .query_title_intervals("0000-01-01", "9999-12-31")
+            .unwrap();
+        assert_eq!(all_titles.len(), 1, "旧标题应被清空");
+        assert_eq!(all_titles[0].title, "新标题");
+        assert_eq!(
+            store
+                .query_web_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]

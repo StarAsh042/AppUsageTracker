@@ -270,10 +270,35 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
+            // 老版本写进 HKCU Run 的是裸 exe 路径（无引号、无标记）。这里按当前
+            // 设置再写一次，把历史值就地规范化成 "exe" --autostart 的形式。
+            if handle
+                .state::<AppState>()
+                .settings
+                .lock()
+                .unwrap()
+                .start_with_windows
+            {
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = autostart::set(true, &exe.to_string_lossy());
+                }
+            }
             apply_locale(&handle);
             build_tray(&handle)?;
             apply_hotkeys(&handle);
             setup_main_window(&handle);
+            // 主窗口在 tauri.conf.json 里是 visible:false，此前只有二次启动
+            // （single_instance 回调）或托盘点击才会点亮它：开过悬浮窗再重启、
+            // 或从托盘隐藏后重启时，主界面根本不出现。这里补一次显式显示。
+            // 例外：--smoke 是无界面监控模式，--autostart 是开机自启 —— 后者
+            // 应安安静静常驻托盘与悬浮窗，不该每次开机都弹一个窗口出来。
+            let args: Vec<String> = std::env::args().collect();
+            let headless = args
+                .iter()
+                .any(|a| a == "--smoke" || a == autostart::AUTOSTART_FLAG);
+            if !headless {
+                show_main(&handle);
+            }
 
             let show_widget = {
                 let st = handle.state::<AppState>();
@@ -1617,8 +1642,28 @@ fn live_status(app: &AppHandle) -> LiveStatus {
     let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
+    // 先把设置整份快照出来再进聚合器锁：既避免 settings→aggregator 反序造成的
+    // ABBA 死锁，也让下面的别名校验不再每行加一次锁。
+    let (aliases, excluded) = {
+        let s = state.settings.lock().unwrap();
+        let mut excluded: HashSet<String> = s.excluded_app_keys.iter().cloned().collect();
+        if let Ok(self_exe) = std::env::current_exe() {
+            excluded.insert(self_exe.to_string_lossy().to_lowercase());
+        }
+        (s.app_display_names.clone(), excluded)
+    };
+    let alias_of = |app_key: &str, original: &str| -> String {
+        aliases
+            .get(app_key)
+            .cloned()
+            .unwrap_or_else(|| original.to_string())
+    };
     let agg = state.aggregator.lock().unwrap();
-    let current = agg.current_app().cloned();
+    // 被排除的应用不再作为「当前前台应用」外露（悬浮窗 / 顶栏状态）
+    let current = agg
+        .current_app()
+        .filter(|c| !excluded.contains(&c.app_key))
+        .cloned();
     let (current_category, current_seconds) = match &current {
         Some(c) => (
             Some(resolver.resolve(&c.display_name, &c.process_name, &c.exe_path)),
@@ -1629,12 +1674,6 @@ fn live_status(app: &AppHandle) -> LiveStatus {
     let mut top: Vec<(String, String, f64)> = Vec::new();
     let mut today_total = 0.0;
     let cur_key = current.as_ref().map(|c| c.app_key.clone());
-    let (rules_alias, _unused) = {
-        let s = state.settings.lock().unwrap();
-        let a = s.app_display_names.clone();
-        (a, ())
-    };
-    let _ = rules_alias;
     for d in agg.daily.values().filter(|d| d.usage_date == today) {
         // 当前前台应用叠加进行中的区间秒数，排行与总量实时走表
         let mut secs = d.active_seconds;
@@ -1643,11 +1682,7 @@ fn live_status(app: &AppHandle) -> LiveStatus {
         }
         today_total += secs;
         let cat = resolver.resolve(&d.display_name, &d.process_name, &d.exe_path);
-        let shown = {
-            let s = state.settings.lock().unwrap();
-            display_alias(&s, &d.app_key, &d.display_name)
-        };
-        top.push((shown, cat, secs));
+        top.push((alias_of(&d.app_key, &d.display_name), cat, secs));
     }
     top.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let top_apps = top
@@ -1662,8 +1697,7 @@ fn live_status(app: &AppHandle) -> LiveStatus {
     // 当前应用显示名走别名
     let mut current = current;
     if let Some(c) = current.as_mut() {
-        let s = state.settings.lock().unwrap();
-        c.display_name = display_alias(&s, &c.app_key, &c.display_name);
+        c.display_name = alias_of(&c.app_key, &c.display_name);
     }
     LiveStatus {
         state: agg.state,
@@ -3450,6 +3484,9 @@ fn get_top_web(
 
 // ---------- JSON 备份 ----------
 
+/// 当前备份格式版本；v2 起包含窗口标题与网页区间，旧备份仍可恢复（缺省为空）。
+const BACKUP_VERSION: u32 = 2;
+
 #[derive(Serialize, Deserialize)]
 struct BackupFile {
     #[serde(default)]
@@ -3461,6 +3498,10 @@ struct BackupFile {
     intervals: Vec<ForegroundInterval>,
     #[serde(default)]
     states: Vec<StateInterval>,
+    #[serde(default)]
+    titles: Vec<TitleInterval>,
+    #[serde(default)]
+    web: Vec<WebInterval>,
 }
 
 fn backups_dir(data_dir: &str) -> std::path::PathBuf {
@@ -3471,7 +3512,7 @@ fn backups_dir(data_dir: &str) -> std::path::PathBuf {
 fn export_backup_json(app: AppHandle) -> Result<String, String> {
     let state = app.state::<AppState>();
     let data_dir = state.settings.lock().unwrap().data_directory.clone();
-    let (daily, intervals, states) = {
+    let (daily, intervals, states, titles, web) = {
         let st = state.store.lock().unwrap();
         (
             st.query_daily("0000-01-01", "9999-12-31")
@@ -3479,6 +3520,10 @@ fn export_backup_json(app: AppHandle) -> Result<String, String> {
             st.query_intervals("0000-01-01", "9999-12-31")
                 .map_err(|e| e.to_string())?,
             st.query_state_intervals("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?,
+            st.query_title_intervals("0000-01-01", "9999-12-31")
+                .map_err(|e| e.to_string())?,
+            st.query_web_intervals("0000-01-01", "9999-12-31")
                 .map_err(|e| e.to_string())?,
         )
     };
@@ -3489,11 +3534,13 @@ fn export_backup_json(app: AppHandle) -> Result<String, String> {
         Local::now().format("%Y%m%d_%H%M%S")
     ));
     let file = BackupFile {
-        version: 1,
+        version: BACKUP_VERSION,
         exported_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         daily,
         intervals,
         states,
+        titles,
+        web,
     };
     std::fs::write(
         &path,
@@ -3535,23 +3582,15 @@ fn delete_backup(app: AppHandle, name: String) -> Result<(), String> {
 fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, String> {
     let backup: BackupFile =
         serde_json::from_str(text).map_err(|e| format!("备份文件不是有效的应用备份（{e}）"))?;
-    if backup.version > 1 {
+    if backup.version > BACKUP_VERSION {
         return Err(format!(
-            "备份文件版本 {} 高于当前支持的版本 1，请升级应用后再恢复",
-            backup.version
+            "备份文件版本 {} 高于当前支持的版本 {}，请升级应用后再恢复",
+            backup.version, BACKUP_VERSION
         ));
     }
     let state = app.state::<AppState>();
-    {
-        let st = state.store.lock().unwrap();
-        st.clear_all().map_err(|e| e.to_string())?;
-        st.save_daily_replace(&backup.daily)
-            .map_err(|e| e.to_string())?;
-        st.save_intervals(&backup.intervals)
-            .map_err(|e| e.to_string())?;
-        st.save_state_intervals(&backup.states)
-            .map_err(|e| e.to_string())?;
-    }
+    // 先清内存态再写库：写库期间监控线程仍会 flush，若内存里还留着旧数据，
+    // 会和刚恢复的行混在一起。清空后 flush 只会补上新的增量。
     {
         let mut agg = state.aggregator.lock().unwrap();
         agg.daily.clear();
@@ -3564,6 +3603,18 @@ fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, Stri
         state.web_pending.lock().unwrap().clear();
     }
     state.notified_limits.lock().unwrap().clear();
+    {
+        let st = state.store.lock().unwrap();
+        // 五张表在同一个事务里清空并写回，避免上万条明细逐条隐式提交长时间占用 store 锁
+        st.restore_replace(
+            &backup.daily,
+            &backup.intervals,
+            &backup.states,
+            &backup.titles,
+            &backup.web,
+        )
+        .map_err(|e| e.to_string())?;
+    }
     let _ = app.emit("app://data", ());
     Ok(format!(
         "已从 {} 恢复 {} 条日聚合 / {} 条明细",

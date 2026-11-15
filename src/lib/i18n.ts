@@ -6,6 +6,8 @@ export type Lang = 'zh' | 'en';
 export const en: Record<string, string> = {
   // 通用
   加载中: 'Loading…',
+  加载失败: 'Failed to load',
+  重试: 'Retry',
   暂无数据: 'No data yet',
   保存设置: 'Save Settings',
   已保存: 'Saved',
