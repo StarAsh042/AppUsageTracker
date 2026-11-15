@@ -8,7 +8,14 @@
 
 ## [Unreleased]
 
-（暂无未发布变更）
+### Added
+
+- **frontend:** 引入 vitest 单元测试框架（`npm test` / `npm run test:watch`），覆盖 `localDateKey`、对比视图四种区间预设、变化率计算与每日限额读写，共 29 个用例；新增 `src/lib/compare.ts`、`src/lib/limits.ts` 两个纯逻辑模块承接被测逻辑，组件行为不变。
+- **ci:** `frontend` job 在类型检查与构建之间新增 `npm test`。
+
+### Changed
+
+- **ci:** GitHub Actions 升级到 Node 24 运行时：`actions/checkout` 与 `actions/setup-node` 由 `v4` 升到 `v5`，`actions/upload-artifact` 由 `v4` 升到 `v6`，`actions/download-artifact` 由 `v4` 升到 `v7`，消除 Node 20 弃用告警。
 
 ## [0.6.3] - 2026-11-16
 

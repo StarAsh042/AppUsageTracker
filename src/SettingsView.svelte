@@ -8,6 +8,7 @@
     type ExtInstallResult,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
+  import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -320,16 +321,12 @@
   }
 
   function limitOf(name: string): number {
-    return s?.category_daily_limit_minutes[name] ?? 0;
+    return limitOfSetting(s?.category_daily_limit_minutes, name);
   }
 
   function setLimit(name: string, val: number) {
     if (!s) return;
-    if (val > 0) {
-      s.category_daily_limit_minutes[name] = val;
-    } else {
-      delete s.category_daily_limit_minutes[name];
-    }
+    setDailyLimit(s.category_daily_limit_minutes, name, val);
   }
 
   function ruleNames(): string[] {

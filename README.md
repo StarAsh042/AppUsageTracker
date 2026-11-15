@@ -149,6 +149,7 @@ npm run tauri dev
 
 ```bash
 npm run check                               # svelte-check 类型检查
+npm test                                    # vitest 前端单元测试
 npm run build                               # 仅构建前端产物到 dist/
 cargo test -p tracker-core                  # 聚合状态机单元测试
 cargo fmt --all --check                     # 与 CI 一致的格式检查
@@ -156,7 +157,7 @@ cargo clippy --all-targets -- -D warnings   # 与 CI 一致的 lint
 npm run tauri build                         # 生产构建（NSIS 安装包 + 独立 exe）
 ```
 
-上述命令与 `.github/workflows/ci.yml` 一致；本地未逐一运行，标记【未验证】。
+上述命令与 `.github/workflows/ci.yml` 一致；`npm test`、`npm run check`、`npm run build` 已在本地实际运行并通过（2026-11-16，29 个前端用例、0 error、构建成功）；`cargo test` / `fmt` / `clippy` 走 CI 验证。
 
 ## 配置
 
@@ -305,7 +306,11 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 │   ├── Dashboard.svelte        # 仪表盘
 │   ├── SettingsView.svelte     # 设置
 │   ├── Widget.svelte           # 悬浮窗（widget.html 入口）
-│   └── lib/api.ts              # IPC 封装与类型
+│   └── lib/
+│       ├── api.ts              # IPC 封装与类型
+│       ├── compare.ts          # 对比视图区间与变化率（纯逻辑，可单测）
+│       ├── limits.ts           # 每日限额读写（纯逻辑，可单测）
+│       └── i18n.ts             # 中英文案表
 ├── extension/                  # 可选 MV3 浏览器扩展
 ├── .github/workflows/          # CI 与 Release 流水线
 ├── src-tauri/tauri.conf.json   # 应用版本、窗口、更新器配置
