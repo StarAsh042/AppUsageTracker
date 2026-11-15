@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+（暂无未发布变更）
+
+## [0.6.3] - 2026-11-16
+
 ### Added
 
 - **backup:** JSON 备份升到 v2，新增窗口标题与网页浏览区间；恢复时一并写回，时间线的「Top 标题」与「Top 网页」不再整块为空。旧版 v1 备份仍可直接恢复。
@@ -198,7 +202,9 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.5.0...v0.5.1
