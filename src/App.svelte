@@ -16,6 +16,8 @@
   let focusDate = $state<string | null>(null);
   let restTip = $state(false);
   let restTimer: ReturnType<typeof setTimeout> | undefined;
+  // 备份恢复 / 清空数据后自增，重挂载数据视图以重新拉数据
+  let dataEpoch = $state(0);
 
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
@@ -36,6 +38,8 @@
     const un3 = listen<{ theme?: string; language?: string }>('app://settings', (e) => {
       applyTheme(e.payload?.theme);
       lang.set(e.payload?.language === 'en' ? 'en' : 'zh');
+      // 分类 / 别名等设置变化会影响排行数据，重挂载数据视图重新拉取
+      dataEpoch += 1;
     });
     const un4 = listen('ui://rest', () => {
       restTip = true;
@@ -46,6 +50,9 @@
     const un5 = listen<boolean>('widget://visibility', (e) => {
       widgetVisible = e.payload === true;
     });
+    const un6 = listen('app://data', () => {
+      dataEpoch += 1;
+    });
     // 禁用 WebView 默认右键菜单（排行右键分类等自定义菜单不受影响）
     const prevent = (e: Event) => e.preventDefault();
     window.addEventListener('contextmenu', prevent);
@@ -55,6 +62,7 @@
       un3.then((f) => f());
       un4.then((f) => f());
       un5.then((f) => f());
+      un6.then((f) => f());
       window.removeEventListener('contextmenu', prevent);
     };
   });
@@ -66,6 +74,12 @@
   function onPickDate(date: string) {
     focusDate = date;
     view = 'dashboard';
+  }
+
+  // 日历选中的日期只消费一次：Dashboard 应用后立刻清空，
+  // 否则 from/to 会被永久钉在那一天，重新进入也回不到今天。
+  function consumeFocusDate() {
+    focusDate = null;
   }
 
   async function togglePause() {
@@ -93,12 +107,12 @@
       {/if}
     </div>
     <nav>
+      <button class:active={widgetVisible} onclick={toggleWidget}>{t('悬浮窗')}</button>
       <button class:active={view === 'dashboard'} onclick={() => (view = 'dashboard')}>{t('仪表盘')}</button>
       <button class:active={view === 'timeline'} onclick={() => (view = 'timeline')}>{t('时间线')}</button>
       <button class:active={view === 'calendar'} onclick={() => (view = 'calendar')}>{t('日历')}</button>
       <button class:active={view === 'compare'} onclick={() => (view = 'compare')}>{t('对比')}</button>
       <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>{t('设置')}</button>
-      <button class:active={widgetVisible} onclick={toggleWidget}>{t('悬浮窗')}</button>
       <button onclick={togglePause}>{paused ? t('恢复监控') : t('暂停监控')}</button>
     </nav>
   </header>
@@ -111,16 +125,20 @@
   {/if}
 
   <main>
-    {#if view === 'dashboard'}
-      <Dashboard {focusDate} />
-    {:else if view === 'timeline'}
-      <TimelineView initialDate={focusDate ?? undefined} />
-    {:else if view === 'calendar'}
-      <CalendarView onPick={(d) => onPickDate(d)} />
-    {:else if view === 'compare'}
-      <CompareView />
-    {:else}
+    {#if view === 'settings'}
       <SettingsView />
+    {:else}
+      {#key dataEpoch}
+        {#if view === 'dashboard'}
+          <Dashboard {focusDate} onConsume={consumeFocusDate} />
+        {:else if view === 'timeline'}
+          <TimelineView initialDate={focusDate ?? undefined} />
+        {:else if view === 'calendar'}
+          <CalendarView onPick={(d) => onPickDate(d)} />
+        {:else if view === 'compare'}
+          <CompareView />
+        {/if}
+      {/key}
     {/if}
   </main>
 

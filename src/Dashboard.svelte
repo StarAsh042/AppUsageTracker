@@ -3,13 +3,23 @@
   import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
   import { lang, en } from './lib/i18n';
 
-  let { focusDate = null }: { focusDate?: string | null } = $props();
+  let {
+    focusDate = null,
+    onConsume,
+  }: {
+    focusDate?: string | null;
+    onConsume?: () => void;
+  } = $props();
 
   let from = $state(localDateKey());
   let to = $state(localDateKey());
   let data = $state<DashboardData | null>(null);
   let prevTotal = $state<number | null>(null);
-  let loading = $state(false);
+  // 首帧就是"加载中"：挂载时 load() 还没跑完，否则会先闪一下"暂无数据"。
+  let loading = $state(true);
+  // 加载失败与空数据必须显示成可见文案，否则整块内容会看起来"消失"了。
+  let loadError = $state<string | null>(null);
+  let loadSeq = 0;
   let categories = $state<string[]>([]);
   let menu = $state<{ x: number; y: number; appKey: string; current: string } | null>(null);
   let lastLoad = 0;
@@ -149,12 +159,14 @@
     return Math.max(1, ...points.map((p) => p.seconds)) * 1.4;
   }
 
-  // 日历页点选日期 → 聚焦该日
+  // 日历页点选日期 → 聚焦该日，并且只消费一次。
+  // 之前这里常驻监听 focusDate，父组件的值永不清空，导致每次重挂载
+  // 都把 from/to 钉死在那一天，界面再也回不到今天。
   $effect(() => {
-    if (focusDate) {
-      from = focusDate;
-      to = focusDate;
-    }
+    if (!focusDate) return;
+    from = focusDate;
+    to = focusDate;
+    onConsume?.();
   });
 
   $effect(() => {
@@ -162,9 +174,13 @@
   });
 
   async function load() {
+    // 快速切换日期时，只让最后一次请求的结果落地，避免旧响应覆盖新范围。
+    const seq = ++loadSeq;
     loading = true;
     try {
-      data = await api.getDashboard(from, to);
+      const next = await api.getDashboard(from, to);
+      if (seq !== loadSeq) return;
+      data = next;
       baseSeconds = new Map(data.apps.map((a) => [a.app_key, a.active_seconds]));
       baseTotal = data.total_active_seconds;
       // 多日范围：取上一周期做环比
@@ -180,10 +196,13 @@
         const prevFrom = `${pf.getFullYear()}-${p(pf.getMonth() + 1)}-${p(pf.getDate())}`;
         const prevTo = `${pt.getFullYear()}-${p(pt.getMonth() + 1)}-${p(pt.getDate())}`;
         const prev = await api.getDashboard(prevFrom, prevTo);
-        prevTotal = prev.total_active_seconds;
+        if (seq === loadSeq) prevTotal = prev.total_active_seconds;
       }
+      if (seq === loadSeq) loadError = null;
+    } catch (e) {
+      if (seq === loadSeq) loadError = String(e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -515,7 +534,19 @@
       </div>
     </div>
   {:else}
-    <div class="loading">{loading ? t('加载中') + '…' : ''}</div>
+    <div class="loading">
+      {#if loading}
+        {t('加载中')}…
+      {:else if loadError}
+        <div class="load-failed">
+          <div>{t('加载失败')}</div>
+          <div class="err-text">{loadError}</div>
+          <button class="ghost" onclick={() => load()}>{t('重试')}</button>
+        </div>
+      {:else}
+        {t('暂无数据')}
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -946,6 +977,21 @@
     align-items: center;
     justify-content: center;
     color: var(--text-dim);
+  }
+
+  .load-failed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: 520px;
+    text-align: center;
+  }
+
+  .err-text {
+    color: var(--text-dim);
+    font-size: 12px;
+    word-break: break-all;
   }
 
   .goal-bar {
