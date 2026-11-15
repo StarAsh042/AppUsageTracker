@@ -526,7 +526,10 @@ mod tests {
         assert_eq!(all_daily.len(), 1, "旧日聚合应被清空");
         assert_eq!(all_daily[0].usage_date, "2026-11-15");
         assert_eq!(
-            store.query_intervals("0000-01-01", "9999-12-31").unwrap().len(),
+            store
+                .query_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .len(),
             1
         );
         assert_eq!(
@@ -542,7 +545,10 @@ mod tests {
         assert_eq!(all_titles.len(), 1, "旧标题应被清空");
         assert_eq!(all_titles[0].title, "新标题");
         assert_eq!(
-            store.query_web_intervals("0000-01-01", "9999-12-31").unwrap().len(),
+            store
+                .query_web_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .len(),
             1
         );
     }
