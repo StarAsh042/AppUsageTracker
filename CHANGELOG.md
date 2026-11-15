@@ -10,6 +10,34 @@
 
 （暂无未发布变更）
 
+## [0.6.3] - 2026-11-16
+
+### Added
+
+- **backup:** JSON 备份升到 v2，新增窗口标题与网页浏览区间；恢复时一并写回，时间线的「Top 标题」与「Top 网页」不再整块为空。旧版 v1 备份仍可直接恢复。
+- **settings:** 备份与恢复（JSON）新增「打开备份目录」、「选择备份文件恢复」，并可在备份列表中点选任意一份恢复。
+- **extension:** 「智能安装扩展」扩展为自动识别 17 款常见 Chromium 内核浏览器（含 Cent Browser / Brave / Vivaldi / Opera 等），用共享密钥一次打包、按各浏览器注册表根逐个注册。
+
+### Changed
+
+- **frontend:** 对比视图默认区间改为「今天 vs 昨天」（A = 昨天、B = 今天，变化率仍按时间先后计算），工具栏新增「今天 vs 昨天」快捷按钮，原「昨天 vs 前日」保留。
+- **frontend:** 顶栏「悬浮窗」按钮移到导航最左侧，紧邻品牌区。
+
+### Fixed
+
+- **frontend:** 修复主界面与时间线在加载失败时中间内容整块空白的问题：加载中 / 加载失败（含错误信息与「重试」）/ 暂无数据三态分别可见，快速切换日期时丢弃过期响应。
+- **app:** 修复开启悬浮窗后重启只见悬浮窗、主窗口不出现：启动时显式显示主窗口（`--smoke` 无界面模式除外），同时覆盖开机自启与从托盘隐藏后重启的场景。
+- **app:** 开机自启不再弹出主窗口：自启项改写成带引号的 `"exe路径" --autostart`（兼容含空格安装路径），带该标记启动时只常驻托盘与悬浮窗；老版本写入的裸路径会在启动时按当前设置就地规范化。
+- **frontend:** 修复日历点选某一天后仪表盘与时间线被永久钉在那一天、回不到今天：选中日期只消费一次。
+- **widget:** 悬浮窗与主界面顶栏的「当前前台应用」不再显示已排除的应用。
+- **extension:** 修复智能安装误把家目录下无关的 `extension/` 目录（如「Codex认证助手」）打包注册的问题：扩展内容改为编译期内置副本，打包前校验 manifest 名称，并在安装时清理旧版本遗留的错误注册表键与按浏览器分目录的旧 CRX。
+- **category:** 修复右键「设置分类」与「保存分类规则」未实时生效：抽出 `rebuild_resolver` 供三处共用，写后立即重建分类解析缓存并发 `app://settings`，主界面据此重挂载数据视图重新拉数据。
+- **backup:** 恢复数据后同时清空内存聚合态、网页浏览态与限额通知态，并发 `app://data` 通知所有视图重新拉数据。
+- **backup:** 恢复备份改为单事务清空并写回五张表：此前上万条明细逐条隐式提交、长时间占用数据库锁，恢复时界面可能整块卡死；现在耗时降到毫秒级，失败整体回滚不留半套数据。
+- **extension:** 智能安装按 Chrome / Edge 优先顺序依次尝试打包，任一浏览器失败自动降级到下一款；全部失败或 CRX 无效时按浏览器逐条返回原因，不再整批中止。
+- **extension:** 打包前清理残留私钥，避免重试时报「指定扩展的私钥已存在」。
+- **backup:** JSON 备份恢复兼容缺失字段并校验支持的版本号；打开备份目录时转义含空格路径；备份文件名增加 .json 与路径逃逸校验，失败时给出可读提示。
+
 ## [0.6.2] - 2026-11-11
 
 ### Added
@@ -174,7 +202,9 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.5.0...v0.5.1

@@ -6,11 +6,14 @@ export type Lang = 'zh' | 'en';
 export const en: Record<string, string> = {
   // 通用
   加载中: 'Loading…',
+  加载失败: 'Failed to load',
+  重试: 'Retry',
   暂无数据: 'No data yet',
   保存设置: 'Save Settings',
   已保存: 'Saved',
   保存失败: 'Save failed',
   今日: 'Today',
+  今天: 'Today',
   昨天: 'Yesterday',
   本周: 'This Week',
   本月: 'This Month',
@@ -227,6 +230,12 @@ const en05: Record<string, string> = {
   '扩展已注册，重启浏览器后生效': 'Extension registered; restart the browser to activate it',
   '未能自动安装，请改用手动安装': 'Auto install failed; use manual install',
   '安装失败': 'install failed',
+  '打开备份目录': 'Open backup folder',
+  '选择备份文件恢复': 'Restore from a backup file',
+  '恢复备份': 'Restore backup',
+  '将清空当前全部数据': 'this clears all current data',
+  '从所选文件恢复': 'Restore from',
+  '一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效': 'One-click install: auto-detects installed Chromium browsers (Chrome / Edge / Cent / Brave / Vivaldi, etc.), packs and registers the extension; restart the browser to activate',
 };
 Object.assign(en, en05);
 
