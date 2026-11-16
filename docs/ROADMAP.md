@@ -1,13 +1,14 @@
 # 后续开发计划
 
-> 状态快照：2026-11-16（本地时区 Asia/Shanghai）。`v0.6.3` 已于同日发布，P0 三项全部完成。
+> 状态快照：2026-11-16（本地时区 Asia/Shanghai）。`v0.6.4` 已于同日发布（工程质量版本），P0 与 P1 的前端测试项均已完成。
 > 本文件记录待办与优先级，**不是交付承诺**；每完成一项，就把用户可见的变化写进 [CHANGELOG.md](../CHANGELOG.md) 的 `## [Unreleased]`，从本文件删除或标记「已完成」。
 > 依据：仓库当前代码与配置（`package.json`、各 `Cargo.toml`、`src-tauri/tauri.conf.json`、`.github/workflows/`）、README 与 CHANGELOG。凡未在本机实际运行验证的判断都标注【推断】。
 
 ## 当前基线
 
-- 已发布版本 `v0.6.3`（2026-11-16），`main` 与 `dev` 的代码树一致。
-- `v0.6.3` 已发布这批改动，详见 CHANGELOG `[0.6.3]`：JSON 备份升到 v2（新增窗口标题与网页浏览区间）、备份/恢复入口、智能安装扩展到 17 款 Chromium 浏览器、对比视图默认「今天 vs 昨天」、顶栏「悬浮窗」按钮左移；修复加载失败三态、开机自启静默与老路径规范化、日历日期钉死、排除应用过滤、扩展误打包与私钥残留、分类规则实时生效、恢复事务化与备份校验等。
+- 已发布版本 `v0.6.4`（2026-11-16），`main` 与 `dev` 的代码树一致。
+- `v0.6.4` 为工程质量版本，详见 CHANGELOG `[0.6.4]`：前端接入 vitest（29 例纯逻辑单测、CI 增加 `npm test`）、GitHub Actions 全量升到 Node 24 运行时、修复仪表盘右栏分类占比盖住效率趋势图。
+- `v0.6.3`（2026-11-16）的功能批次，详见 CHANGELOG `[0.6.3]`：JSON 备份升到 v2（新增窗口标题与网页浏览区间）、备份/恢复入口、智能安装扩展到 17 款 Chromium 浏览器、对比视图默认「今天 vs 昨天」、顶栏「悬浮窗」按钮左移；修复加载失败三态、开机自启静默与老路径规范化、日历日期钉死、排除应用过滤、扩展误打包与私钥残留、分类规则实时生效、恢复事务化与备份校验等。
 - `v0.6.2`（2026-11-11）包含：主界面「悬浮窗」开关、悬浮窗 ✕ 关闭按钮、贴边收起提示、贴边动画去蓝闪、锁定徽标行内显示、仪表盘四卡单行、更新代理开关 `update_use_proxy`、移除界面配色、扩展智能安装首版。
 - 代码规模（行）：
 
@@ -15,16 +16,16 @@
 | --- | --- |
 | `src-tauri/src/lib.rs` | 3727 行，监控线程 / IPC 命令 / 托盘 / 悬浮窗 / 更新 / 扩展安装全在一起；另有 `autostart.rs` 43 行 |
 | `crates/tracker-core/src/` | store 595、aggregator 509、settings 481、win32 141、models 83、category 32、limits 22、lib 13 |
-| `src/` | Dashboard 1261、SettingsView 1124、TimelineView 632、CompareView 503、CalendarView 494、Widget 428、App 266、lib/api.ts 292、lib/i18n.ts 242 |
+| `src/` | Dashboard 1280、SettingsView 1121、TimelineView 632、CalendarView 494、CompareView 479、Widget 428、App 266、lib/api.ts 288、lib/i18n.ts 242、lib/compare.ts 75（+ 测试 165）、lib/limits.ts 17（+ 测试 46） |
 
-- 测试：`crates/tracker-core` 有 13 处 `#[test]`（aggregator 9 + store 4，`cargo test` 报告 11 passed）；`src-tauri/src/` **0 个测试**；前端**没有测试框架**（`package.json` scripts 只有 dev / build / preview / check / tauri）。
-- CI（`.github/workflows/ci.yml`）：`frontend`、`rust`、`tauri-build`、`cross-check` 四个 job，外加聚合 job `ci`（必需检查名）。`cross-check` 目前只跑 `windows-2022`（`macos-14` 在该账号不可用已移除）。
+- 测试：`crates/tracker-core` 有 13 处 `#[test]`（aggregator 9 + store 4，`cargo test` 报告 11 passed）；`src-tauri/src/` **0 个测试**；前端已接入 `vitest`（`npm test`），`src/lib/compare.test.ts` 22 例 + `src/lib/limits.test.ts` 7 例，共 29 例通过，覆盖纯逻辑层；组件级测试与 e2e 仍未接入。
+- CI（`.github/workflows/ci.yml`）：`frontend`、`rust`、`tauri-build`、`cross-check` 四个 job，外加聚合 job `ci`（必需检查名）。`frontend` job 步骤为 `npm ci` → `npm run check` → `npm test` → `npm run build`。所有 action 已升到 Node 24 运行时（`checkout`/`setup-node` v5、`upload-artifact` v6、`download-artifact` v7）。`cross-check` 目前只跑 `windows-2022`（`macos-14` 在该账号不可用已移除）。
 
 ## 优先级总览
 
 | 优先级 | 主题 | 目标 |
 | --- | --- | --- |
-| P0 | 发布 0.6.3 ✅ | 已完成：`v0.6.3` 已发布，主干与标签一致 |
+| P0 | 发布 0.6.4 ✅ | 已完成：`v0.6.4` 已发布，主干与标签一致 |
 | P1 | 质量内建 | 让 `src-tauri` 与前端也有自动化测试，收敛既有告警 |
 | P2 | 架构收敛 | 拆 `lib.rs`、去掉 `tauri` 的 `unstable`、收紧 CSP |
 | P3 | 功能演进 | 国际化补全、跨平台、数据可迁移 |
@@ -32,8 +33,10 @@
 
 ---
 
-## P0 发布 0.6.3
+## P0 发布 0.6.4
 
+- [x] **发版（`v0.6.4`，2026-11-16）**：工程质量版本。四处版本号（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`crates/tracker-core/Cargo.toml`）从 `0.6.3` 提到 `0.6.4` 并同步 `Cargo.lock`，把 `[Unreleased]` 收进 `## [0.6.4]`，走 `dev` → `main`（`git read-tree` 整体取 dev 树，避开两边无共同祖先导致的 add/add 冲突）→ 打 tag → 等 Release 工作流。
+  - 验收：Release 页面 `v0.6.4` 为 Latest，五个资产齐全；`main` 与 `dev` 代码树一致。
 - [x] **发版（`v0.6.3`，2026-11-16）**：四处版本号（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`crates/tracker-core/Cargo.toml`）从 `0.6.2` 提到 `0.6.3` 并同步 `Cargo.lock`，把 `[Unreleased]` 收进 `## [0.6.3]`，按既有流程 `dev` → `main`（受 `required_linear_history` 保护，需 rebase 出线性分支）→ 打 tag → 等 Release 工作流产包并核对资产（`AppUsageTracker_0.6.3_x64-setup.exe`、`.exe.sig`、`latest.json`、`latest-mirror.json`、`SHA256SUMS`）。
   - 验收：Release 页面 `v0.6.3` 为 Latest，五个资产齐全；`main` 与 `dev` 代码树一致；应用内「检查更新」能从 0.6.2 升到 0.6.3（真机验证）。
 - [x] **发版（`v0.6.2`，2026-11-11）**：四处版本号 `0.6.1` → `0.6.2`，`[Unreleased]` 收进 `## [0.6.2]`，`dev` → `main` → tag → Release 资产五项齐全。
@@ -44,7 +47,8 @@
 
 ## P1 质量内建
 
-- [ ] **前端测试框架**：引入 `vitest` 与组件测试（`@testing-library/svelte` 或 Playwright），先覆盖纯逻辑：`localDateKey`、区间切换、`orderedDelta`（对比视图变化率，本次刚修过）、`limitOf` 等。CI `frontend` job 增加 `npm test`。
+- [x] **前端测试框架（纯逻辑层）**：已引入 `vitest` 5.1.0（`npm test` / `npm run test:watch`），把 `localDateKey`、区间切换（`presetRange` 的 today / yesterday / week / month 四种预设）、`orderedDelta` 变化率与 `limitOf` / `setDailyLimit` 抽到 `src/lib/compare.ts` 与 `src/lib/limits.ts` 并加 29 个用例；CI `frontend` job 已加 `npm test`。
+- [ ] **组件测试与 e2e**：仍是空白。组件级可用 `@testing-library/svelte`，端到端见下方「端到端冒烟」。
 - [ ] **`src-tauri` 命令层可测化**：把纯逻辑（`extension_id_from_hash`、CRX3 header 解析 `crx_id_bytes`/`signed_data_crx_id`、`manifest_version`、`accent_tint`）抽到 `crates/tracker-core` 或独立模块并加单测；它们目前嵌在 3727 行的 `lib.rs` 里、0 覆盖。
   - 验收：`cargo test --all --locked` 中 `src-tauri` 相关测试数从 0 增加到覆盖上述函数的规模。
 - [ ] **清理 svelte-check 既有告警**：`src/SettingsView.svelte` 的 `modal-mask`/`modal` div click（`a11y_click_events_have_key_events`、`a11y_no_static_element_interactions`）、`src/Dashboard.svelte` 的 `.card .value.small` 未使用选择器、`src/TimelineView.svelte:18` 的 `state_referenced_locally`。目标是把 `npm run check` 的输出降为 0 条。
@@ -70,7 +74,8 @@
 - [ ] **统一换行符**：仓库没有 `.gitattributes`，`src-tauri/src/lib.rs` 是 LF、README 与 `src/lib/api.ts` 等是 CRLF，`git status` 会周期性冒出 `src-tauri/gen/schemas/*.json` 的伪改动（LF/CRLF 缓存差异）。加一条 `* text=auto` 并一次性归一化。
 - [ ] **格式化与静态检查**：前端没有 Prettier / ESLint，只靠 `svelte-check` 做类型检查；Rust 侧已有 `cargo fmt` + `clippy -D warnings` 在 CI 强制。补齐前端对应工具并加进 CI `frontend` job。
 - [ ] **安全基线**：仓库无 `SECURITY.md`、无依赖更新机器人（Dependabot/Renovate）。本地 HTTP API 仅监听 `127.0.0.1`，但 token 与来源校验的边界值得单独写清。
-- [ ] **依赖升级策略**：`tauri` 2、`svelte` 5、`vite` 6 都在大版本演进期，建议按季度批量小步升级，每次升级用 `npm run check` + `cargo clippy` + 真机冒烟作为门槛。
+- [x] **CI action 运行时升级**：GitHub Actions 的 Node 20 运行时已弃用，`checkout` / `setup-node` 升到 `v5`、`upload-artifact` 升到 `v6`、`download-artifact` 升到 `v7`（`upload-artifact` v5 与 `download-artifact` v5/v6 仍是 node20，不能只升一档）。
+- [ ] **依赖升级策略**：`tauri` 2、`svelte` 5、`vite` 6 都在大版本演进期，建议按季度批量小步升级，每次升级用 `npm test` + `npm run check` + `cargo clippy` + 真机冒烟作为门槛。
 
 ---
 
