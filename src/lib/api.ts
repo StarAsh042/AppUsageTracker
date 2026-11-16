@@ -284,9 +284,5 @@ export function stateLabel(state: string, lang: 'zh' | 'en' = 'zh'): string {
   return map[state] ?? state;
 }
 
-export function localDateKey(offset = 0): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+// 实现放在 ./compare（纯逻辑、可单测），这里保持原有导入路径不变
+export { localDateKey } from './compare';

@@ -36,7 +36,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 它解决的是「想客观回顾自己每天把时间花在哪些软件上」这一个问题；数据只落在本机 SQLite 文件里，不依赖账号或云端服务。目标用户是个人使用者；它不是员工监控工具，也不做跨设备同步。
 
-当前发布版本为 `0.6.3`（2026-11-16），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
+当前发布版本为 `0.6.4`（2026-11-16），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
 
 ## 功能
 
@@ -109,7 +109,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 从已发布安装包安装（推荐给使用者）：
 
-1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.3` 中下载 `AppUsageTracker_0.6.3_x64-setup.exe`（NSIS 安装包）。
+1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.4` 中下载 `AppUsageTracker_0.6.4_x64-setup.exe`（NSIS 安装包）。
 2. 双击运行安装向导，按提示完成安装。
 3. 从开始菜单启动。
 
@@ -121,11 +121,11 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 curl -s http://127.0.0.1:59598/api/version
 ```
 
-预期返回包含当前版本号 `0.6.3` 的 JSON（字段结构以实际响应为准）。系统托盘出现图标、主界面显示仪表盘属于界面现象，标记【未验证】，请你手动确认。
+预期返回包含当前版本号 `0.6.4` 的 JSON（字段结构以实际响应为准）。系统托盘出现图标、主界面显示仪表盘属于界面现象，标记【未验证】，请你手动确认。
 
 > 安装包未做 Windows Authenticode 代码签名；发布流水线只生成 Tauri 更新器使用的 `.sig` 签名。首次运行可能触发 SmartScreen 提示（【推测】，未在真机验证）。
 
-从源码构建（面向开发者）见「快速开始」；构建产物为 `target/release/app-usage-tracker.exe`（独立 exe）与 `target/release/bundle/nsis/*_0.6.3_x64-setup.exe`（安装包）。
+从源码构建（面向开发者）见「快速开始」；构建产物为 `target/release/app-usage-tracker.exe`（独立 exe）与 `target/release/bundle/nsis/*_0.6.4_x64-setup.exe`（安装包）。
 
 ## 快速开始
 
@@ -149,6 +149,7 @@ npm run tauri dev
 
 ```bash
 npm run check                               # svelte-check 类型检查
+npm test                                    # vitest 前端单元测试
 npm run build                               # 仅构建前端产物到 dist/
 cargo test -p tracker-core                  # 聚合状态机单元测试
 cargo fmt --all --check                     # 与 CI 一致的格式检查
@@ -156,7 +157,7 @@ cargo clippy --all-targets -- -D warnings   # 与 CI 一致的 lint
 npm run tauri build                         # 生产构建（NSIS 安装包 + 独立 exe）
 ```
 
-上述命令与 `.github/workflows/ci.yml` 一致；本地未逐一运行，标记【未验证】。
+上述命令与 `.github/workflows/ci.yml` 一致；`npm test`、`npm run check`、`npm run build` 已在本地实际运行并通过（2026-11-16，29 个前端用例、0 error、构建成功）；`cargo test` / `fmt` / `clippy` 走 CI 验证。
 
 ## 配置
 
@@ -305,7 +306,11 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 │   ├── Dashboard.svelte        # 仪表盘
 │   ├── SettingsView.svelte     # 设置
 │   ├── Widget.svelte           # 悬浮窗（widget.html 入口）
-│   └── lib/api.ts              # IPC 封装与类型
+│   └── lib/
+│       ├── api.ts              # IPC 封装与类型
+│       ├── compare.ts          # 对比视图区间与变化率（纯逻辑，可单测）
+│       ├── limits.ts           # 每日限额读写（纯逻辑，可单测）
+│       └── i18n.ts             # 中英文案表
 ├── extension/                  # 可选 MV3 浏览器扩展
 ├── .github/workflows/          # CI 与 Release 流水线
 ├── src-tauri/tauri.conf.json   # 应用版本、窗口、更新器配置
@@ -343,10 +348,10 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 
 ## 维护状态与已知限制
 
-- 单人维护；当前发布版本 `v0.6.3`，发布日期 2026-11-16。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.3`。
-- `v0.6.3` 发布了这批改动（备份升到 v2 并新增窗口标题与网页浏览区间、备份/恢复入口、智能安装扩展到 17 款 Chromium 浏览器、对比视图默认「今天 vs 昨天」、顶栏「悬浮窗」按钮左移，以及加载失败三态、开机自启静默、日历日期钉死、排除应用过滤、分类规则实时生效、恢复事务化等修复），详见 `CHANGELOG.md` 的 `[0.6.3]`；后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+- 单人维护；当前发布版本 `v0.6.4`，发布日期 2026-11-16。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.4`。
+- `v0.6.4` 是工程质量版本：前端接入 `vitest`（29 个纯逻辑用例，CI 增加 `npm test`）、GitHub Actions 全部升到 Node 24 运行时，并修复了仪表盘右栏在「本月」等分类较多区间下分类占比盖住趋势图的问题。上一版 `v0.6.3` 的功能改动（备份 v2、备份/恢复入口、17 款 Chromium 智能安装、对比视图默认「今天 vs 昨天」、顶栏「悬浮窗」按钮左移等）见 `CHANGELOG.md` 的 `[0.6.3]`；后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 - Rust + Tauri 2 + Svelte 5 重写版已取代旧 C#/WPF 实现；`main` 为发布分支，与集成分支 `dev` 保持同步。
-- `main` 与 `dev` 的 CI 必需检查 `ci`（`frontend` / `rust` / `tauri-build` / `cross-check` 四 job 的聚合）在 `v0.6.3` 发布提交上全部通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 为准。
+- `main` 与 `dev` 的 CI 必需检查 `ci`（`frontend` / `rust` / `tauri-build` / `cross-check` 四 job 的聚合）在 `v0.6.3` / `v0.6.4` 发布提交上全部通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 为准。
 - 已补齐 `docs/assets/` 下的真实窗口截图（主窗口仪表盘与桌面悬浮窗），见「截图与演示」。
 - `CHANGELOG.md` 的 `0.1.0` / `0.2.0` 属于旧 C# 版历史记录，没有对应的 Git tag 与 GitHub Release，因此没有 compare 链接；`0.3.0` 为破坏性全量重写，仓库未提供旧版数据到新版数据的迁移说明。
 - `src-tauri/tauri.conf.json` 中 `app.security.csp` 为 `null`、`tauri` 依赖启用 `unstable` feature，属于待收敛的技术债。
