@@ -6,6 +6,7 @@
     type ScannedApp,
     type UpdateInfo,
     type ExtInstallResult,
+    type DbMaintenance,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
   import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
@@ -29,6 +30,9 @@
   let extInstalling = $state(false);
   let extResults = $state<ExtInstallResult[]>([]);
   let fileInput: HTMLInputElement | undefined = $state();
+  let maint = $state<DbMaintenance | null>(null);
+  let maintBusy = $state(false);
+  let maintError = $state('');
 
   $effect(() => {
     if (showExtInstall) {
@@ -178,6 +182,31 @@
       status = await api.importBackupJson();
     } catch (e) {
       status = String(e);
+    }
+  }
+
+  function formatBytes(n: number): string {
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let v = n;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i += 1;
+    }
+    return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  }
+
+  async function runMaintenance() {
+    maintBusy = true;
+    maintError = '';
+    try {
+      maint = await api.dbMaintenance();
+    } catch (e) {
+      maintError = String(e);
+      maint = null;
+    } finally {
+      maintBusy = false;
     }
   }
 
@@ -627,6 +656,29 @@
         {/if}
       </section>
 
+      <section class="panel">
+        <h3>{t('数据库维护')}</h3>
+        <p class="hint">{t('压缩数据库并截断 WAL 日志文件')}</p>
+        <div class="row-actions">
+          <button class="ghost" disabled={maintBusy} onclick={runMaintenance}>
+            {maintBusy ? t('处理中') : t('完整性检查 + 压缩 (VACUUM)')}
+          </button>
+        </div>
+        {#if maint}
+          <p class="hint">
+            {t('完整性检查')}：{maint.integrity} · {t('体积')} {formatBytes(maint.db_bytes)} ·
+            {t('页数')} {maint.page_count} · {t('空闲页')} {maint.freelist}
+          </p>
+          <p class="hint">
+            {maint.vacuum_ok ? t('压缩完成') : t('压缩失败')} ·
+            {maint.checkpoint_ok ? t('WAL 已截断') : t('WAL 截断失败')}
+          </p>
+        {/if}
+        {#if maintError}
+          <p class="hint error-text">{maintError}</p>
+        {/if}
+      </section>
+
     </div>
 
     {#if showExtInstall}
@@ -1055,6 +1107,15 @@
     display: flex;
     gap: 10px;
     margin-top: 12px;
+  }
+
+  .row-actions button[disabled] {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .error-text {
+    color: var(--danger);
   }
 
   .ghost {

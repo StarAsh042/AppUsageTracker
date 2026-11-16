@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **settings:** 设置页新增「数据库维护」面板：一键做完整性检查 + VACUUM，并把 WAL 日志截断，结果里显示完整性检查结论、压缩是否成功、主库体积、页数与空闲页数。
+
 ### Changed
 
 - **frontend:** 弹窗外壳抽成共用组件 `src/lib/Modal.svelte`（遮罩点击关闭、Esc 关闭、打开即把焦点移进弹窗、内容超高时自己滚动），仪表盘的应用详情与设置页的扩展安装两处共用一套实现。设置页的扩展安装弹窗此前没有配套样式，是裸元素直接铺在页面上，现在与仪表盘弹窗外观一致。
@@ -20,6 +24,7 @@
 
 ### Internal
 
+- **core:** 治理 WAL 日志膨胀：建库时显式设 `wal_autocheckpoint=1000` 与 `journal_size_limit=1048576`，监控线程每 5 分钟做一次 `wal_checkpoint(TRUNCATE)`，退出、切换数据目录与冒烟模式下也会截断一次。此前全仓库没有一处 checkpoint 调用，`journal_size_limit` 是 SQLite 默认的 -1，自动 checkpoint 只把 WAL 置零复用、不缩文件，实测出现过 3.7 MB 的主库旁挂着 7.3 MB 的 `usage.db-wal`。
 - **core:** 把 `src-tauri/src/lib.rs` 里的纯逻辑抽到 `crates/tracker-core`：新增 `ext.rs`（protobuf varint 读取、CRX3 头部解析取扩展 ID、公钥哈希到扩展 ID 的 a-p 编码、读 `manifest.json` 版本号）与 `accent.rs`（悬浮窗亚克力着色的混色计算），补 10 个单元测试，`cargo test --all --locked` 从 12 例增加到 22 例。`lib.rs` 只保留同名薄封装，调用点与运行时行为不变。
 
 ## [0.6.4] - 2026-11-16
