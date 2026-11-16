@@ -144,8 +144,14 @@
   }
 </script>
 
+<!-- 悬浮窗整块是拖拽/双击表面，不是一个可聚焦控件：
+     键盘用户走主窗口，这里保留鼠标交互并由 aria-label 描述。
+     svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="widget"
+  role="application"
+  aria-label={t('软件使用时间统计')}
   class:compact={prefs?.compact === true}
   class:collapsed
   class:h-edge={edge === 'top' || edge === 'bottom'}

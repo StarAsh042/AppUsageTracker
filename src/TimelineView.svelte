@@ -15,7 +15,17 @@
 
   let { initialDate = localDateKey() }: { initialDate?: string } = $props();
 
-  let date = $state(initialDate);
+  // initialDate 只在挂载时取一次：之后日期由组件自己的日期控件接管，
+  // 父组件后续再改 prop 也不该覆盖用户正在看的这天。
+  // 不直接写 $state(initialDate)，既避开 svelte-check 的 state_referenced_locally，
+  // 也让这段同步只跑一次（initialized 为真后 return，不再读 initialDate）。
+  let date = $state(localDateKey());
+  let initialized = false;
+  $effect.pre(() => {
+    if (initialized) return;
+    initialized = true;
+    date = initialDate;
+  });
   let data = $state<TimelineData | null>(null);
   let titles = $state<TopTitle[]>([]);
   let web = $state<TopWeb[]>([]);

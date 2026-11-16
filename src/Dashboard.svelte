@@ -2,6 +2,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
   import { lang, en } from './lib/i18n';
+  import Modal from './lib/Modal.svelte';
 
   let {
     focusDate = null,
@@ -415,8 +416,9 @@
         </div>
         <div class="table-body">
           {#each data.apps as a, i (a.app_key)}
-            <div
+            <button
               class="row"
+              type="button"
               onclick={() => openDetail(a.app_key)}
               oncontextmenu={(e) => rowMenu(e, a.app_key, a.category)}
               title={a.exe_path}
@@ -429,7 +431,7 @@
                 <span class="bar"><span class="fill" style="width:{Math.min(100, a.percent)}%"></span></span>
                 <span class="pct">{a.percent.toFixed(1)}%</span>
               </span>
-            </div>
+            </button>
           {:else}
             <div class="empty">{t('该时间段暂无数据')}</div>
           {/each}
@@ -551,40 +553,37 @@
 </div>
 
 {#if detail}
-  <div class="modal-mask" onclick={() => (detail = null)}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-head">
-        <div>
-          <div class="m-name">{aliasName(detail.app_key, detail.display_name)}</div>
-          <div class="m-meta"><span class="cat-chip">{detail.category}</span> <span class="m-path">{detail.exe_path}</span></div>
-        </div>
-        <button class="m-close" onclick={() => (detail = null)}>✕</button>
-      </div>
-      <div class="alias-row">
-        <input
-          class="alias-input"
-          placeholder={t('自定义显示名')}
-          bind:value={aliasDraft}
-          spellcheck="false"
-        />
-        <button class="alias-save" onclick={saveAlias}>{t('改名')}</button>
-      </div>
-      <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>
-      <div class="m-trend">
-        {#each detail.daily as pt (pt.date)}
-          <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
-            <div class="t-bar-wrap">
-              <div class="t-fill" style="height:{(pt.seconds / maxDetailPoints(detail.daily)) * 100}%"></div>
-            </div>
-            <div class="t-label">{pt.date.slice(5)}</div>
-          </div>
-        {:else}
-          <div class="empty">{t('该区间无数据')}</div>
-        {/each}
-      </div>
-      <div class="m-hint">{t('右键排行行可随时改分类')}</div>
+  <!-- 窄化用 @const 落到局部变量：snippet 内部访问外层 detail 时 TS 拿不到非空推断 -->
+  {@const d = detail}
+  <Modal label={aliasName(d.app_key, d.display_name)} onclose={() => (detail = null)}>
+    {#snippet head()}
+      <div class="m-name">{aliasName(d.app_key, d.display_name)}</div>
+      <div class="m-meta"><span class="cat-chip">{d.category}</span> <span class="m-path">{d.exe_path}</span></div>
+    {/snippet}
+    <div class="alias-row">
+      <input
+        class="alias-input"
+        placeholder={t('自定义显示名')}
+        bind:value={aliasDraft}
+        spellcheck="false"
+      />
+      <button class="alias-save" onclick={saveAlias}>{t('改名')}</button>
     </div>
-  </div>
+    <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>
+    <div class="m-trend">
+      {#each detail.daily as pt (pt.date)}
+        <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
+          <div class="t-bar-wrap">
+            <div class="t-fill" style="height:{(pt.seconds / maxDetailPoints(detail.daily)) * 100}%"></div>
+          </div>
+          <div class="t-label">{pt.date.slice(5)}</div>
+        </div>
+      {:else}
+        <div class="empty">{t('该区间无数据')}</div>
+      {/each}
+    </div>
+    <div class="m-hint">{t('右键排行行可随时改分类')}</div>
+  </Modal>
 {/if}
 
 {#if menu}
@@ -714,11 +713,6 @@
     text-overflow: ellipsis;
   }
 
-  .card .value.small {
-    font-size: 16px;
-    line-height: 26px;
-  }
-
   .content {
     flex: 1;
     display: grid;
@@ -770,6 +764,22 @@
     gap: 8px;
     align-items: center;
     padding: 7px 6px;
+  }
+
+  /* 排行行是可点进详情的，所以用 button：键盘能 Tab 到、能回车触发。
+     按钮默认样式要全部抹掉，否则继承浏览器底色和边框。 */
+  button.row {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    width: 100%;
+  }
+
+  button.row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .table-head {
@@ -1086,31 +1096,8 @@
     border-radius: 3px;
   }
 
-  .modal-mask {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-  }
-
-  .modal {
-    width: min(560px, 88%);
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 18px;
-  }
-
-  .modal-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
+  /* 弹窗外壳（遮罩 / 卡片 / 关闭按钮）在 lib/Modal.svelte 里，
+     这里只留弹窗内部内容自己的样式。 */
   .m-name {
     font-size: 17px;
     font-weight: 700;
@@ -1130,19 +1117,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 340px;
-  }
-
-  .m-close {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    border-radius: 7px;
-    padding: 4px 10px;
-    cursor: pointer;
-  }
-
-  .m-close:hover {
-    color: var(--text);
   }
 
   .alias-row {

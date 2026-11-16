@@ -8,8 +8,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **frontend:** 弹窗外壳抽成共用组件 `src/lib/Modal.svelte`（遮罩点击关闭、Esc 关闭、打开即把焦点移进弹窗、内容超高时自己滚动），仪表盘的应用详情与设置页的扩展安装两处共用一套实现。设置页的扩展安装弹窗此前没有配套样式，是裸元素直接铺在页面上，现在与仪表盘弹窗外观一致。
+- **frontend:** 仪表盘应用排行行由 `div` 改为 `button`，键盘可以 Tab 聚焦、回车打开详情，聚焦时有可见描边；行内文字排版与右键菜单行为不变。
+
 ### Fixed
 
+- **a11y:** 把 `npm run check` 的 svelte-check 告警从 13 条清到 0 条：两处弹窗支持 Esc 关闭（此前按 Esc 无反应，只能点遮罩或关闭按钮）；`TimelineView` 不再在初始化时直接引用 prop（`state_referenced_locally`），改为挂载后同步一次；悬浮窗根节点补 `role="application"` 与 `aria-label` 说明它是整块拖拽表面；删除未使用的 `.card .value.small` 选择器。
 - **app:** 修复启动瞬间先闪一下白底/灰底、随后才变暗的问题：主窗口在透明模式下启用 `noRedirectionBitmap`（`WS_EX_NOREDIRECTIONBITMAP`）并把 `backgroundColor` 设为全透明，WebView2 首帧渲染前不再露出白色默认底。
 
 ## [0.6.4] - 2026-11-16
