@@ -8,7 +8,8 @@ use tracker_core::models::{
     DailyUsage, ForegroundInterval, StateInterval, TitleInterval, WebInterval,
 };
 
-use crate::{open_path, AppState};
+use crate::commands::open_path;
+use crate::AppState;
 
 /// 当前备份格式版本；v2 起包含窗口标题与网页区间，旧备份仍可恢复（缺省为空）。
 const BACKUP_VERSION: u32 = 2;
