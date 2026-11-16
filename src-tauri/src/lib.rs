@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::CategoryResolver;
+use tracker_core::fmt::{csv_escape, fmt_hms};
 use tracker_core::models::{AppIdentity, DailyUsage, TrackingState, WebInterval};
 use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
@@ -490,28 +491,4 @@ fn open_path(path: String) -> Result<(), String> {
 #[tauri::command]
 fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
-}
-
-// ---------- 小工具 ----------
-
-fn fmt_hms(seconds: f64) -> String {
-    let total = seconds as i64;
-    let h = total / 3600;
-    let m = (total % 3600) / 60;
-    let s = total % 60;
-    if h > 0 {
-        format!("{h}时{m}分")
-    } else if m > 0 {
-        format!("{m}分{s}秒")
-    } else {
-        format!("{s}秒")
-    }
-}
-
-fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
 }

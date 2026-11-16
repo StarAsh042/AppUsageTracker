@@ -2,6 +2,7 @@ pub mod accent;
 pub mod aggregator;
 pub mod category;
 pub mod ext;
+pub mod fmt;
 pub mod limits;
 pub mod models;
 pub mod settings;

@@ -14,7 +14,9 @@ use tracker_core::models::{
     WebInterval,
 };
 
-use crate::{fmt_hms, live_status, version_info, AppState};
+use tracker_core::fmt::fmt_hms;
+
+use crate::{live_status, version_info, AppState};
 
 /// 自身进程名（小写，不含扩展名），用于排除统计程序自己（含旧数据清理）。
 pub(crate) fn self_stem() -> &'static str {

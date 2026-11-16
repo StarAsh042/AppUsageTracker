@@ -5,8 +5,10 @@ use chrono::Local;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
+use tracker_core::fmt::fmt_hms;
+
 use crate::dashboard::build_dashboard;
-use crate::{fmt_hms, AppState};
+use crate::AppState;
 
 #[derive(Serialize, Clone)]
 pub(crate) struct DbMaintenance {
