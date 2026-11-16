@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 收紧 CSP：`src-tauri/tauri.conf.json` 的 `app.security.csp` 从 `null` 改为 `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; font-src 'self'; object-src 'none'; base-uri 'self'`。前端不引用任何外链资源（无图片/字体/CDN，构建产物只有 3 个 JS + 3 个 CSS 与各自一个 `<script type="module">`），所以脚本侧不需要 `'unsafe-inline'`；`style-src` 保留 `'unsafe-inline'` 是因为 Svelte 会输出内联 `style` 属性；`connect-src` 放行 `ipc:` 与 `http://ipc.localhost` 供 Tauri IPC 使用。
 - **core:** 去掉 `tauri` 的 `unstable` feature：全仓库唯一的不稳定 API 是 `show_widget_menu` 里的 `AppHandle::get_window`，改用稳定的 `get_webview_window` + `WebviewWindow::popup_menu`，`src-tauri/Cargo.toml` 的 `features` 只剩 `["tray-icon"]`，行为不变。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十六步：四条通用 IPC 命令（`clear_all_data`、`export_csv`、`open_path`、`get_app_version`）搬到 `src-tauri/src/commands.rs`（80 行），`backup.rs` 改为从 `crate::commands` 导入 `open_path`，行为不变，`lib.rs` 从 397 行降到 324 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十五步：实时状态搬到 `src-tauri/src/live.rs`（109 行，含 `LiveTopApp`/`LiveStatus` 两个结构与 `live_status`、`get_live_status` 命令），`api_server.rs` 与 `monitor.rs` 改为从 `crate::live` 导入，行为不变，`lib.rs` 从 494 行降到 397 行。
