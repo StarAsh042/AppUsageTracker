@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第七步：JSON 备份与恢复整体搬到 `src-tauri/src/backup.rs`（229 行，含 `BackupFile` v2 结构、导出、按名/按内容恢复、删除与列表），行为不变，`lib.rs` 从 1810 行降到 1588 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第六步：本地 HTTP API 整体搬到 `src-tauri/src/api_server.rs`（308 行，含 `spawn_api_server`、`handle_api` 路由、`extract_domain`、浏览器扩展心跳 `heartbeat_web`），实时状态 `live_status` 留在 `lib.rs`（API 与 IPC 共用），行为不变，`lib.rs` 从 2107 行降到 1810 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第五步：浏览器扩展安装整体搬到 `src-tauri/src/ext_install.rs`（583 行，含扩展落盘、CRX3 打包、注册表注册与 17 款 Chromium 浏览器的智能安装），行为不变，`lib.rs` 从 2682 行降到 2107 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第四步：监控线程相关逻辑（自身进程名识别、前台窗口识别与进程名缓存、轮询主循环、落库 `flush_state`、保留策略清理、分类限额提醒）整体搬到 `src-tauri/src/monitor.rs`，行为不变，`lib.rs` 从 2987 行降到 2682 行。
