@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十步：应用详情与应用扫描整体搬到 `src-tauri/src/apps.rs`（217 行，含 `AppDetail`/`ScannedApp`、`get_app_detail`、`scan_installed_apps` 与 `collect_lnks` 递归遍历桌面 / 开始菜单 `.lnk`），行为不变，`lib.rs` 从 1320 行降到 1114 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第九步：时间线数据整体搬到 `src-tauri/src/timeline.rs`（81 行，含 `TimelineSegment`/`TimelineState`/`TimelineData`、`get_timeline` 命令与 `timeline_data`），`api_server.rs` 改为从新模块导入，行为不变，`lib.rs` 从 1395 行降到 1320 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第八步：仪表盘 / 周报的数据聚合搬到 `src-tauri/src/dashboard.rs`（210 行，含 `DashboardApp`/`DashboardCategory`/`DashboardTrendPoint`/`DashboardData` 四个结构、`get_dashboard` 命令与 `build_dashboard`），`api_server.rs` 改为从新模块导入，行为不变，`lib.rs` 从 1588 行降到 1395 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第七步：JSON 备份与恢复整体搬到 `src-tauri/src/backup.rs`（229 行，含 `BackupFile` v2 结构、导出、按名/按内容恢复、删除与列表），行为不变，`lib.rs` 从 1810 行降到 1588 行。
