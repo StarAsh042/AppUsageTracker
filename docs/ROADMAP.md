@@ -14,7 +14,7 @@
 
 | 位置 | 说明 |
 | --- | --- |
-| `src-tauri/src/lib.rs` | 3565 行（`update.rs` 已切出），监控线程 / IPC 命令 / 托盘 / 悬浮窗 / 更新 / 扩展安装全在一起；另有 `autostart.rs` 43 行 |
+| `src-tauri/src/lib.rs` | 3465 行（`update.rs`、`tray.rs` 已切出），监控线程 / IPC 命令 / 托盘 / 悬浮窗 / 更新 / 扩展安装全在一起；另有 `autostart.rs` 43 行 |
 | `crates/tracker-core/src/` | store 595、aggregator 509、settings 481、win32 141、models 83、category 32、limits 22、lib 13 |
 | `src/` | Dashboard 1280、SettingsView 1121、TimelineView 632、CalendarView 494、CompareView 479、Widget 428、App 266、lib/api.ts 288、lib/i18n.ts 242、lib/compare.ts 75（+ 测试 165）、lib/limits.ts 17（+ 测试 46） |
 
@@ -59,8 +59,8 @@
 
 ## P2 架构收敛
 
-- [ ] **拆分 `src-tauri/src/lib.rs`（3565 行）**：按职责切成 `monitor.rs`（监控线程与聚合）、`windows.rs`（主窗/悬浮窗/动画/钳位）、`tray.rs`、`commands/`（按域分文件）、`update.rs`、`ext_install.rs`。先做纯移动 + `pub(crate)` 可见性调整，不改行为，每步都用 `cargo check`/`clippy`/`test` 验证。
-  - 进度：`update.rs` 已切出（96 行，含 `updater_endpoints`、`UpdateInfo`、`check_update`、`install_update`），`lib.rs` 从 3727 行降到 3565 行。每切一个模块合一次 PR。
+- [ ] **拆分 `src-tauri/src/lib.rs`（3465 行）**：按职责切成 `monitor.rs`（监控线程与聚合）、`windows.rs`（主窗/悬浮窗/动画/钳位）、`tray.rs`、`commands/`（按域分文件）、`update.rs`、`ext_install.rs`。先做纯移动 + `pub(crate)` 可见性调整，不改行为，每步都用 `cargo check`/`clippy`/`test` 验证。
+  - 进度：`update.rs` 已切出（96 行，含 `updater_endpoints`、`UpdateInfo`、`check_update`、`install_update`）；`tray.rs` 已切出（112 行，含 `TrayHandles`、`build_tray` 与托盘菜单事件、退出前 flush + checkpoint）。`lib.rs` 从 3727 行降到 3465 行。每切一个模块合一次 PR。
 - [ ] **移除 `tauri` 的 `unstable` feature**：`src-tauri/Cargo.toml` 里 `features = ["tray-icon", "unstable"]`。先定位用到的不稳定 API（悬浮窗动态创建 / 窗口位置相关）【推断】，再用稳定 API 替代或隔离。
 - [ ] **收紧 CSP**：`src-tauri/tauri.conf.json` 的 `app.security.csp` 目前是 `null`。改成只允许 `'self'` 与必要的 `style-src 'unsafe-inline'`（Svelte 内联样式），逐页验证不白屏。
 - [ ] **窗口定义收敛**：widget 窗口是代码里 `create_widget_window` 动态建的（`tauri.conf.json` 的 windows 数组只有 main）。评估改为配置声明 + 运行时只改位置，减少命令式建窗的分支。
