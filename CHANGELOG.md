@@ -17,6 +17,10 @@
 
 - **ci:** GitHub Actions 升级到 Node 24 运行时：`actions/checkout` 与 `actions/setup-node` 由 `v4` 升到 `v5`，`actions/upload-artifact` 由 `v4` 升到 `v6`，`actions/download-artifact` 由 `v4` 升到 `v7`，消除 Node 20 弃用告警。
 
+### Fixed
+
+- **frontend:** 修复仪表盘右栏在「本月」等分类较多的区间下，「分类占比」的类目列表盖到下方「效率趋势」图上的问题：右栏面板改为可收缩，类目列表与图例各自滚动，趋势图保留基准高度不再被压扁。
+
 ## [0.6.3] - 2026-11-16
 
 ### Added
