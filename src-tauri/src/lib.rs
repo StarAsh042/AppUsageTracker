@@ -5,6 +5,7 @@ mod backup;
 mod dashboard;
 mod ext_install;
 mod monitor;
+mod settings;
 mod timeline;
 mod tray;
 mod update;
@@ -14,8 +15,8 @@ mod windows;
 rust_i18n::i18n!("locales", fallback = "zh-CN");
 use rust_i18n::t;
 
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashSet;
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
 use chrono::Local;
@@ -25,9 +26,9 @@ use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracker_core::aggregator::UsageAggregator;
-use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
+use tracker_core::category::CategoryResolver;
 use tracker_core::models::{AppIdentity, DailyUsage, TrackingState, WebInterval};
-use tracker_core::settings::{CategoryRuleDef, TrackerSettings, WidgetPrefs};
+use tracker_core::settings::{TrackerSettings, WidgetPrefs};
 use tracker_core::store::SqliteStore;
 
 /// 全局应用状态（Tauri managed state）。
@@ -104,7 +105,7 @@ pub fn run() {
                             .get_webview_window("widget")
                             .map(|w| w.is_visible().unwrap_or(false))
                             .unwrap_or(false);
-                        set_widget_visible(app, !visible);
+                        settings::set_widget_visible(app, !visible);
                         let guard = st.tray.lock().unwrap();
                         if let Some(h) = guard.as_ref() {
                             let _ = h.widget_toggle.set_checked(!visible);
@@ -116,14 +117,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             dashboard::get_dashboard,
             get_live_status,
-            get_settings,
-            save_settings,
-            set_paused,
-            set_app_category,
-            save_category_rules,
+            settings::get_settings,
+            settings::save_settings,
+            settings::set_paused,
+            settings::set_app_category,
+            settings::save_category_rules,
             export_csv,
             clear_all_data,
-            list_available_categories,
+            settings::list_available_categories,
             open_path,
             get_app_version,
             show_widget_menu,
@@ -134,8 +135,8 @@ pub fn run() {
             timeline::get_timeline,
             windows::toggle_main_window,
             apps::get_app_detail,
-            exclude_app,
-            set_app_display_name,
+            settings::exclude_app,
+            settings::set_app_display_name,
             update::check_update,
             update::install_update,
             get_top_titles,
@@ -155,9 +156,9 @@ pub fn run() {
             backup::restore_backup_content,
         ])
         .setup(|app| {
-            let settings = load_settings();
+            let settings = settings::load_settings();
             std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
-            let store = SqliteStore::open(&db_path(&settings.data_directory))
+            let store = SqliteStore::open(&settings::db_path(&settings.data_directory))
                 .map_err(|e| format!("打开数据库失败: {e}"))?;
 
             // 排除名单 = 用户配置 + 自身（始终排除）
@@ -217,7 +218,7 @@ pub fn run() {
                     let _ = autostart::set(true, &exe.to_string_lossy());
                 }
             }
-            apply_locale(&handle);
+            settings::apply_locale(&handle);
             tray::build_tray(&handle)?;
             apply_hotkeys(&handle);
             windows::setup_main_window(&handle);
@@ -318,7 +319,7 @@ pub fn run() {
 }
 
 /// 全局热键注册（设置开关）。
-fn apply_hotkeys(app: &AppHandle) {
+pub(crate) fn apply_hotkeys(app: &AppHandle) {
     let (enabled, main_hk_s, widget_hk_s) = {
         let st = app.state::<AppState>();
         let s = st.settings.lock().unwrap();
@@ -415,105 +416,6 @@ pub(crate) fn live_status(app: &AppHandle) -> LiveStatus {
     }
 }
 
-// ---------- 设置 ----------
-
-/// 应用别名：仅影响展示，不改历史数据与分类匹配。
-pub(crate) fn display_alias(settings: &TrackerSettings, app_key: &str, original: &str) -> String {
-    settings
-        .app_display_names
-        .get(app_key)
-        .cloned()
-        .unwrap_or_else(|| original.to_string())
-}
-
-/// 解析界面语言（system = 中文）。
-fn resolve_locale(language: &str) -> &'static str {
-    if language.starts_with("en") {
-        "en-US"
-    } else {
-        "zh-CN"
-    }
-}
-
-fn apply_locale(app: &AppHandle) {
-    let lang = {
-        let st = app.state::<AppState>();
-        let v = st.settings.lock().unwrap().language.clone();
-        v
-    };
-    rust_i18n::set_locale(resolve_locale(&lang));
-}
-
-fn db_path(data_dir: &str) -> String {
-    std::path::Path::new(data_dir)
-        .join("usage.db")
-        .to_string_lossy()
-        .to_string()
-}
-
-fn load_settings() -> TrackerSettings {
-    let base = TrackerSettings::default();
-    let path = std::path::Path::new(&base.data_directory).join("settings.json");
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Ok(mut s) = serde_json::from_str::<TrackerSettings>(&text) {
-            migrate_settings(&mut s);
-            return s;
-        }
-    }
-    base
-}
-
-/// 设置结构迁移链：按 schema_version 逐级升级（当前 v1）。
-fn migrate_settings(s: &mut TrackerSettings) {
-    if s.schema_version < 1 {
-        s.schema_version = 1;
-    }
-}
-
-fn save_settings_file(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let s = state.settings.lock().unwrap().clone();
-    let _ = std::fs::create_dir_all(&s.data_directory);
-    let path = std::path::Path::new(&s.data_directory).join("settings.json");
-    if let Ok(json) = serde_json::to_string_pretty(&s) {
-        let _ = std::fs::write(path, json);
-    }
-}
-
-fn set_widget_visible(app: &AppHandle, visible: bool) {
-    if visible {
-        if app.get_webview_window("widget").is_none() {
-            if let Err(e) = windows::create_widget_window(app) {
-                eprintln!("create widget failed: {e}");
-            }
-            windows::setup_widget_clamp(app);
-        } else if let Some(w) = app.get_webview_window("widget") {
-            let _ = w.show();
-        }
-    } else if let Some(w) = app.get_webview_window("widget") {
-        let _ = w.hide();
-    }
-    {
-        let state = app.state::<AppState>();
-        state.settings.lock().unwrap().show_floating_widget = visible;
-    }
-    save_settings_file(app);
-    let _ = app.emit("widget://visibility", visible);
-}
-
-fn set_paused_internal(app: &AppHandle, paused: bool) {
-    let state = app.state::<AppState>();
-    state.user_paused.store(paused, Ordering::Relaxed);
-    let mut agg = state.aggregator.lock().unwrap();
-    let now = Local::now();
-    if paused {
-        agg.pause(now);
-    } else {
-        let mut cache = HashMap::new();
-        agg.resume(monitor::foreground_identity(&mut cache), now);
-    }
-}
-
 // ---------- Tauri Commands ----------
 
 #[tauri::command]
@@ -580,7 +482,7 @@ fn toggle_widget(app: AppHandle) -> bool {
         .map(|w| w.is_visible().unwrap_or(false))
         .unwrap_or(false);
     let next = !visible;
-    set_widget_visible(&app, next);
+    settings::set_widget_visible(&app, next);
     if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
         let _ = h.widget_toggle.set_checked(next);
     }
@@ -590,7 +492,7 @@ fn toggle_widget(app: AppHandle) -> bool {
 /// 悬浮窗 ✕ 按钮：关闭（隐藏）悬浮窗并写回设置、同步托盘勾选。
 #[tauri::command]
 fn close_widget(app: AppHandle) {
-    set_widget_visible(&app, false);
+    settings::set_widget_visible(&app, false);
     if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
         let _ = h.widget_toggle.set_checked(false);
     }
@@ -621,218 +523,6 @@ fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
 fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), String> {
     windows::apply_widget_prefs(&app, &widget);
     Ok(())
-}
-
-#[tauri::command]
-fn get_settings(state: State<AppState>) -> TrackerSettings {
-    state.settings.lock().unwrap().clone()
-}
-
-#[tauri::command]
-fn save_settings(
-    app: AppHandle,
-    state: State<AppState>,
-    settings: TrackerSettings,
-) -> Result<(), String> {
-    // 热键组合合法性校验（解析失败或重复即拒绝）
-    if settings.hotkeys_enabled {
-        let main_hk: Shortcut = settings
-            .hotkey_main
-            .parse()
-            .map_err(|_| format!("主界面热键无效: {}", settings.hotkey_main))?;
-        let widget_hk: Shortcut = settings
-            .hotkey_widget
-            .parse()
-            .map_err(|_| format!("悬浮窗热键无效: {}", settings.hotkey_widget))?;
-        if main_hk == widget_hk {
-            return Err("主界面与悬浮窗热键不能相同".into());
-        }
-    }
-    let old_dir = state.settings.lock().unwrap().data_directory.clone();
-    let dir_changed = old_dir != settings.data_directory;
-
-    autostart::set(
-        settings.start_with_windows,
-        &std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .to_string_lossy(),
-    )?;
-
-    if dir_changed {
-        std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
-        let (daily, intervals) = {
-            let st = state.store.lock().unwrap();
-            let daily = st
-                .query_daily("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?;
-            let intervals = st
-                .query_intervals("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?;
-            // 换库前把旧库的 WAL 落盘并截断，免得用户切回旧目录时看到一份
-            // 落后若干个 30 秒周期的数据。
-            let _ = st.checkpoint();
-            (daily, intervals)
-        };
-        let new_store =
-            SqliteStore::open(&db_path(&settings.data_directory)).map_err(|e| e.to_string())?;
-        new_store
-            .save_daily_replace(&daily)
-            .map_err(|e| e.to_string())?;
-        new_store
-            .save_intervals(&intervals)
-            .map_err(|e| e.to_string())?;
-        *state.store.lock().unwrap() = new_store;
-    }
-
-    {
-        let mut excluded: HashSet<String> = settings.excluded_app_keys.iter().cloned().collect();
-        if let Ok(self_exe) = std::env::current_exe() {
-            excluded.insert(self_exe.to_string_lossy().to_lowercase());
-        }
-        let mut agg = state.aggregator.lock().unwrap();
-        agg.apply_settings(settings.idle_threshold_seconds as f64, excluded);
-    }
-
-    *state.settings.lock().unwrap() = settings.clone();
-    save_settings_file(&app);
-    // 先重建 resolver 缓存，再通知前端，避免前端刷新时仍读到旧分类
-    rebuild_resolver(&app);
-    let _ = app.emit("app://settings", &settings);
-    apply_locale(&app);
-    apply_hotkeys(&app);
-    api_server::spawn_api_server(&app);
-
-    // 悬浮窗可见性同步
-    let want = state.settings.lock().unwrap().show_floating_widget;
-    let now_visible = app
-        .get_webview_window("widget")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-    if want != now_visible {
-        set_widget_visible(&app, want);
-    }
-    if let Some(h) = state.tray.lock().unwrap().as_ref() {
-        let _ = h.widget_toggle.set_checked(want);
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn set_paused(app: AppHandle, state: State<AppState>, paused: bool) {
-    set_paused_internal(&app, paused);
-    if let Some(h) = state.tray.lock().unwrap().as_ref() {
-        let _ = h.pause_toggle.set_checked(paused);
-    }
-}
-
-/// 设置应用别名（空 = 恢复默认名）。
-#[tauri::command]
-fn set_app_display_name(app: AppHandle, state: State<AppState>, app_key: String, name: String) {
-    {
-        let mut s = state.settings.lock().unwrap();
-        let trimmed = name.trim().to_string();
-        if trimmed.is_empty() {
-            s.app_display_names.remove(&app_key);
-        } else {
-            s.app_display_names.insert(app_key, trimmed);
-        }
-    }
-    save_settings_file(&app);
-    let settings = state.settings.lock().unwrap().clone();
-    let _ = app.emit("app://settings", &settings);
-}
-
-/// 排除应用：停止统计 + 清除其全部已有记录。
-#[tauri::command]
-fn exclude_app(app: AppHandle, state: State<AppState>, app_key: String) -> Result<(), String> {
-    {
-        let mut s = state.settings.lock().unwrap();
-        if !s.excluded_app_keys.contains(&app_key) {
-            s.excluded_app_keys.push(app_key.clone());
-        }
-    }
-    save_settings_file(&app);
-    {
-        let (idle, excluded_list) = {
-            let s = state.settings.lock().unwrap();
-            (s.idle_threshold_seconds as f64, s.excluded_app_keys.clone())
-        };
-        let mut excluded: HashSet<String> = excluded_list.into_iter().collect();
-        if let Ok(self_exe) = std::env::current_exe() {
-            excluded.insert(self_exe.to_string_lossy().to_lowercase());
-        }
-        let mut agg = state.aggregator.lock().unwrap();
-        agg.apply_settings(idle, excluded);
-        agg.daily.retain(|_, v| v.app_key != app_key);
-        agg.pending_intervals.retain(|v| v.app_key != app_key);
-        agg.pending_title_intervals.retain(|v| v.app_key != app_key);
-    }
-    state
-        .store
-        .lock()
-        .unwrap()
-        .delete_app_rows(&app_key)
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// 分类规则/覆盖变化 → 重建 resolver 缓存（仪表盘、时间线、实时状态都读它）。
-fn rebuild_resolver(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let (rules, overrides) = {
-        let s = state.settings.lock().unwrap();
-        (s.category_rules.clone(), s.app_category_overrides.clone())
-    };
-    *state.resolver.lock().unwrap() = std::sync::Arc::new(CategoryResolver::new(rules, overrides));
-}
-
-#[tauri::command]
-fn set_app_category(app: AppHandle, state: State<AppState>, app_key: String, category: String) {
-    {
-        let mut s = state.settings.lock().unwrap();
-        if category == UNCATEGORIZED {
-            s.app_category_overrides.remove(&app_key);
-        } else {
-            s.app_category_overrides.insert(app_key, category);
-        }
-    }
-    save_settings_file(&app);
-    rebuild_resolver(&app);
-    let settings = state.settings.lock().unwrap().clone();
-    let _ = app.emit("app://settings", &settings);
-}
-
-#[tauri::command]
-fn save_category_rules(
-    app: AppHandle,
-    state: State<AppState>,
-    rules: Vec<CategoryRuleDef>,
-) -> Result<(), String> {
-    if rules.is_empty() {
-        return Err("至少保留一条分类规则".into());
-    }
-    for r in &rules {
-        if r.name.trim().is_empty() || r.keywords.is_empty() {
-            return Err("分类名与关键词不能为空".into());
-        }
-    }
-    {
-        let mut s = state.settings.lock().unwrap();
-        s.category_rules = rules;
-    }
-    save_settings_file(&app);
-    rebuild_resolver(&app);
-    let settings = state.settings.lock().unwrap().clone();
-    let _ = app.emit("app://settings", &settings);
-    Ok(())
-}
-
-#[tauri::command]
-fn list_available_categories(state: State<AppState>) -> Vec<String> {
-    let s = state.settings.lock().unwrap();
-    let mut cats: Vec<String> = s.category_rules.iter().map(|r| r.name.clone()).collect();
-    cats.push(UNCATEGORIZED.to_string());
-    cats
 }
 
 #[tauri::command]
