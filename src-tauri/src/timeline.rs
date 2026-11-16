@@ -4,7 +4,8 @@
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-use crate::{display_alias, AppState};
+use crate::settings::display_alias;
+use crate::AppState;
 
 #[derive(Serialize, Clone)]
 pub(crate) struct TimelineSegment {

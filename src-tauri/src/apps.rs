@@ -12,7 +12,8 @@ use tauri::{AppHandle, Manager};
 use tracker_core::category::UNCATEGORIZED;
 
 use crate::dashboard::DashboardTrendPoint;
-use crate::{display_alias, AppState};
+use crate::settings::display_alias;
+use crate::AppState;
 
 #[derive(Serialize, Clone)]
 pub(crate) struct AppDetail {

@@ -4,7 +4,8 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{save_settings_file, AppState};
+use crate::settings::save_settings_file;
+use crate::AppState;
 
 /// 「加载已解压的扩展程序」用的目录（数据目录内）。
 /// 绝不去探测 exe 的相对路径：安装版会命中用户家目录下无关的 extension/ 目录。

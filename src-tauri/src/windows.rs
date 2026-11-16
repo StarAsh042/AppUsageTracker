@@ -11,7 +11,8 @@ use tauri::{
 };
 use tracker_core::settings::WidgetPrefs;
 
-use crate::{save_settings_file, AppState};
+use crate::settings::save_settings_file;
+use crate::AppState;
 
 /// 悬浮窗三种形态（逻辑像素）：贴边收起后只留一根细线（横边横线、竖边竖线）。
 pub(crate) const WIDGET_NORMAL: (f64, f64) = (300.0, 216.0);
