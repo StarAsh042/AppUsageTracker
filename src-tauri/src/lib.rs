@@ -1,24 +1,9 @@
 mod autostart;
+mod update;
 mod version_info;
 
 rust_i18n::i18n!("locales", fallback = "zh-CN");
 use rust_i18n::t;
-
-const OFFICIAL_LATEST: &str =
-    "https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest.json";
-const MIRROR_LATEST: &str = "https://gh-proxy.com/https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest-mirror.json";
-
-/// 按下载通道返回更新端点（auto = 官方优先、镜像回退）。
-fn updater_endpoints(channel: &str) -> Vec<url::Url> {
-    use std::str::FromStr;
-    let official = url::Url::from_str(OFFICIAL_LATEST).expect("valid url");
-    let mirror = url::Url::from_str(MIRROR_LATEST).expect("valid url");
-    match channel {
-        "official" => vec![official],
-        "mirror" => vec![mirror],
-        _ => vec![official, mirror],
-    }
-}
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -202,8 +187,8 @@ pub fn run() {
             get_app_detail,
             exclude_app,
             set_app_display_name,
-            check_update,
-            install_update,
+            update::check_update,
+            update::install_update,
             get_top_titles,
             get_top_web,
             get_extension_path,
@@ -501,80 +486,6 @@ fn apply_hotkeys(app: &AppHandle) {
     if let Ok(hk) = widget_hk_s.parse::<Shortcut>() {
         let _ = gs.register(hk);
     }
-}
-
-// ---------- 应用内更新 ----------
-
-use tauri_plugin_updater::UpdaterExt;
-
-#[derive(Serialize, Clone)]
-struct UpdateInfo {
-    version: String,
-    notes: String,
-    date: String,
-}
-
-#[tauri::command]
-async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let (channel, use_proxy) = {
-        let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
-        (s.update_channel.clone(), s.update_use_proxy)
-    };
-    let mut builder = app
-        .updater_builder()
-        .endpoints(updater_endpoints(&channel))
-        .map_err(|e| format!("端点配置失败: {e}"))?;
-    // 关闭代理时强制跳过系统代理（直连）；开启时沿用系统代理设置。
-    if !use_proxy {
-        builder = builder.no_proxy();
-    }
-    let update = builder
-        .build()
-        .map_err(|e| format!("初始化更新器失败: {e}"))?
-        .check()
-        .await
-        .map_err(|e| format!("检查更新失败: {e}"))?;
-    Ok(update.map(|u| UpdateInfo {
-        version: u.version.clone(),
-        notes: u.body.clone().unwrap_or_default(),
-        date: u.date.map(|d| d.to_string()).unwrap_or_default(),
-    }))
-}
-
-#[tauri::command]
-async fn install_update(app: AppHandle) -> Result<(), String> {
-    let (channel, use_proxy) = {
-        let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
-        (s.update_channel.clone(), s.update_use_proxy)
-    };
-    let mut builder = app
-        .updater_builder()
-        .endpoints(updater_endpoints(&channel))
-        .map_err(|e| format!("端点配置失败: {e}"))?;
-    // 关闭代理时强制跳过系统代理（直连）；开启时沿用系统代理设置。
-    if !use_proxy {
-        builder = builder.no_proxy();
-    }
-    let mut update = builder
-        .build()
-        .map_err(|e| format!("初始化更新器失败: {e}"))?
-        .check()
-        .await
-        .map_err(|e| format!("检查更新失败: {e}"))?
-        .ok_or("当前已是最新版本")?;
-    // 下载 URL 走 gh-proxy（国内直连可达）
-    let original = update.download_url.to_string();
-    update.download_url = url::Url::parse(&format!("https://gh-proxy.com/{}", original))
-        .map_err(|e| format!("URL 重写失败: {e}"))?;
-    let version = update.version.clone();
-    update
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|e| format!("安装更新失败: {e}"))?;
-    println!("已更新到 {version}，应用即将重启");
-    Ok(())
 }
 
 /// 悬浮窗双击切换主界面（前端调用）。
