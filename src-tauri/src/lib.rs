@@ -1,4 +1,5 @@
 mod autostart;
+mod tray;
 mod update;
 mod version_info;
 
@@ -12,7 +13,7 @@ use std::sync::Mutex;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIcon;
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WindowEvent,
 };
@@ -44,7 +45,7 @@ struct AppState {
     store: Mutex<SqliteStore>,
     user_paused: AtomicBool,
     notified_limits: Mutex<HashSet<String>>,
-    tray: Mutex<Option<TrayHandles>>,
+    tray: Mutex<Option<tray::TrayHandles>>,
     tray_icon: Mutex<Option<TrayIcon<tauri::Wry>>>,
     /// 悬浮窗展开态锚点（物理坐标），贴边收起/展开围绕它，避免循环漂移。
     widget_anchor: Mutex<(i32, i32)>,
@@ -58,11 +59,6 @@ struct AppState {
     web_pending: Mutex<Vec<WebInterval>>,
     /// 分类解析器缓存（save_settings 时重建，避免每秒克隆规则）。
     resolver: Mutex<std::sync::Arc<CategoryResolver>>,
-}
-
-struct TrayHandles {
-    widget_toggle: CheckMenuItem<tauri::Wry>,
-    pause_toggle: CheckMenuItem<tauri::Wry>,
 }
 
 // ---------- 悬浮窗 / 主窗口实时状态 ----------
@@ -269,7 +265,7 @@ pub fn run() {
                 }
             }
             apply_locale(&handle);
-            build_tray(&handle)?;
+            tray::build_tray(&handle)?;
             apply_hotkeys(&handle);
             setup_main_window(&handle);
             // 主窗口在 tauri.conf.json 里是 visible:false，此前只有二次启动
@@ -366,102 +362,6 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-// ---------- 托盘 ----------
-
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open_i = MenuItem::with_id(app, "open", &t!("打开主界面"), true, None::<&str>)?;
-    let widget_i = CheckMenuItem::with_id(app, "widget", &t!("悬浮窗"), true, true, None::<&str>)?;
-    let pause_i = CheckMenuItem::with_id(app, "pause", &t!("暂停监控"), true, false, None::<&str>)?;
-    let settings_i = MenuItem::with_id(app, "settings", &t!("设置"), true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app, "quit", &t!("退出"), true, None::<&str>)?;
-    let menu = Menu::with_items(
-        app,
-        &[
-            &open_i,
-            &widget_i,
-            &pause_i,
-            &settings_i,
-            &PredefinedMenuItem::separator(app)?,
-            &quit_i,
-        ],
-    )?;
-
-    let widget_handle = widget_i.clone();
-    let pause_handle = pause_i.clone();
-
-    let tray_icon = TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().unwrap().clone())
-        .tooltip(t!("软件使用时间统计"))
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "open" => show_main(app),
-            "widget" => {
-                let st = app.state::<AppState>();
-                let visible = app
-                    .get_webview_window("widget")
-                    .map(|w| w.is_visible().unwrap_or(false))
-                    .unwrap_or(false);
-                set_widget_visible(app, !visible);
-                let _ = st
-                    .tray
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .map(|h| h.widget_toggle.set_checked(!visible));
-            }
-            "pause" => {
-                let st = app.state::<AppState>();
-                let paused = !st.user_paused.load(Ordering::Relaxed);
-                set_paused_internal(app, paused);
-                let _ = st
-                    .tray
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .map(|h| h.pause_toggle.set_checked(paused));
-            }
-            "settings" => {
-                show_main(app);
-                let _ = app.emit("ui://navigate", "settings");
-            }
-            "quit" => {
-                flush_state(app);
-                // 退出前 checkpoint 一次并截断 -wal：正常关闭后磁盘上只该剩主库。
-                // 失败也不阻止退出，最多是 -wal 留到下次启动。
-                {
-                    let st = app.state::<AppState>();
-                    let store = st.store.lock().unwrap();
-                    if let Err(e) = store.checkpoint() {
-                        eprintln!("checkpoint on quit failed: {e}");
-                    }
-                }
-                app.exit(0);
-            }
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                show_main(tray.app_handle());
-            }
-        })
-        .build(app)?;
-    let tray = tray_icon;
-
-    let state = app.state::<AppState>();
-    *state.tray_icon.lock().unwrap() = Some(tray);
-    *state.tray.lock().unwrap() = Some(TrayHandles {
-        widget_toggle: widget_handle,
-        pause_toggle: pause_handle,
-    });
-    Ok(())
 }
 
 /// 全局热键注册（设置开关）。
