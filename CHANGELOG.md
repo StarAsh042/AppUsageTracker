@@ -8,7 +8,9 @@
 
 ## [Unreleased]
 
-（暂无未发布变更）
+### Fixed
+
+- **app:** 修复启动瞬间先闪一下白底/灰底、随后才变暗的问题：主窗口在透明模式下启用 `noRedirectionBitmap`（`WS_EX_NOREDIRECTIONBITMAP`）并把 `backgroundColor` 设为全透明，WebView2 首帧渲染前不再露出白色默认底。
 
 ## [0.6.4] - 2026-11-16
 

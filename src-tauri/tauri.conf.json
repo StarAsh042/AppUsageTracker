@@ -21,7 +21,9 @@
         "center": true,
         "visible": false,
         "theme": "Dark",
-        "transparent": true
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "noRedirectionBitmap": true
       }
     ],
     "security": {
