@@ -742,10 +742,20 @@
     flex-direction: column;
     gap: 14px;
     min-height: 0;
+    overflow-y: auto;
   }
 
+  /* 分类占比吃掉剩余高度，但必须能收缩；内容溢出时自己滚，不能盖到下面的趋势图。 */
   .side > .panel:first-child {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* 趋势图给定基准高度，否则上面板撑开后会把柱子压成一条线。 */
+  .panel.trend {
+    flex: 0 1 200px;
+    min-height: 140px;
   }
 
   .panel-title {
@@ -841,6 +851,10 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1 1 auto;
+    min-height: 72px;
+    overflow-y: auto;
+    padding-right: 4px;
   }
 
   .cat-row {
@@ -1040,6 +1054,7 @@
     align-items: center;
     gap: 16px;
     margin-bottom: 12px;
+    flex: none;
   }
 
   .donut {
@@ -1048,11 +1063,15 @@
     flex: none;
   }
 
+  /* 图例改成两列并限高：分类多时（本月最容易多）单列图例会顶穿面板。 */
   .donut-legend {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 12px;
     font-size: 12px;
+    max-height: 92px;
+    overflow-y: auto;
+    align-content: start;
   }
 
   .legend-item {
