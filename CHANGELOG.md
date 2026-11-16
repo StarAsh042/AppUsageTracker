@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+（暂无未发布变更）
+
+## [0.6.4] - 2026-11-16
+
 ### Added
 
 - **frontend:** 引入 vitest 单元测试框架（`npm test` / `npm run test:watch`），覆盖 `localDateKey`、对比视图四种区间预设、变化率计算与每日限额读写，共 29 个用例；新增 `src/lib/compare.ts`、`src/lib/limits.ts` 两个纯逻辑模块承接被测逻辑，组件行为不变。
@@ -213,7 +217,8 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.0...v0.6.1
