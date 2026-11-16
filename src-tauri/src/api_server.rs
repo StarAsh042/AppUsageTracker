@@ -8,7 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracker_core::models::WebInterval;
 
 use crate::dashboard::build_dashboard;
-use crate::{live_status, timeline_data, AppState};
+use crate::timeline::timeline_data;
+use crate::{live_status, AppState};
 
 static API_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 

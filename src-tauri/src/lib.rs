@@ -4,6 +4,7 @@ mod backup;
 mod dashboard;
 mod ext_install;
 mod monitor;
+mod timeline;
 mod tray;
 mod update;
 mod version_info;
@@ -129,7 +130,7 @@ pub fn run() {
             update_widget_settings,
             toggle_widget,
             close_widget,
-            get_timeline,
+            timeline::get_timeline,
             windows::toggle_main_window,
             get_app_detail,
             exclude_app,
@@ -1109,82 +1110,6 @@ fn collect_lnks(dir: &std::path::Path, cb: &mut dyn FnMut(&std::path::PathBuf, S
             cb(&path, name);
         }
     }
-}
-
-// ---------- 时间线 ----------
-
-#[derive(Serialize, Clone)]
-struct TimelineSegment {
-    app_key: String,
-    display_name: String,
-    category: String,
-    start_time: String,
-    end_time: String,
-    duration_seconds: f64,
-}
-
-#[derive(Serialize, Clone)]
-struct TimelineState {
-    state: String,
-    start_time: String,
-    end_time: String,
-    duration_seconds: f64,
-}
-
-#[derive(Serialize, Clone)]
-struct TimelineData {
-    date: String,
-    segments: Vec<TimelineSegment>,
-    states: Vec<TimelineState>,
-}
-
-#[tauri::command]
-fn get_timeline(app: AppHandle, date: String) -> Result<TimelineData, String> {
-    timeline_data(&app, &date)
-}
-
-fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
-    let app = app.clone();
-    let date = date.to_string();
-    let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
-    let (intervals, states) = {
-        let st = state.store.lock().unwrap();
-        (
-            st.query_intervals(&date, &date)
-                .map_err(|e| e.to_string())?,
-            st.query_state_intervals(&date, &date)
-                .map_err(|e| e.to_string())?,
-        )
-    };
-    let segments = intervals
-        .into_iter()
-        .take(3000)
-        .map(|i| TimelineSegment {
-            category: resolver.resolve(&i.display_name, &i.process_name, &i.exe_path),
-            display_name: {
-                let s = state.settings.lock().unwrap();
-                display_alias(&s, &i.app_key, &i.display_name)
-            },
-            app_key: i.app_key,
-            start_time: i.start_time,
-            end_time: i.end_time,
-            duration_seconds: i.duration_seconds,
-        })
-        .collect();
-    Ok(TimelineData {
-        date,
-        segments,
-        states: states
-            .into_iter()
-            .map(|s| TimelineState {
-                state: s.state,
-                start_time: s.start_time,
-                end_time: s.end_time,
-                duration_seconds: s.duration_seconds,
-            })
-            .collect(),
-    })
 }
 
 // ---------- 数据库维护 ----------
