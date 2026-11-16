@@ -24,7 +24,8 @@
 
 ### Internal
 
-- **core:** 拆分 `src-tauri/src/lib.rs` 的第二步：系统托盘（图标、右键菜单五项、左键唤起主界面、退出前 flush + checkpoint）整体搬到 `src-tauri/src/tray.rs`，菜单项句柄 `TrayHandles` 一并迁出，`AppState.tray` 改为持有 `tray::TrayHandles`，行为不变，`lib.rs` 从 3565 行降到 3465 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第三步：窗口相关逻辑（主窗显示/隐藏与热键切换、悬浮窗创建与 DWM 背板/圆角、贴边收起与展开、smoothstep 尺寸动画、悬浮窗右键菜单）连同三种窗口尺寸常量整体搬到 `src-tauri/src/windows.rs`，行为不变，`lib.rs` 从 3465 行降到 2987 行。模块与 Win32 绑定 crate 同名，模块内引用 Win32 时写全路径 `::windows::...`。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第二步：系统托盘（图标、右键菜单五项、左键唤起主界面、退出前 flush + checkpoint）（113 行）整体搬到 `src-tauri/src/tray.rs`，菜单项句柄 `TrayHandles` 一并迁出，`AppState.tray` 改为持有 `tray::TrayHandles`，行为不变，`lib.rs` 从 3565 行降到 3465 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第一步：应用内更新（下载通道解析、`check_update` / `install_update` 两个命令）整体搬到 `src-tauri/src/update.rs`，端点选择与代理/镜像回退行为不变，`lib.rs` 从 3624 行降到 3565 行。
 - **core:** 治理 WAL 日志膨胀：建库时显式设 `wal_autocheckpoint=1000` 与 `journal_size_limit=1048576`，监控线程每 5 分钟做一次 `wal_checkpoint(TRUNCATE)`，退出、切换数据目录与冒烟模式下也会截断一次。此前全仓库没有一处 checkpoint 调用，`journal_size_limit` 是 SQLite 默认的 -1，自动 checkpoint 只把 WAL 置零复用、不缩文件，实测出现过 3.7 MB 的主库旁挂着 7.3 MB 的 `usage.db-wal`。
 - **core:** 把 `src-tauri/src/lib.rs` 里的纯逻辑抽到 `crates/tracker-core`：新增 `ext.rs`（protobuf varint 读取、CRX3 头部解析取扩展 ID、公钥哈希到扩展 ID 的 a-p 编码、读 `manifest.json` 版本号）与 `accent.rs`（悬浮窗亚克力着色的混色计算），补 10 个单元测试，`cargo test --all --locked` 从 12 例增加到 22 例。`lib.rs` 只保留同名薄封装，调用点与运行时行为不变。
