@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第九步：时间线数据整体搬到 `src-tauri/src/timeline.rs`（81 行，含 `TimelineSegment`/`TimelineState`/`TimelineData`、`get_timeline` 命令与 `timeline_data`），`api_server.rs` 改为从新模块导入，行为不变，`lib.rs` 从 1395 行降到 1320 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第八步：仪表盘 / 周报的数据聚合搬到 `src-tauri/src/dashboard.rs`（210 行，含 `DashboardApp`/`DashboardCategory`/`DashboardTrendPoint`/`DashboardData` 四个结构、`get_dashboard` 命令与 `build_dashboard`），`api_server.rs` 改为从新模块导入，行为不变，`lib.rs` 从 1588 行降到 1395 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第七步：JSON 备份与恢复整体搬到 `src-tauri/src/backup.rs`（229 行，含 `BackupFile` v2 结构、导出、按名/按内容恢复、删除与列表），行为不变，`lib.rs` 从 1810 行降到 1588 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第六步：本地 HTTP API 整体搬到 `src-tauri/src/api_server.rs`（308 行，含 `spawn_api_server`、`handle_api` 路由、`extract_domain`、浏览器扩展心跳 `heartbeat_web`），实时状态 `live_status` 留在 `lib.rs`（API 与 IPC 共用），行为不变，`lib.rs` 从 2107 行降到 1810 行。
