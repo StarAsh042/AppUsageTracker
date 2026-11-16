@@ -341,6 +341,7 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(secs.max(1)));
                     flush_state(&h);
                     let st = h.state::<AppState>();
+                    let _ = st.store.lock().unwrap().checkpoint();
                     let (total, apps) = {
                         let agg = st.aggregator.lock().unwrap();
                         let today = Local::now().format("%Y-%m-%d").to_string();
@@ -443,6 +444,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
             "quit" => {
                 flush_state(app);
+                // 退出前 checkpoint 一次并截断 -wal：正常关闭后磁盘上只该剩主库。
+                // 失败也不阻止退出，最多是 -wal 留到下次启动。
+                {
+                    let st = app.state::<AppState>();
+                    let store = st.store.lock().unwrap();
+                    if let Err(e) = store.checkpoint() {
+                        eprintln!("checkpoint on quit failed: {e}");
+                    }
+                }
                 app.exit(0);
             }
             _ => {}
@@ -1081,6 +1091,7 @@ fn spawn_monitor(app: AppHandle) {
         let mut last_wall = Local::now();
         let mut last_tick = tracker_core::win32::get_tick_count64();
         let mut last_flush = std::time::Instant::now();
+        let mut last_checkpoint = std::time::Instant::now();
         let mut cur_day = last_wall.format("%Y-%m-%d").to_string();
         let mut rest_acc = 0.0f64;
 
@@ -1183,6 +1194,16 @@ fn spawn_monitor(app: AppHandle) {
             if last_flush.elapsed() >= std::time::Duration::from_secs(30) {
                 flush_state(&app);
                 last_flush = std::time::Instant::now();
+            }
+
+            // 每 5 分钟补一次显式 checkpoint：自动 checkpoint 只是把 WAL 页
+            // 复用置零，长事务或长时间只读期间可能一直不触发，-wal 于是越滚
+            // 越大；这里配合 journal_size_limit 把文件真正截断。
+            if last_checkpoint.elapsed() >= std::time::Duration::from_secs(300) {
+                last_checkpoint = std::time::Instant::now();
+                if let Err(e) = state.store.lock().unwrap().checkpoint() {
+                    eprintln!("periodic checkpoint failed: {e}");
+                }
             }
             check_limits(&app);
 
@@ -2108,6 +2129,9 @@ fn save_settings(
             let intervals = st
                 .query_intervals("0000-01-01", "9999-12-31")
                 .map_err(|e| e.to_string())?;
+            // 换库前把旧库的 WAL 落盘并截断，免得用户切回旧目录时看到一份
+            // 落后若干个 30 秒周期的数据。
+            let _ = st.checkpoint();
             (daily, intervals)
         };
         let new_store =
@@ -2634,6 +2658,11 @@ struct DbMaintenance {
     vacuum_ok: bool,
     page_count: i64,
     freelist: i64,
+    page_size: i64,
+    /// VACUUM 之后又把 WAL 截断了一次：-wal 在没有它的情况下可能比主库还大。
+    checkpoint_ok: bool,
+    /// VACUUM + checkpoint 之后的主库字节数，用于在设置页给出可对比的数字。
+    db_bytes: i64,
 }
 
 #[tauri::command]
@@ -2643,17 +2672,18 @@ fn db_maintenance(state: State<AppState>) -> Result<DbMaintenance, String> {
         .pragma("PRAGMA integrity_check")
         .map_err(|e| e.to_string())?;
     let vacuum_ok = st.vacuum().is_ok();
-    let page_count: i64 = st
-        .pragma_i64("PRAGMA page_count")
-        .map_err(|e| e.to_string())?;
-    let freelist: i64 = st
-        .pragma_i64("PRAGMA freelist_count")
-        .map_err(|e| e.to_string())?;
+    // VACUUM 会把 WAL 里残留的页一并回写，紧接着做一次 truncate 模式的
+    // checkpoint 才能真正把 -wal 收回 1 MiB 以内（journal_size_limit 见 store::open）。
+    let checkpoint_ok = st.checkpoint().is_ok();
+    let (page_size, page_count, freelist) = st.db_stats().map_err(|e| e.to_string())?;
     Ok(DbMaintenance {
         integrity,
         vacuum_ok,
         page_count,
         freelist,
+        page_size,
+        checkpoint_ok,
+        db_bytes: page_size * page_count,
     })
 }
 

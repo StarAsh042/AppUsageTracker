@@ -218,6 +218,9 @@ export interface DbMaintenance {
   vacuum_ok: boolean;
   page_count: number;
   freelist: number;
+  page_size: number;
+  checkpoint_ok: boolean;
+  db_bytes: number;
 }
 
 export interface UpdateInfo {

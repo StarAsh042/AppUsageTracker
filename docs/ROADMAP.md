@@ -48,6 +48,8 @@
 ## P1 质量内建
 
 - [x] **前端测试框架（纯逻辑层）**：已引入 `vitest` 5.1.0（`npm test` / `npm run test:watch`），把 `localDateKey`、区间切换（`presetRange` 的 today / yesterday / week / month 四种预设）、`orderedDelta` 变化率与 `limitOf` / `setDailyLimit` 抽到 `src/lib/compare.ts` 与 `src/lib/limits.ts` 并加 29 个用例；CI `frontend` job 已加 `npm test`。
+- [x] **数据库体积治理**：建库时设 `wal_autocheckpoint=1000` 与 `journal_size_limit=1048576`，监控线程每 5 分钟 `wal_checkpoint(TRUNCATE)` 一次，退出 / 切换数据目录 / 冒烟模式下各补一次；设置页新增「数据库维护」面板，把原本有后端没入口的 `db_maintenance` 命令接上（完整性检查 + VACUUM + WAL 截断 + 体积统计）。
+  - 验收：`cargo test --all --locked` 从 22 例增加到 25 例（checkpoint 不丢数据、打开后 WAL 上限已配置、页大小与页数自洽）；实测对线上库执行 truncate checkpoint 能把 7.3 MB 的 `usage.db-wal` 归零。
 - [ ] **组件测试与 e2e**：仍是空白。组件级可用 `@testing-library/svelte`，端到端见下方「端到端冒烟」。
 - [x] **`src-tauri` 命令层可测化**：纯逻辑已抽到 `crates/tracker-core` 的 `ext.rs`（`read_varint`、`crx_id_bytes`、`signed_data_crx_id`、`extension_id_from_hash`、`manifest_version`）与 `accent.rs`（`accent_tint`），`src-tauri/src/lib.rs` 只留薄封装，调用点不变。
   - 验收：`cargo test --all --locked` 从 12 例增加到 22 例，其中 10 例覆盖上述函数（varint 单/多字节与截断、CRX3 正常与四类坏输入、signed_data 只认 len 16 的 field 1、扩展 ID 编码、manifest_version 读取与回退、accent_tint 三色）。
