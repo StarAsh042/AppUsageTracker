@@ -982,16 +982,7 @@ fn animate_window(
 
 /// 强调色 → 亚克力 tint（深色底与强调色 10% 混合）。
 fn accent_tint(accent: &str) -> (u8, u8, u8, u8) {
-    let (r, g, b) = match accent {
-        "cyan" => (34u8, 211u8, 238u8),
-        "violet" => (167, 139, 250),
-        "green" => (52, 211, 153),
-        "orange" => (251, 146, 60),
-        "pink" => (244, 114, 182),
-        _ => (79, 140, 255),
-    };
-    let mix = |base: u32, c: u32| ((base * 9 + c) / 10) as u8;
-    (mix(16, r as u32), mix(18, g as u32), mix(24, b as u32), 110)
+    tracker_core::accent::accent_tint(accent)
 }
 
 /// 应用悬浮窗偏好：持久化 + 窗口行为 + 通知前端。
@@ -2815,107 +2806,21 @@ struct ExtInstallResult {
     message: String,
 }
 
-/// 读 protobuf varint（只用来跳过/取长度）。
-fn read_varint(buf: &[u8], mut i: usize) -> Option<(u64, usize)> {
-    let mut value: u64 = 0;
-    let mut shift = 0u32;
-    while i < buf.len() && shift < 64 {
-        let b = buf[i];
-        i += 1;
-        value |= ((b & 0x7f) as u64) << shift;
-        if b & 0x80 == 0 {
-            return Some((value, i));
-        }
-        shift += 7;
-    }
-    None
-}
+// CRX3 头部解析与扩展 ID 编码的真实实现搬到了 tracker-core 的 ext 模块（带单测），
+// 这里只留薄封装，调用点不用改。
+use tracker_core::ext::{
+    crx_id_bytes as core_crx_id_bytes, extension_id_from_hash as core_extension_id,
+};
 
 /// CRX3 头部 → signed_header_data 里的 crx_id（= SHA256(公钥) 前 16 字节）。
 /// 结构：magic "Cr24" | uint32 LE 版本(=3) | uint32 LE header 长度 | CrxFileHeader。
 fn crx_id_bytes(crx: &[u8]) -> Option<Vec<u8>> {
-    if crx.len() < 16 || &crx[0..4] != b"Cr24" {
-        return None;
-    }
-    let version = u32::from_le_bytes([crx[4], crx[5], crx[6], crx[7]]);
-    if version != 3 {
-        return None;
-    }
-    let header_size = u32::from_le_bytes([crx[8], crx[9], crx[10], crx[11]]) as usize;
-    if header_size == 0 || 12 + header_size > crx.len() {
-        return None;
-    }
-    let header = &crx[12..12 + header_size];
-    let mut i = 0usize;
-    while i < header.len() {
-        let (key, next) = read_varint(header, i)?;
-        i = next;
-        let field = key >> 3;
-        match key & 7 {
-            0 => {
-                let (_, next) = read_varint(header, i)?;
-                i = next;
-            }
-            1 => i += 8,
-            2 => {
-                let (len, next) = read_varint(header, i)?;
-                i = next;
-                let end = i.checked_add(len as usize)?;
-                if end > header.len() {
-                    return None;
-                }
-                if field == 10000 {
-                    return signed_data_crx_id(&header[i..end]);
-                }
-                i = end;
-            }
-            5 => i += 4,
-            _ => return None,
-        }
-    }
-    None
-}
-
-fn signed_data_crx_id(buf: &[u8]) -> Option<Vec<u8>> {
-    let mut i = 0usize;
-    while i < buf.len() {
-        let (key, next) = read_varint(buf, i)?;
-        i = next;
-        let field = key >> 3;
-        match key & 7 {
-            0 => {
-                let (_, next) = read_varint(buf, i)?;
-                i = next;
-            }
-            1 => i += 8,
-            2 => {
-                let (len, next) = read_varint(buf, i)?;
-                i = next;
-                let end = i.checked_add(len as usize)?;
-                if end > buf.len() {
-                    return None;
-                }
-                if field == 1 && len == 16 {
-                    return Some(buf[i..end].to_vec());
-                }
-                i = end;
-            }
-            5 => i += 4,
-            _ => return None,
-        }
-    }
-    None
+    core_crx_id_bytes(crx)
 }
 
 /// 16 字节公钥哈希 → Chromium 扩展 ID（a-p 编码，32 字符）。
 fn extension_id_from_hash(hash: &[u8]) -> String {
-    const ALPHABET: &[u8; 16] = b"abcdefghijklmnop";
-    let mut id = String::with_capacity(32);
-    for b in hash {
-        id.push(ALPHABET[(b >> 4) as usize] as char);
-        id.push(ALPHABET[(b & 0x0f) as usize] as char);
-    }
-    id
+    core_extension_id(hash)
 }
 
 #[derive(Clone, Copy)]
@@ -3273,15 +3178,7 @@ fn validate_extension_manifest(dir: &std::path::Path) -> Result<(), String> {
 
 /// 读扩展 manifest 里的版本号（注册表 version 值必须与 CRX 内一致）。
 fn manifest_version(dir: &std::path::Path) -> String {
-    std::fs::read(dir.join("manifest.json"))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        .and_then(|v| {
-            v.get("version")
-                .and_then(|x| x.as_str())
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "1.0.0".to_string())
+    tracker_core::ext::manifest_version(dir)
 }
 
 fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, String> {

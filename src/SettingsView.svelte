@@ -9,6 +9,7 @@
   } from './lib/api';
   import { lang, en } from './lib/i18n';
   import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
+  import Modal from './lib/Modal.svelte';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -629,33 +630,30 @@
     </div>
 
     {#if showExtInstall}
-      <div class="modal-mask" onclick={() => (showExtInstall = false)}>
-        <div class="modal" onclick={(e) => e.stopPropagation()}>
-          <div class="modal-head">
-            <div class="m-name">{t('安装浏览器扩展')}</div>
-            <button class="m-close" onclick={() => (showExtInstall = false)}>✕</button>
-          </div>
-          <p class="hint" style="margin:12px 0">{t('选择你的浏览器，将打开扩展管理页')}</p>
-          <div class="ext-browser-row">
-            <button class="ext-browser-btn" onclick={() => installExt('chrome')}>
-              <span class="ext-icon">🌐</span> Chrome
-            </button>
-            <button class="ext-browser-btn" onclick={() => installExt('edge')}>
-              <span class="ext-icon">⚡</span> Edge
-            </button>
-          </div>
-          <div class="ext-steps">
-            <p>{t('扩展管理页打开后：')}</p>
-            <p>1. {t('开启「开发者模式」')}</p>
-            <p>2. {t('点击「加载已解压的扩展程序」')}</p>
-            <p>3. {t('选择以下目录（已复制到剪贴板）')}</p>
-            <code class="ext-path">{extPathCopied ? t('已复制到剪贴板 ✓') : extPath}</code>
-          </div>
-          <button class="primary" style="margin-top:12px;width:100%" onclick={() => copyExtPath()}>
-            {extPathCopied ? t('已复制到剪贴板 ✓') : t('复制扩展目录路径')}
+      <Modal label={t('安装浏览器扩展')} onclose={() => (showExtInstall = false)}>
+        {#snippet head()}
+          <div class="m-name">{t('安装浏览器扩展')}</div>
+        {/snippet}
+        <p class="hint" style="margin:12px 0">{t('选择你的浏览器，将打开扩展管理页')}</p>
+        <div class="ext-browser-row">
+          <button class="ext-browser-btn" onclick={() => installExt('chrome')}>
+            <span class="ext-icon">🌐</span> Chrome
+          </button>
+          <button class="ext-browser-btn" onclick={() => installExt('edge')}>
+            <span class="ext-icon">⚡</span> Edge
           </button>
         </div>
-      </div>
+        <div class="ext-steps">
+          <p>{t('扩展管理页打开后：')}</p>
+          <p>1. {t('开启「开发者模式」')}</p>
+          <p>2. {t('点击「加载已解压的扩展程序」')}</p>
+          <p>3. {t('选择以下目录（已复制到剪贴板）')}</p>
+          <code class="ext-path">{extPathCopied ? t('已复制到剪贴板 ✓') : extPath}</code>
+        </div>
+        <button class="primary" style="margin-top:12px;width:100%" onclick={() => copyExtPath()}>
+          {extPathCopied ? t('已复制到剪贴板 ✓') : t('复制扩展目录路径')}
+        </button>
+      </Modal>
     {/if}
 
     <div class="save-bar">
@@ -819,6 +817,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+  }
+
+  /* 弹窗标题（Modal 组件只管外壳，标题排版留给调用方） */
+  .m-name {
+    font-size: 17px;
+    font-weight: 700;
   }
 
   .ext-browser-row {

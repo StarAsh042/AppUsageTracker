@@ -49,9 +49,10 @@
 
 - [x] **前端测试框架（纯逻辑层）**：已引入 `vitest` 5.1.0（`npm test` / `npm run test:watch`），把 `localDateKey`、区间切换（`presetRange` 的 today / yesterday / week / month 四种预设）、`orderedDelta` 变化率与 `limitOf` / `setDailyLimit` 抽到 `src/lib/compare.ts` 与 `src/lib/limits.ts` 并加 29 个用例；CI `frontend` job 已加 `npm test`。
 - [ ] **组件测试与 e2e**：仍是空白。组件级可用 `@testing-library/svelte`，端到端见下方「端到端冒烟」。
-- [ ] **`src-tauri` 命令层可测化**：把纯逻辑（`extension_id_from_hash`、CRX3 header 解析 `crx_id_bytes`/`signed_data_crx_id`、`manifest_version`、`accent_tint`）抽到 `crates/tracker-core` 或独立模块并加单测；它们目前嵌在 3727 行的 `lib.rs` 里、0 覆盖。
-  - 验收：`cargo test --all --locked` 中 `src-tauri` 相关测试数从 0 增加到覆盖上述函数的规模。
-- [ ] **清理 svelte-check 既有告警**：`src/SettingsView.svelte` 的 `modal-mask`/`modal` div click（`a11y_click_events_have_key_events`、`a11y_no_static_element_interactions`）、`src/Dashboard.svelte` 的 `.card .value.small` 未使用选择器、`src/TimelineView.svelte:18` 的 `state_referenced_locally`。目标是把 `npm run check` 的输出降为 0 条。
+- [x] **`src-tauri` 命令层可测化**：纯逻辑已抽到 `crates/tracker-core` 的 `ext.rs`（`read_varint`、`crx_id_bytes`、`signed_data_crx_id`、`extension_id_from_hash`、`manifest_version`）与 `accent.rs`（`accent_tint`），`src-tauri/src/lib.rs` 只留薄封装，调用点不变。
+  - 验收：`cargo test --all --locked` 从 12 例增加到 22 例，其中 10 例覆盖上述函数（varint 单/多字节与截断、CRX3 正常与四类坏输入、signed_data 只认 len 16 的 field 1、扩展 ID 编码、manifest_version 读取与回退、accent_tint 三色）。
+- [x] **清理 svelte-check 既有告警**：弹窗外壳抽成 `src/lib/Modal.svelte`（遮罩 click、Esc 关闭、`role="dialog"`、打开即聚焦），`Dashboard`/`SettingsView` 两处弹窗改为复用它——顺带修掉设置页那个弹窗此前完全没有样式（类未定义、无 `:global`）的问题；排行行 `div` → `button`；`TimelineView` 的 `state_referenced_locally` 改为一次性 `$effect.pre` 赋值；`Widget` 根节点补 `role="application"`；删掉死 CSS `.card .value.small`。
+  - 验收：`npm run check` 由 13 warnings / 4 files 降为 0 errors 0 warnings。
 - [ ] **端到端冒烟**：一条脚本化路径「启动 → 打开主窗口 → 切换页面 → 开/关悬浮窗 → 检查更新」，用 Playwright 驱动 WebView 或用 CLI 参数化的自检模式【推断：Tauri 2 下推荐 `tauri-driver` + WebDriver】。
 
 ## P2 架构收敛
