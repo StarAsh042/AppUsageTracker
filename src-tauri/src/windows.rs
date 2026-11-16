@@ -6,13 +6,15 @@
 
 use std::sync::atomic::Ordering;
 
+use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WindowEvent,
 };
 use tracker_core::settings::WidgetPrefs;
 
-use crate::settings::save_settings_file;
+use crate::settings::{save_settings_file, set_widget_visible};
 use crate::AppState;
+use rust_i18n::t;
 
 /// 悬浮窗三种形态（逻辑像素）：贴边收起后只留一根细线（横边横线、竖边竖线）。
 pub(crate) const WIDGET_NORMAL: (f64, f64) = (300.0, 216.0);
@@ -486,4 +488,110 @@ pub(crate) fn handle_widget_menu_event(app: &AppHandle, id: &str) {
         }
     }
     apply_widget_prefs(app, &prefs);
+}
+
+// ---------- 悬浮窗相关的 IPC 命令 ----------
+// 这五个命令原先在 lib.rs 的「Tauri Commands」段里，第十一步（实际为第十二步）搬到这里，
+// 让悬浮窗的窗口操作、右键菜单与状态同步集中在一个模块。行为不变。
+
+/// 悬浮窗右键 → 弹出原生上下文菜单（带 ✓ 与子菜单，Win11 玻璃样式）。
+#[tauri::command]
+pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
+    let window = app.get_window("widget").ok_or("悬浮窗未创建")?;
+    let prefs = {
+        app.state::<AppState>()
+            .settings
+            .lock()
+            .unwrap()
+            .widget
+            .clone()
+    };
+    let check = |id: &str, label: &str, checked: bool| {
+        CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>)
+            .map_err(|e| e.to_string())
+    };
+    let top_i = check("w.top", &t!("置顶显示"), prefs.always_on_top)?;
+    let lock_i = check("w.lock", &t!("锁定位置"), prefs.locked)?;
+    let snap_i = check("w.snap", &t!("贴边收起"), prefs.edge_snap)?;
+    let compact_i = check("w.compact", &t!("缩略模式"), prefs.compact)?;
+
+    let op_menu =
+        Submenu::with_id(&app, "w.opacity", &t!("透明度"), true).map_err(|e| e.to_string())?;
+    for (v, label) in [
+        (85u8, &t!("高 85%")),
+        (70, &t!("中 70%")),
+        (55, &t!("低 55%")),
+        (40, &t!("低 40%")),
+    ] {
+        let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
+        op_menu.append(&item).map_err(|e| e.to_string())?;
+    }
+    let settings_i = MenuItem::with_id(&app, "w.settings", &t!("设置…"), true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(
+        &app,
+        &[
+            &top_i,
+            &lock_i,
+            &snap_i,
+            &compact_i,
+            &op_menu,
+            &sep,
+            &settings_i,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    menu.popup(window).map_err(|e| e.to_string())
+}
+
+/// 主界面顶栏按钮：切换悬浮窗显示，返回切换后的可见状态。
+#[tauri::command]
+pub(crate) fn toggle_widget(app: AppHandle) -> bool {
+    let visible = app
+        .get_webview_window("widget")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+    let next = !visible;
+    set_widget_visible(&app, next);
+    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+        let _ = h.widget_toggle.set_checked(next);
+    }
+    next
+}
+
+/// 悬浮窗 ✕ 按钮：关闭（隐藏）悬浮窗并写回设置、同步托盘勾选。
+#[tauri::command]
+pub(crate) fn close_widget(app: AppHandle) {
+    set_widget_visible(&app, false);
+    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+        let _ = h.widget_toggle.set_checked(false);
+    }
+}
+
+/// 贴边收起模式下，鼠标悬停展开 / 离开收起。
+#[tauri::command]
+pub(crate) fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
+    let prefs = {
+        app.state::<AppState>()
+            .settings
+            .lock()
+            .unwrap()
+            .widget
+            .clone()
+    };
+    if let Some(win) = app.get_webview_window("widget") {
+        if collapsed && prefs.edge_snap {
+            collapse_widget(&app, &win);
+        } else if !prefs.edge_snap || !collapsed {
+            expand_widget(&app, &win, prefs.compact);
+        }
+    }
+}
+
+/// 前端直接更新悬浮窗偏好（预留）。
+#[tauri::command]
+pub(crate) fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), String> {
+    apply_widget_prefs(&app, &widget);
+    Ok(())
 }

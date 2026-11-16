@@ -13,7 +13,6 @@ mod version_info;
 mod windows;
 
 rust_i18n::i18n!("locales", fallback = "zh-CN");
-use rust_i18n::t;
 
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
@@ -21,14 +20,13 @@ use std::sync::Mutex;
 
 use chrono::Local;
 use serde::Serialize;
-use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::CategoryResolver;
 use tracker_core::models::{AppIdentity, DailyUsage, TrackingState, WebInterval};
-use tracker_core::settings::{TrackerSettings, WidgetPrefs};
+use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
 
 /// 全局应用状态（Tauri managed state）。
@@ -127,11 +125,11 @@ pub fn run() {
             settings::list_available_categories,
             open_path,
             get_app_version,
-            show_widget_menu,
-            set_widget_collapsed,
-            update_widget_settings,
-            toggle_widget,
-            close_widget,
+            windows::show_widget_menu,
+            windows::set_widget_collapsed,
+            windows::update_widget_settings,
+            windows::toggle_widget,
+            windows::close_widget,
             timeline::get_timeline,
             windows::toggle_main_window,
             apps::get_app_detail,
@@ -422,109 +420,6 @@ pub(crate) fn live_status(app: &AppHandle) -> LiveStatus {
 fn get_live_status(app: AppHandle) -> LiveStatus {
     live_status(&app)
 }
-
-/// 悬浮窗右键 → 弹出原生上下文菜单（带 ✓ 与子菜单，Win11 玻璃样式）。
-#[tauri::command]
-fn show_widget_menu(app: AppHandle) -> Result<(), String> {
-    let window = app.get_window("widget").ok_or("悬浮窗未创建")?;
-    let prefs = {
-        app.state::<AppState>()
-            .settings
-            .lock()
-            .unwrap()
-            .widget
-            .clone()
-    };
-    let check = |id: &str, label: &str, checked: bool| {
-        CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>)
-            .map_err(|e| e.to_string())
-    };
-    let top_i = check("w.top", &t!("置顶显示"), prefs.always_on_top)?;
-    let lock_i = check("w.lock", &t!("锁定位置"), prefs.locked)?;
-    let snap_i = check("w.snap", &t!("贴边收起"), prefs.edge_snap)?;
-    let compact_i = check("w.compact", &t!("缩略模式"), prefs.compact)?;
-
-    let op_menu =
-        Submenu::with_id(&app, "w.opacity", &t!("透明度"), true).map_err(|e| e.to_string())?;
-    for (v, label) in [
-        (85u8, &t!("高 85%")),
-        (70, &t!("中 70%")),
-        (55, &t!("低 55%")),
-        (40, &t!("低 40%")),
-    ] {
-        let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
-        op_menu.append(&item).map_err(|e| e.to_string())?;
-    }
-    let settings_i = MenuItem::with_id(&app, "w.settings", &t!("设置…"), true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
-    let menu = Menu::with_items(
-        &app,
-        &[
-            &top_i,
-            &lock_i,
-            &snap_i,
-            &compact_i,
-            &op_menu,
-            &sep,
-            &settings_i,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    menu.popup(window).map_err(|e| e.to_string())
-}
-
-/// 主界面顶栏按钮：切换悬浮窗显示，返回切换后的可见状态。
-#[tauri::command]
-fn toggle_widget(app: AppHandle) -> bool {
-    let visible = app
-        .get_webview_window("widget")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-    let next = !visible;
-    settings::set_widget_visible(&app, next);
-    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
-        let _ = h.widget_toggle.set_checked(next);
-    }
-    next
-}
-
-/// 悬浮窗 ✕ 按钮：关闭（隐藏）悬浮窗并写回设置、同步托盘勾选。
-#[tauri::command]
-fn close_widget(app: AppHandle) {
-    settings::set_widget_visible(&app, false);
-    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
-        let _ = h.widget_toggle.set_checked(false);
-    }
-}
-
-/// 贴边收起模式下，鼠标悬停展开 / 离开收起。
-#[tauri::command]
-fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
-    let prefs = {
-        app.state::<AppState>()
-            .settings
-            .lock()
-            .unwrap()
-            .widget
-            .clone()
-    };
-    if let Some(win) = app.get_webview_window("widget") {
-        if collapsed && prefs.edge_snap {
-            windows::collapse_widget(&app, &win);
-        } else if !prefs.edge_snap || !collapsed {
-            windows::expand_widget(&app, &win, prefs.compact);
-        }
-    }
-}
-
-/// 前端直接更新悬浮窗偏好（预留）。
-#[tauri::command]
-fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), String> {
-    windows::apply_widget_prefs(&app, &widget);
-    Ok(())
-}
-
 #[tauri::command]
 fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     {
