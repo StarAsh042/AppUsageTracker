@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第四步：监控线程相关逻辑（自身进程名识别、前台窗口识别与进程名缓存、轮询主循环、落库 `flush_state`、保留策略清理、分类限额提醒）整体搬到 `src-tauri/src/monitor.rs`，行为不变，`lib.rs` 从 2987 行降到 2682 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第三步：窗口相关逻辑（主窗显示/隐藏与热键切换、悬浮窗创建与 DWM 背板/圆角、贴边收起与展开、smoothstep 尺寸动画、悬浮窗右键菜单）连同三种窗口尺寸常量整体搬到 `src-tauri/src/windows.rs`，行为不变，`lib.rs` 从 3465 行降到 2987 行。模块与 Win32 绑定 crate 同名，模块内引用 Win32 时写全路径 `::windows::...`。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第二步：系统托盘（图标、右键菜单五项、左键唤起主界面、退出前 flush + checkpoint）（113 行）整体搬到 `src-tauri/src/tray.rs`，菜单项句柄 `TrayHandles` 一并迁出，`AppState.tray` 改为持有 `tray::TrayHandles`，行为不变，`lib.rs` 从 3565 行降到 3465 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第一步：应用内更新（下载通道解析、`check_update` / `install_update` 两个命令）整体搬到 `src-tauri/src/update.rs`，端点选择与代理/镜像回退行为不变，`lib.rs` 从 3624 行降到 3565 行。

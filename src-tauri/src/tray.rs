@@ -8,8 +8,9 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::monitor::flush_state;
 use crate::windows::show_main;
-use crate::{flush_state, set_paused_internal, set_widget_visible, AppState};
+use crate::{set_paused_internal, set_widget_visible, AppState};
 
 /// 托盘菜单里需要回写的两个勾选项（/菜单事件里同步状态用）。
 pub(crate) struct TrayHandles {
