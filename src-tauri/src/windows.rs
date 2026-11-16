@@ -6,7 +6,7 @@
 
 use std::sync::atomic::Ordering;
 
-use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WindowEvent,
 };
@@ -497,7 +497,8 @@ pub(crate) fn handle_widget_menu_event(app: &AppHandle, id: &str) {
 /// 悬浮窗右键 → 弹出原生上下文菜单（带 ✓ 与子菜单，Win11 玻璃样式）。
 #[tauri::command]
 pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
-    let window = app.get_window("widget").ok_or("悬浮窗未创建")?;
+    // 用稳定的 get_webview_window + popup_menu，避免为这一个调用点开启 tauri 的 unstable feature。
+    let window = app.get_webview_window("widget").ok_or("悬浮窗未创建")?;
     let prefs = {
         app.state::<AppState>()
             .settings
@@ -542,7 +543,7 @@ pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
         ],
     )
     .map_err(|e| e.to_string())?;
-    menu.popup(window).map_err(|e| e.to_string())
+    window.popup_menu(&menu).map_err(|e| e.to_string())
 }
 
 /// 主界面顶栏按钮：切换悬浮窗显示，返回切换后的可见状态。
