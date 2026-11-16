@@ -1,6 +1,7 @@
 mod api_server;
 mod autostart;
 mod backup;
+mod dashboard;
 mod ext_install;
 mod monitor;
 mod tray;
@@ -69,45 +70,6 @@ struct LiveStatus {
     top_apps: Vec<LiveTopApp>,
 }
 
-// ---------- 仪表盘数据 ----------
-
-#[derive(Serialize, Clone)]
-struct DashboardApp {
-    app_key: String,
-    display_name: String,
-    process_name: String,
-    exe_path: String,
-    category: String,
-    active_seconds: f64,
-    percent: f64,
-}
-
-#[derive(Serialize, Clone)]
-struct DashboardCategory {
-    name: String,
-    seconds: f64,
-    percent: f64,
-}
-
-#[derive(Serialize, Clone)]
-struct DashboardTrendPoint {
-    date: String,
-    seconds: f64,
-    /// 当日效率评分（0-100，仅当存在已标记性质的分类时才有值）
-    score: Option<f64>,
-}
-
-#[derive(Serialize, Clone)]
-struct DashboardData {
-    from: String,
-    to: String,
-    total_active_seconds: f64,
-    top_app: Option<String>,
-    apps: Vec<DashboardApp>,
-    categories: Vec<DashboardCategory>,
-    trend: Vec<DashboardTrendPoint>,
-}
-
 // ---------- 入口 ----------
 
 #[cfg_attr(mobile, tauri_mobile_entry_point)]
@@ -150,7 +112,7 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
-            get_dashboard,
+            dashboard::get_dashboard,
             get_live_status,
             get_settings,
             save_settings,
@@ -454,7 +416,7 @@ pub(crate) fn live_status(app: &AppHandle) -> LiveStatus {
 // ---------- 设置 ----------
 
 /// 应用别名：仅影响展示，不改历史数据与分类匹配。
-fn display_alias(settings: &TrackerSettings, app_key: &str, original: &str) -> String {
+pub(crate) fn display_alias(settings: &TrackerSettings, app_key: &str, original: &str) -> String {
     settings
         .app_display_names
         .get(app_key)
@@ -657,161 +619,6 @@ fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
 fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), String> {
     windows::apply_widget_prefs(&app, &widget);
     Ok(())
-}
-
-#[tauri::command]
-fn get_dashboard(app: AppHandle, from: String, to: String) -> Result<DashboardData, String> {
-    build_dashboard(&app, &from, &to)
-}
-
-fn build_dashboard(app: &AppHandle, from: &str, to: &str) -> Result<DashboardData, String> {
-    let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
-
-    let store_rows = {
-        let st = state.store.lock().unwrap();
-        st.query_daily(from, to).map_err(|e| e.to_string())?
-    };
-    let mut by_key: HashMap<String, DailyUsage> = store_rows
-        .into_iter()
-        .map(|r| (format!("{}|{}", r.usage_date, r.app_key), r))
-        .collect();
-    {
-        // 今日内存实时数据覆盖库中同键数据
-        let agg = state.aggregator.lock().unwrap();
-        for (k, v) in &agg.daily {
-            if v.usage_date.as_str() >= from && v.usage_date.as_str() <= to {
-                by_key.insert(k.clone(), v.clone());
-            }
-        }
-    }
-
-    struct AggApp {
-        display_name: String,
-        process_name: String,
-        exe_path: String,
-        seconds: f64,
-    }
-    let nature = {
-        let s = state.settings.lock().unwrap();
-        s.category_nature.clone()
-    };
-    let mut per_app: HashMap<String, AggApp> = HashMap::new();
-    let mut trend: HashMap<String, f64> = HashMap::new();
-    // 每日每分类秒数（算当日效率评分）
-    let mut day_cat: HashMap<(String, String), f64> = HashMap::new();
-    let mut total = 0.0;
-    for (_, r) in by_key {
-        let e = per_app.entry(r.app_key.clone()).or_insert(AggApp {
-            display_name: r.display_name.clone(),
-            process_name: r.process_name.clone(),
-            exe_path: r.exe_path.clone(),
-            seconds: 0.0,
-        });
-        e.seconds += r.active_seconds;
-        if e.display_name.is_empty() {
-            e.display_name = r.display_name.clone();
-            e.exe_path = r.exe_path.clone();
-        }
-        *trend.entry(r.usage_date.clone()).or_insert(0.0) += r.active_seconds;
-        let cat = resolver.resolve(&r.display_name, &r.process_name, &r.exe_path);
-        *day_cat.entry((r.usage_date.clone(), cat)).or_insert(0.0) += r.active_seconds;
-        total += r.active_seconds;
-    }
-    let day_score = |date: &str| -> Option<f64> {
-        let mut marked = 0.0;
-        let mut weighted = 0.0;
-        for ((d, cat), secs) in &day_cat {
-            if d != date {
-                continue;
-            }
-            match nature.get(cat).map(|x| x.as_str()) {
-                Some("productive") => {
-                    marked += secs;
-                    weighted += secs;
-                }
-                Some("distracting") => marked += secs,
-                _ => {}
-            }
-        }
-        if marked < 1.0 {
-            None
-        } else {
-            Some((weighted / marked * 100.0 * 10.0).round() / 10.0)
-        }
-    };
-
-    let mut apps: Vec<DashboardApp> = per_app
-        .into_iter()
-        .map(|(app_key, e)| {
-            let category = resolver.resolve(&e.display_name, &e.process_name, &e.exe_path);
-            let shown = {
-                let s = state.settings.lock().unwrap();
-                display_alias(&s, &app_key, &e.display_name)
-            };
-            DashboardApp {
-                app_key,
-                display_name: shown,
-                process_name: e.process_name,
-                exe_path: e.exe_path,
-                category,
-                active_seconds: e.seconds,
-                percent: if total > 0.0 {
-                    e.seconds / total * 100.0
-                } else {
-                    0.0
-                },
-            }
-        })
-        .collect();
-    apps.sort_by(|a, b| {
-        b.active_seconds
-            .partial_cmp(&a.active_seconds)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let mut cats: HashMap<String, f64> = HashMap::new();
-    for a in &apps {
-        *cats.entry(a.category.clone()).or_insert(0.0) += a.active_seconds;
-    }
-    let mut categories: Vec<DashboardCategory> = cats
-        .into_iter()
-        .map(|(name, seconds)| DashboardCategory {
-            name,
-            seconds,
-            percent: if total > 0.0 {
-                seconds / total * 100.0
-            } else {
-                0.0
-            },
-        })
-        .collect();
-    categories.sort_by(|a, b| {
-        b.seconds
-            .partial_cmp(&a.seconds)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let mut trend: Vec<DashboardTrendPoint> = trend
-        .into_iter()
-        .map(|(date, seconds)| DashboardTrendPoint {
-            score: day_score(&date),
-            date,
-            seconds,
-        })
-        .collect();
-    trend.sort_by(|a, b| a.date.cmp(&b.date));
-
-    let top_app = apps.first().map(|a| a.display_name.clone());
-    Ok(DashboardData {
-        from: from.to_string(),
-        to: to.to_string(),
-        total_active_seconds: total,
-        top_app,
-        apps,
-        categories,
-        trend,
-    })
 }
 
 #[tauri::command]
@@ -1050,7 +857,7 @@ fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> 
 
 #[tauri::command]
 fn export_csv(app: AppHandle, from: String, to: String) -> Result<String, String> {
-    let data = build_dashboard(&app, &from, &to)?;
+    let data = dashboard::build_dashboard(&app, &from, &to)?;
     let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
     let file = dir.join(format!("使用时长_{from}_至_{to}.csv"));
     let mut out = String::with_capacity(4096);
@@ -1106,7 +913,7 @@ struct AppDetail {
     exe_path: String,
     category: String,
     total_seconds: f64,
-    daily: Vec<DashboardTrendPoint>,
+    daily: Vec<dashboard::DashboardTrendPoint>,
 }
 
 #[tauri::command]
@@ -1161,9 +968,9 @@ fn get_app_detail(
         let s = state.settings.lock().unwrap();
         display_alias(&s, &app_key, &display_name)
     };
-    let mut points: Vec<DashboardTrendPoint> = daily
+    let mut points: Vec<dashboard::DashboardTrendPoint> = daily
         .into_iter()
-        .map(|(date, seconds)| DashboardTrendPoint {
+        .map(|(date, seconds)| dashboard::DashboardTrendPoint {
             date,
             seconds,
             score: None,
@@ -1425,7 +1232,7 @@ fn export_weekly_report(app: AppHandle) -> Result<String, String> {
     let from = (Local::now() - chrono::Duration::days(6))
         .format("%Y-%m-%d")
         .to_string();
-    let data = build_dashboard(&app, &from, &to)?;
+    let data = dashboard::build_dashboard(&app, &from, &to)?;
 
     let mut md = String::new();
     md.push_str(&format!("# 使用周报（{from} ~ {to}）\n\n"));
