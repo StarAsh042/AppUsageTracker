@@ -18,6 +18,10 @@
 - **a11y:** 把 `npm run check` 的 svelte-check 告警从 13 条清到 0 条：两处弹窗支持 Esc 关闭（此前按 Esc 无反应，只能点遮罩或关闭按钮）；`TimelineView` 不再在初始化时直接引用 prop（`state_referenced_locally`），改为挂载后同步一次；悬浮窗根节点补 `role="application"` 与 `aria-label` 说明它是整块拖拽表面；删除未使用的 `.card .value.small` 选择器。
 - **app:** 修复启动瞬间先闪一下白底/灰底、随后才变暗的问题：主窗口在透明模式下启用 `noRedirectionBitmap`（`WS_EX_NOREDIRECTIONBITMAP`）并把 `backgroundColor` 设为全透明，WebView2 首帧渲染前不再露出白色默认底。
 
+### Internal
+
+- **core:** 把 `src-tauri/src/lib.rs` 里的纯逻辑抽到 `crates/tracker-core`：新增 `ext.rs`（protobuf varint 读取、CRX3 头部解析取扩展 ID、公钥哈希到扩展 ID 的 a-p 编码、读 `manifest.json` 版本号）与 `accent.rs`（悬浮窗亚克力着色的混色计算），补 10 个单元测试，`cargo test --all --locked` 从 12 例增加到 22 例。`lib.rs` 只保留同名薄封装，调用点与运行时行为不变。
+
 ## [0.6.4] - 2026-11-16
 
 ### Added
