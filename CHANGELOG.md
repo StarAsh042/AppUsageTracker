@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 去掉 `tauri` 的 `unstable` feature：全仓库唯一的不稳定 API 是 `show_widget_menu` 里的 `AppHandle::get_window`，改用稳定的 `get_webview_window` + `WebviewWindow::popup_menu`，`src-tauri/Cargo.toml` 的 `features` 只剩 `["tray-icon"]`，行为不变。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十六步：四条通用 IPC 命令（`clear_all_data`、`export_csv`、`open_path`、`get_app_version`）搬到 `src-tauri/src/commands.rs`（80 行），`backup.rs` 改为从 `crate::commands` 导入 `open_path`，行为不变，`lib.rs` 从 397 行降到 324 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十五步：实时状态搬到 `src-tauri/src/live.rs`（109 行，含 `LiveTopApp`/`LiveStatus` 两个结构与 `live_status`、`get_live_status` 命令），`api_server.rs` 与 `monitor.rs` 改为从 `crate::live` 导入，行为不变，`lib.rs` 从 494 行降到 397 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十四步：本地工具函数 `fmt_hms`/`csv_escape` 从 `lib.rs` 的「小工具」段搬进 `crates/tracker-core/src/fmt.rs`（51 行），补两个单测（时长按量级切换单位、CSV 只在必要时加引号），`cargo test` 从 25 例增加到 27 例；`lib.rs`、`monitor.rs`、`reports.rs` 改为从 `tracker_core::fmt` 导入，行为不变，`lib.rs` 从 517 行降到 494 行。
