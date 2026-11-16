@@ -4,6 +4,7 @@ mod autostart;
 mod backup;
 mod dashboard;
 mod ext_install;
+mod live;
 mod monitor;
 mod reports;
 mod settings;
@@ -20,14 +21,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
 use chrono::Local;
-use serde::Serialize;
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::CategoryResolver;
 use tracker_core::fmt::{csv_escape, fmt_hms};
-use tracker_core::models::{AppIdentity, DailyUsage, TrackingState, WebInterval};
+use tracker_core::models::{DailyUsage, WebInterval};
 use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
 
@@ -52,25 +52,6 @@ struct AppState {
     web_pending: Mutex<Vec<WebInterval>>,
     /// 分类解析器缓存（save_settings 时重建，避免每秒克隆规则）。
     resolver: Mutex<std::sync::Arc<CategoryResolver>>,
-}
-
-// ---------- 悬浮窗 / 主窗口实时状态 ----------
-
-#[derive(Serialize, Clone)]
-struct LiveTopApp {
-    display_name: String,
-    category: String,
-    active_seconds: f64,
-}
-
-#[derive(Serialize, Clone)]
-struct LiveStatus {
-    state: TrackingState,
-    current_app: Option<AppIdentity>,
-    current_category: Option<String>,
-    current_seconds: f64,
-    today_total_seconds: f64,
-    top_apps: Vec<LiveTopApp>,
 }
 
 // ---------- 入口 ----------
@@ -116,7 +97,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             dashboard::get_dashboard,
-            get_live_status,
+            live::get_live_status,
             settings::get_settings,
             settings::save_settings,
             settings::set_paused,
@@ -342,86 +323,8 @@ pub(crate) fn apply_hotkeys(app: &AppHandle) {
     }
 }
 
-// ---------- 实时状态（悬浮窗 / 主窗口） ----------
-
-pub(crate) fn live_status(app: &AppHandle) -> LiveStatus {
-    let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
-    let now = Local::now();
-    let today = now.format("%Y-%m-%d").to_string();
-    // 先把设置整份快照出来再进聚合器锁：既避免 settings→aggregator 反序造成的
-    // ABBA 死锁，也让下面的别名校验不再每行加一次锁。
-    let (aliases, excluded) = {
-        let s = state.settings.lock().unwrap();
-        let mut excluded: HashSet<String> = s.excluded_app_keys.iter().cloned().collect();
-        if let Ok(self_exe) = std::env::current_exe() {
-            excluded.insert(self_exe.to_string_lossy().to_lowercase());
-        }
-        (s.app_display_names.clone(), excluded)
-    };
-    let alias_of = |app_key: &str, original: &str| -> String {
-        aliases
-            .get(app_key)
-            .cloned()
-            .unwrap_or_else(|| original.to_string())
-    };
-    let agg = state.aggregator.lock().unwrap();
-    // 被排除的应用不再作为「当前前台应用」外露（悬浮窗 / 顶栏状态）
-    let current = agg
-        .current_app()
-        .filter(|c| !excluded.contains(&c.app_key))
-        .cloned();
-    let (current_category, current_seconds) = match &current {
-        Some(c) => (
-            Some(resolver.resolve(&c.display_name, &c.process_name, &c.exe_path)),
-            agg.current_segment_seconds(now),
-        ),
-        None => (None, 0.0),
-    };
-    let mut top: Vec<(String, String, f64)> = Vec::new();
-    let mut today_total = 0.0;
-    let cur_key = current.as_ref().map(|c| c.app_key.clone());
-    for d in agg.daily.values().filter(|d| d.usage_date == today) {
-        // 当前前台应用叠加进行中的区间秒数，排行与总量实时走表
-        let mut secs = d.active_seconds;
-        if cur_key.as_deref() == Some(d.app_key.as_str()) {
-            secs += current_seconds;
-        }
-        today_total += secs;
-        let cat = resolver.resolve(&d.display_name, &d.process_name, &d.exe_path);
-        top.push((alias_of(&d.app_key, &d.display_name), cat, secs));
-    }
-    top.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-    let top_apps = top
-        .into_iter()
-        .take(5)
-        .map(|(display_name, category, active_seconds)| LiveTopApp {
-            display_name,
-            category,
-            active_seconds,
-        })
-        .collect();
-    // 当前应用显示名走别名
-    let mut current = current;
-    if let Some(c) = current.as_mut() {
-        c.display_name = alias_of(&c.app_key, &c.display_name);
-    }
-    LiveStatus {
-        state: agg.state,
-        current_app: current,
-        current_category,
-        current_seconds,
-        today_total_seconds: today_total,
-        top_apps,
-    }
-}
-
 // ---------- Tauri Commands ----------
 
-#[tauri::command]
-fn get_live_status(app: AppHandle) -> LiveStatus {
-    live_status(&app)
-}
 #[tauri::command]
 fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     {
