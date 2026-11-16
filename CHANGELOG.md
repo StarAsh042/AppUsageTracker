@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十六步：四条通用 IPC 命令（`clear_all_data`、`export_csv`、`open_path`、`get_app_version`）搬到 `src-tauri/src/commands.rs`（80 行），`backup.rs` 改为从 `crate::commands` 导入 `open_path`，行为不变，`lib.rs` 从 397 行降到 324 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十五步：实时状态搬到 `src-tauri/src/live.rs`（109 行，含 `LiveTopApp`/`LiveStatus` 两个结构与 `live_status`、`get_live_status` 命令），`api_server.rs` 与 `monitor.rs` 改为从 `crate::live` 导入，行为不变，`lib.rs` 从 494 行降到 397 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十四步：本地工具函数 `fmt_hms`/`csv_escape` 从 `lib.rs` 的「小工具」段搬进 `crates/tracker-core/src/fmt.rs`（51 行），补两个单测（时长按量级切换单位、CSV 只在必要时加引号），`cargo test` 从 25 例增加到 27 例；`lib.rs`、`monitor.rs`、`reports.rs` 改为从 `tracker_core::fmt` 导入，行为不变，`lib.rs` 从 517 行降到 494 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十三步：报表与维护相关的代码搬到 `src-tauri/src/reports.rs`（184 行，含 `DbMaintenance` 结构、`db_maintenance` 命令、`export_weekly_report` 周报导出、`TopTitle`/`TopWeb` 两个排行榜结构与 `get_top_titles`/`get_top_web`），行为不变，`lib.rs` 从 699 行降到 517 行。

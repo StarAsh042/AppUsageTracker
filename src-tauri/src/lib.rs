@@ -2,6 +2,7 @@ mod api_server;
 mod apps;
 mod autostart;
 mod backup;
+mod commands;
 mod dashboard;
 mod ext_install;
 mod live;
@@ -22,11 +23,10 @@ use std::sync::Mutex;
 
 use chrono::Local;
 use tauri::tray::TrayIcon;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracker_core::aggregator::UsageAggregator;
 use tracker_core::category::CategoryResolver;
-use tracker_core::fmt::{csv_escape, fmt_hms};
 use tracker_core::models::{DailyUsage, WebInterval};
 use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
@@ -103,11 +103,11 @@ pub fn run() {
             settings::set_paused,
             settings::set_app_category,
             settings::save_category_rules,
-            export_csv,
-            clear_all_data,
+            commands::export_csv,
+            commands::clear_all_data,
             settings::list_available_categories,
-            open_path,
-            get_app_version,
+            commands::open_path,
+            commands::get_app_version,
             windows::show_widget_menu,
             windows::set_widget_collapsed,
             windows::update_widget_settings,
@@ -321,77 +321,4 @@ pub(crate) fn apply_hotkeys(app: &AppHandle) {
     if let Ok(hk) = widget_hk_s.parse::<Shortcut>() {
         let _ = gs.register(hk);
     }
-}
-
-// ---------- Tauri Commands ----------
-
-#[tauri::command]
-fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    {
-        let st = state.store.lock().unwrap();
-        st.clear_all().map_err(|e| e.to_string())?;
-    }
-    {
-        let mut agg = state.aggregator.lock().unwrap();
-        agg.daily.clear();
-        agg.pending_intervals.clear();
-        agg.pending_state_intervals.clear();
-        agg.pending_title_intervals.clear();
-    }
-    {
-        state.web_open.lock().unwrap().take();
-        state.web_pending.lock().unwrap().clear();
-    }
-    state.notified_limits.lock().unwrap().clear();
-    let _ = app.emit("app://data", ());
-    Ok(())
-}
-
-#[tauri::command]
-fn export_csv(app: AppHandle, from: String, to: String) -> Result<String, String> {
-    let data = dashboard::build_dashboard(&app, &from, &to)?;
-    let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
-    let file = dir.join(format!("使用时长_{from}_至_{to}.csv"));
-    let mut out = String::with_capacity(4096);
-    out.push('\u{FEFF}');
-    out.push_str("应用,分类,活跃时长,活跃秒数\r\n");
-    for a in &data.apps {
-        out.push_str(&format!(
-            "{},{},{},{:.0}\r\n",
-            csv_escape(&a.display_name),
-            csv_escape(&a.category),
-            fmt_hms(a.active_seconds),
-            a.active_seconds
-        ));
-    }
-    std::fs::write(&file, out).map_err(|e| e.to_string())?;
-    Ok(file.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-fn open_path(path: String) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let trimmed = path.trim_end_matches(['\\', '/']);
-        let quoted = format!("\"{trimmed}\"");
-        let is_dir = std::path::Path::new(&path).is_dir();
-        let arg = if is_dir {
-            quoted
-        } else {
-            format!("/select,{quoted}")
-        };
-        std::process::Command::new("explorer")
-            .raw_arg(arg)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(not(windows))]
-    let _ = path;
-    Ok(())
-}
-
-#[tauri::command]
-fn get_app_version(app: AppHandle) -> String {
-    app.package_info().version.to_string()
 }
