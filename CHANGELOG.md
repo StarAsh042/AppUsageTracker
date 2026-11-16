@@ -24,6 +24,7 @@
 
 ### Internal
 
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十四步：本地工具函数 `fmt_hms`/`csv_escape` 从 `lib.rs` 的「小工具」段搬进 `crates/tracker-core/src/fmt.rs`（51 行），补两个单测（时长按量级切换单位、CSV 只在必要时加引号），`cargo test` 从 25 例增加到 27 例；`lib.rs`、`monitor.rs`、`reports.rs` 改为从 `tracker_core::fmt` 导入，行为不变，`lib.rs` 从 517 行降到 494 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十三步：报表与维护相关的代码搬到 `src-tauri/src/reports.rs`（184 行，含 `DbMaintenance` 结构、`db_maintenance` 命令、`export_weekly_report` 周报导出、`TopTitle`/`TopWeb` 两个排行榜结构与 `get_top_titles`/`get_top_web`），行为不变，`lib.rs` 从 699 行降到 517 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十二步：悬浮窗相关的五个 IPC 命令（`show_widget_menu`、`toggle_widget`、`close_widget`、`set_widget_collapsed`、`update_widget_settings`）搬进 `src-tauri/src/windows.rs`，与它们操作的窗口代码放在一起，行为不变，`lib.rs` 从 804 行降到 699 行。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十一步：设置链路整体搬到 `src-tauri/src/settings.rs`（341 行，含 `display_alias`、`resolve_locale`/`apply_locale`、`db_path`、`load_settings`/`migrate_settings`、`save_settings_file`、`set_widget_visible`、`set_paused_internal`，以及 `get_settings`、`save_settings`、`set_paused`、`set_app_display_name`、`exclude_app`、`set_app_category`、`save_category_rules`、`list_available_categories` 八个 IPC 命令），`apply_hotkeys` 提为 `pub(crate)` 供其调用，其余模块改从 `crate::settings` 导入，行为不变，`lib.rs` 从 1114 行降到 804 行。
