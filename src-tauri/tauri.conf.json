@@ -24,6 +24,23 @@
         "transparent": true,
         "backgroundColor": "#00000000",
         "noRedirectionBitmap": true
+      },
+      {
+        "label": "widget",
+        "create": false,
+        "url": "widget.html",
+        "title": "使用时长悬浮窗",
+        "width": 300,
+        "height": 216,
+        "x": 12,
+        "y": 12,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "shadow": false,
+        "focus": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true
       }
     ],
     "security": {

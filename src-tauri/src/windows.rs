@@ -7,9 +7,7 @@
 use std::sync::atomic::Ordering;
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 use tracker_core::settings::WidgetPrefs;
 
 use crate::settings::{save_settings_file, set_widget_visible};
@@ -82,19 +80,21 @@ pub(crate) fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
     } else {
         WIDGET_NORMAL
     };
-    let win =
-        tauri::WebviewWindowBuilder::new(app, "widget", WebviewUrl::App("widget.html".into()))
-            .title("使用时长悬浮窗")
-            .inner_size(w, h)
-            .decorations(false)
-            .transparent(true)
-            .always_on_top(prefs.always_on_top)
-            .skip_taskbar(true)
-            .resizable(false)
-            .shadow(false)
-            .focused(false)
-            .position(12.0, 12.0)
-            .build()?;
+    // 窗口的固定属性（标题、透明、无边框、不占任务栏、无阴影、初始位置 12,12）
+    // 声明在 tauri.conf.json 的 app.windows 里，且 create=false —— 启动时不自动建窗，
+    // 由这里按需 from_config 建。配置里表达不了的只有随偏好变化的尺寸与置顶，
+    // 用 builder 的 inner_size / always_on_top 覆写（同名字段后者覆盖前者）。
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|c| c.label == "widget")
+        .ok_or(tauri::Error::WindowNotFound)?;
+    let win = tauri::WebviewWindowBuilder::from_config(app, config)?
+        .inner_size(w, h)
+        .always_on_top(prefs.always_on_top)
+        .build()?;
     // Win11 Mica 常显背板（失焦也保持磨砂，不再只在点击时透明）；旧系统退回 legacy 亚克力
     if !apply_system_backdrop(&win, false)
         && window_vibrancy::apply_acrylic(&win, Some(accent_tint(&prefs.accent))).is_err()

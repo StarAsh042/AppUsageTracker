@@ -25,6 +25,7 @@
 
 ### Internal
 
+- **core:** 窗口定义收敛：悬浮窗（label `widget`）改为在 `src-tauri/tauri.conf.json` 的 `app.windows` 里声明（标题、300×216 初始尺寸、位置 12,12、无边框、透明、不可缩放、无阴影、不占任务栏、置顶），并置 `"create": false` 让它在启动时不自动建窗；`src-tauri/src/windows.rs` 的 `create_widget_window` 改为按 label 从 `app.config().app.windows` 取这份配置、用 `WebviewWindowBuilder::from_config` 建窗，只保留配置表达不了的两项——随偏好变化的初始尺寸（`inner_size`，紧凑模式 200×76）与 `always_on_top`——用 builder 覆写。建窗仍在独立线程里（建窗死锁的修法不变），DWM 背板、圆角、重新置顶与 `on_menu_event` 顺序不变。
 - **core:** 收紧 CSP：`src-tauri/tauri.conf.json` 的 `app.security.csp` 从 `null` 改为 `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; font-src 'self'; object-src 'none'; base-uri 'self'`。前端不引用任何外链资源（无图片/字体/CDN，构建产物只有 3 个 JS + 3 个 CSS 与各自一个 `<script type="module">`），所以脚本侧不需要 `'unsafe-inline'`；`style-src` 保留 `'unsafe-inline'` 是因为 Svelte 会输出内联 `style` 属性；`connect-src` 放行 `ipc:` 与 `http://ipc.localhost` 供 Tauri IPC 使用。
 - **core:** 去掉 `tauri` 的 `unstable` feature：全仓库唯一的不稳定 API 是 `show_widget_menu` 里的 `AppHandle::get_window`，改用稳定的 `get_webview_window` + `WebviewWindow::popup_menu`，`src-tauri/Cargo.toml` 的 `features` 只剩 `["tray-icon"]`，行为不变。
 - **core:** 拆分 `src-tauri/src/lib.rs` 的第十六步：四条通用 IPC 命令（`clear_all_data`、`export_csv`、`open_path`、`get_app_version`）搬到 `src-tauri/src/commands.rs`（80 行），`backup.rs` 改为从 `crate::commands` 导入 `open_path`，行为不变，`lib.rs` 从 397 行降到 324 行。
