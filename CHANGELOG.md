@@ -21,6 +21,7 @@
 
 - **a11y:** 把 `npm run check` 的 svelte-check 告警从 13 条清到 0 条：两处弹窗支持 Esc 关闭（此前按 Esc 无反应，只能点遮罩或关闭按钮）；`TimelineView` 不再在初始化时直接引用 prop（`state_referenced_locally`），改为挂载后同步一次；悬浮窗根节点补 `role="application"` 与 `aria-label` 说明它是整块拖拽表面；删除未使用的 `.card .value.small` 选择器。
 - **app:** 修复启动瞬间先闪一下白底/灰底、随后才变暗的问题：主窗口在透明模式下启用 `noRedirectionBitmap`（`WS_EX_NOREDIRECTIONBITMAP`）并把 `backgroundColor` 设为全透明，WebView2 首帧渲染前不再露出白色默认底。
+- **app:** 修复主界面点「悬浮窗」按钮后整个界面卡死、图表不再更新的问题。悬浮窗是首次开启时按需创建的，创建代码跑在同步 IPC 命令里，而 Windows 上建 WebView 窗口需要等主线程事件循环（tauri 文档明确写了在同步命令 / 事件处理器里调用会死锁，见 wry#583），于是主线程自己等自己、所有 IPC 永不返回。现在把建窗挪到独立线程（并加锁串行化，避免连点起两个线程重复建窗），主线程立刻返回继续转事件循环，窗口建好后再挂贴边约束。
 
 ### Internal
 

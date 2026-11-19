@@ -65,7 +65,8 @@
   - 验收：全仓库只有一个不稳定 API 调用点——`windows.rs` 的 `show_widget_menu` 用 `AppHandle::get_window`（仅 `unstable` 提供），改为 `get_webview_window` + `WebviewWindow::popup_menu(&menu)` 后，`features` 收窄为 `["tray-icon"]`，`cargo check`/`clippy -D warnings`/`test`（27 例）全过。
 - [x] **收紧 CSP**：`src-tauri/tauri.conf.json` 的 `app.security.csp` 从 `null` 改为 `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; font-src 'self'; object-src 'none'; base-uri 'self'`。
   - 验收：先确认前端没有外链资源（`src/` 下无 `fetch(`/`http(s)://`/图片/字体/`url()`，构建产物只有外链 JS+CSS，无内联 `<script>`），因此 `script-src` 不需要 `'unsafe-inline'`；`style-src` 必须留 `'unsafe-inline'`，因为 Svelte 输出 18 处内联 `style` 属性。用 `--remote-debugging-port` 起 debug 构建，经 CDP 抓 `http://tauri.localhost/` 与 `http://tauri.localhost/widget.html` 两个 target：主窗与悬浮窗都不白屏（`appChildren=1`、`styleSheets=2`、`scripts=1`，正文渲染完整），再依次点开时间线/日历/对比/设置/仪表盘五个页面，全部正常渲染且 console 零 error（`Log.entryAdded` 与 `Runtime.consoleAPICalled` 均无 error/warning）。注意 Windows 下 CSP 通过响应头下发、不注入 `<meta>`，页内 `eval` 也不会被拦，所以判据是「不白屏 + 零 console 报错」而非 `eval` 是否可用。
-- [ ] **窗口定义收敛**：widget 窗口是代码里 `create_widget_window` 动态建的（`tauri.conf.json` 的 windows 数组只有 main）。评估改为配置声明 + 运行时只改位置，减少命令式建窗的分支。
+- [ ] **窗口定义收敛**：widget 窗口是代码里 `create_widget_window` 动态建的（`tauri.conf.json` 的 windows 数组只有 main）。评估改为配置声明 + 运行时只改位置，减少命令式建窗的分支。注意本次修的建窗死锁（wry#583）与这个收敛方向有关：配置声明 + `"create": false` 后再按需 `from_config` 建窗，同样不能放在同步命令里。
+  - 前置勘察：`WebviewWindowBuilder::from_config` 在 tauri-2.12.5 `src/webview/webview_window.rs:150`，`config.rs:1970` 的 `create` 默认 true，`app.rs:2691` 只对 `create == true` 的窗口自动建窗；`tauri-runtime-wry-2.12.3/src/lib.rs:796-880 with_config` 会应用 title/visible/resizable/decorations/transparent/always_on_top/skip_taskbar/shadow 等字段。风险点是 `create_widget_window` 现在按 `prefs.compact` 决定初始尺寸（`WIDGET_COMPACT` (200,76) vs `WIDGET_NORMAL` (300,216)），配置化后要改成建窗后再 `set_size`。
 
 ## P3 功能演进
 
