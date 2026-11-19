@@ -64,9 +64,9 @@ export function orderedDelta(a: number, b: number, aIsOlder: boolean): number | 
   return ((newer - older) / older) * 100;
 }
 
-/** 变化率的展示文本；null（上一周期为 0）显示「新增」 */
-export function formatDelta(d: number | null): string {
-  return d === null ? '新增' : `${d >= 0 ? '+' : ''}${d.toFixed(0)}%`;
+/** 变化率的展示文本；null（上一周期为 0）显示「新增」（newLabel 供调用方按语言覆盖） */
+export function formatDelta(d: number | null, newLabel = '新增'): string {
+  return d === null ? newLabel : `${d >= 0 ? '+' : ''}${d.toFixed(0)}%`;
 }
 
 /** 变化率对应的样式类 */

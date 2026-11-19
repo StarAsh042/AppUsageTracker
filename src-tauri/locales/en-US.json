@@ -27,5 +27,6 @@
   "休息提醒": "Rest Reminder",
   "已连续活跃使用 %{mins} 分钟，站起来活动一下吧": "Active for %{mins} minutes — time to stretch!",
   "软件使用时间统计": "App Usage Tracker",
-  "今日 %{total}": "Today %{total}"
+  "今日 %{total}": "Today %{total}",
+  "今日 %{total} · %{app}": "Today %{total} · %{app}"
 }
