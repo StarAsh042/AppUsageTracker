@@ -80,13 +80,32 @@ pub(crate) fn save_settings_file(app: &AppHandle) {
     }
 }
 
+/// 悬浮窗建窗串行化：连续快速点击会各起一个线程，用这把锁保证只有一个真正建窗。
+static WIDGET_CREATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub(crate) fn set_widget_visible(app: &AppHandle, visible: bool) {
     if visible {
         if app.get_webview_window("widget").is_none() {
-            if let Err(e) = windows::create_widget_window(app) {
-                eprintln!("create widget failed: {e}");
-            }
-            windows::setup_widget_clamp(app);
+            // tauri 文档（wry#583）：Windows 上在同步命令或事件处理器里调
+            // WebviewWindowBuilder::build 会死锁 —— 建窗要等主线程的事件循环，
+            // 而调用方此刻正占着主线程，界面就此卡死。这里把建窗挪到独立线程，
+            // 主线程立刻返回、事件循环继续转，窗口建好后再挂拖拽约束。
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                // 拿不到锁（被毒化）也要继续建窗，锁只是用来串行化
+                let _guard = WIDGET_CREATION_LOCK
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                // 排队期间前一个线程可能已经把窗口建好了
+                if handle.get_webview_window("widget").is_some() {
+                    return;
+                }
+                if let Err(e) = windows::create_widget_window(&handle) {
+                    eprintln!("create widget failed: {e}");
+                    return;
+                }
+                windows::setup_widget_clamp(&handle);
+            });
         } else if let Some(w) = app.get_webview_window("widget") {
             let _ = w.show();
         }
