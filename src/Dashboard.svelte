@@ -1,6 +1,6 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
+  import { api, fmtDuration, categoryLabel, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
   import { lang, en } from './lib/i18n';
   import Modal from './lib/Modal.svelte';
 
@@ -307,7 +307,7 @@
     if (!menu) return;
     const key = menu.appKey;
     const name = data?.apps.find((a) => a.app_key === key)?.display_name ?? key;
-    if (!confirm(`「${name}」— ${t('将停止统计并清除其全部记录')}`)) return;
+    if (!confirm(`${t('「')}${name}${t('」')} — ${t('将停止统计并清除其全部记录')}`)) return;
     menu = null;
     await api.excludeApp(key);
     await load();
@@ -361,7 +361,7 @@
         <div class="label">{t('总活跃时长')}</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
         {#if isMultiDay}
-          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}（{dayCount} {t('天')}）</div>
+          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}{t('（')}{dayCount} {t('天')}{t('）')}</div>
         {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
@@ -379,7 +379,7 @@
       </div>
       {#if scoreInfo}
         <div class="card">
-          <div class="label">效率评分</div>
+          <div class="label">{t('效率评分')}</div>
           <div class="score-row">
             <svg viewBox="0 0 100 100" class="ring">
               <circle cx="50" cy="50" r="42" class="ring-bg"></circle>
@@ -393,7 +393,7 @@
             </svg>
             <div>
               <div class="value">{scoreInfo.pct}%</div>
-              <div class="delta">按分类性质加权</div>
+              <div class="delta">{t('按分类性质加权')}</div>
             </div>
           </div>
         </div>
@@ -425,7 +425,7 @@
             >
               <span class="col-rank">{i + 1}</span>
               <span class="col-name">{aliasName(a.app_key, a.display_name)}</span>
-              <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{a.category}</span></span>
+              <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span></span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
               <span class="col-bar">
                 <span class="bar"><span class="fill" style="width:{Math.min(100, a.percent)}%"></span></span>
@@ -461,7 +461,7 @@
                 {#each catTree.filter((c) => c.depth === 0) as c (c.name)}
                   <span class="legend-item">
                     <span class="sw" style="background:{catColor(c.name)}"></span>
-                    {c.name}
+                    {categoryLabel(c.name, $lang)}
                   </span>
                 {/each}
               </div>
@@ -471,13 +471,13 @@
             {#each catTree as c (c.name)}
               <div class="cat-row" class:child={c.depth > 0}>
                 <span class="cat-name" class:dim={c.depth > 0}>
-                  {c.depth > 0 ? '└ ' : ''}{c.name}
+                  {c.depth > 0 ? '└ ' : ''}{categoryLabel(c.name, $lang)}
                 </span>
                 <span class="cat-bar"><span class="fill" style="width:{c.percent}%"></span></span>
                 <span class="cat-dur">{fmtDuration(c.seconds)}</span>
               </div>
             {:else}
-              <div class="empty">暂无数据</div>
+              <div class="empty">{t('暂无数据')}</div>
             {/each}
           </div>
         </div>
@@ -491,24 +491,24 @@
             </span>
           </div>
           <div class="trend">
-            {#each data.trend as t (t.date)}
+            {#each data.trend as pt (pt.date)}
               {@const val =
                 trendMode === 'score'
-                  ? t.score === null
+                  ? pt.score === null
                     ? 0
-                    : t.score
-                  : t.seconds}
+                    : pt.score
+                  : pt.seconds}
               {@const pct =
                 trendMode === 'score'
                   ? Math.min(100, val)
                   : (val / trendMax(data.trend)) * 100}
               <div
                 class="t-col"
-                title="{t.date} {trendMode === 'score'
-                  ? t.score === null
-                    ? '无评分'
-                    : `效率 ${t.score}%`
-                  : fmtDuration(t.seconds)}"
+                title="{pt.date} {trendMode === 'score'
+                  ? pt.score === null
+                    ? t('无评分')
+                    : `${t('效率')} ${pt.score}%`
+                  : fmtDuration(pt.seconds)}"
               >
                 <div class="t-bar-wrap">
                   <div
@@ -521,10 +521,10 @@
                 </div>
                 <div class="t-label">
                   {trendMode === 'score'
-                    ? t.score === null
+                    ? pt.score === null
                       ? '·'
-                      : `${t.score}%`
-                    : t.date.slice(5)}
+                      : `${pt.score}%`
+                    : pt.date.slice(5)}
                 </div>
               </div>
             {:else}
@@ -558,7 +558,7 @@
   <Modal label={aliasName(d.app_key, d.display_name)} onclose={() => (detail = null)}>
     {#snippet head()}
       <div class="m-name">{aliasName(d.app_key, d.display_name)}</div>
-      <div class="m-meta"><span class="cat-chip">{d.category}</span> <span class="m-path">{d.exe_path}</span></div>
+      <div class="m-meta"><span class="cat-chip">{categoryLabel(d.category, $lang)}</span> <span class="m-path">{d.exe_path}</span></div>
     {/snippet}
     <div class="alias-row">
       <input

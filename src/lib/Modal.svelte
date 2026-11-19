@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { lang } from './i18n';
 
   // 通用模态框。之前 Dashboard 与 SettingsView 各写一份 markup，
   // 而 CSS 只在 Dashboard 里定义过，SettingsView 的弹窗其实是散在页面里的裸元素。
   // 放到组件里之后：遮罩点击、Esc、关闭按钮、焦点归位都只有一处实现。
   let {
     label = '',
-    closeLabel = '关闭',
+    closeLabel = '',
     onclose,
     head,
     children,
@@ -17,6 +18,9 @@
     head?: Snippet;
     children: Snippet;
   } = $props();
+
+  // 关闭按钮只有 aria-label，没有可见文字；默认按当前语言给出
+  const closeText = $derived(closeLabel || ($lang === 'en' ? 'Close' : '关闭'));
 
   let box = $state<HTMLDivElement | null>(null);
 
@@ -51,7 +55,7 @@
       <div class="modal-title">
         {#if head}{@render head()}{/if}
       </div>
-      <button class="m-close" aria-label={closeLabel} onclick={onclose}>✕</button>
+      <button class="m-close" aria-label={closeText} onclick={onclose}>✕</button>
     </div>
     {@render children()}
   </div>

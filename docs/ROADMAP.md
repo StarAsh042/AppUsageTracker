@@ -70,11 +70,12 @@
 
 ## P3 功能演进
 
-- [ ] **国际化补全**：`src/lib/i18n.ts` 目前是中文键 → 英文值的字典（46 条），只有包了 `t()` 的文案才会切换语言。实测各视图中文出现次数与 `t()` 调用数差距很大：TimelineView 21 处中文但仅 3 个 `t()`，Widget 41 / 7，SettingsView 150 / 100。要真正实现「中英双语」，需要把文案抽成 key 而非中文串，或至少逐个补齐 `t()`。
+- [x] **国际化补全**：`src/lib/i18n.ts` 是中文键 → 英文值的字典。此前只有一部分文案包了 `t()`，切到英文后时间线、仪表盘、对比、设置、悬浮窗、弹窗里仍会露出中文。现已把前端剩余裸中文全部收进 `t()`（字典 222 → 270 条），并把拼在 `t()` 之外的中文标点也改成词条（英文下渲染成 `, ` / `: ` / `?` 等对应写法）；仪表盘趋势图与悬浮窗排行榜的循环变量 `t` 与组件级 `t()` 撞名的问题一并改掉。内置分类名（开发 / 浏览器 / 办公 / 沟通 / 设计 / 娱乐 / 工具 / 系统 / 未分类）经新增的 `categoryLabel()` 在英文下显示为 Development / Browser / … / Uncategorized，用户自建分类名保持原样。后端三处硬编码中文（休息提醒正文、托盘悬停提示的两行）改用 `rust_i18n` 的 `t!()`，`src-tauri/locales/en-US.json` 补上 `今日 %{total} · %{app}`。
+  验收：`npm run check` 0 errors 0 warnings，`npm test` 29 passed，`cargo test --all --locked` 27 passed；扫描脚本 `tmp/i18n_scan2.py` 在剥掉 `t('…')` 后剩余 36 处中文，全部是注释、数据层常量（分类名映射表、状态名映射表）或已按 `$lang` 分流的三目分支；`tmp/i18n_missing2.py` 报 used 219 / keys 269 / missing 0。英文界面用 CDP 实测过六个页面：零 console 报错，分类列显示 Development / Browser / System / Tools / Uncategorized。
 - [ ] **跨平台**：目前只有 Windows 有发布包与实机验收，`cross-check` 只剩 `windows-2022`。macOS 需要先解决 runner 不可用问题，再补签名/公证；Linux 需要补 WebKitGTK 依赖与打包目标。均为【未验证】。
 - [ ] **数据可迁移**：`0.3.0` 是 C#/WPF → Rust 的破坏性重写，仓库没有旧版数据迁移说明；`settings.rs` 里有 `schema_version` 与迁移链的位置，但历史数据（若用户从 C# 版迁移）没有路径。评估做一个一次性导入工具或明确声明不支持。
 - [ ] **更新回滚**：当前 updater 只前进不后退，回滚表现【未验证】。评估记录「上一个可用版本」并在启动连续失败时提示手动回退。
-- [ ] **周报自动化**：`export_weekly_report`（`src-tauri/src/lib.rs:2623`）已能导出 Markdown 周报，可加「每周一自动生成并可选通知」的开关。
+- [ ] **周报自动化**：`export_weekly_report`（`src-tauri/src/reports.rs`）已能导出 Markdown 周报，可加「每周一自动生成并可选通知」的开关。
 
 ## P4 工程化
 

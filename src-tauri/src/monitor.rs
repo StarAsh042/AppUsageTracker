@@ -149,8 +149,9 @@ pub(crate) fn spawn_monitor(app: AppHandle) {
                     .notification()
                     .builder()
                     .title(t!("休息提醒"))
-                    .body(format!(
-                        "已连续活跃使用 {rest_minutes} 分钟，站起来活动一下吧"
+                    .body(t!(
+                        "已连续活跃使用 %{mins} 分钟，站起来活动一下吧",
+                        mins = rest_minutes
                     ))
                     .show();
             }
@@ -187,15 +188,18 @@ pub(crate) fn spawn_monitor(app: AppHandle) {
             if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
                 let tip = match &status.current_app {
                     Some(a) => format!(
-                        "软件使用时间统计
-今日 {} · {}",
-                        fmt_hms(status.today_total_seconds),
-                        a.display_name
+                        "{}\n{}",
+                        t!("软件使用时间统计"),
+                        t!(
+                            "今日 %{total} · %{app}",
+                            total = fmt_hms(status.today_total_seconds),
+                            app = a.display_name
+                        )
                     ),
                     None => format!(
-                        "软件使用时间统计
-今日 {}",
-                        fmt_hms(status.today_total_seconds)
+                        "{}\n{}",
+                        t!("软件使用时间统计"),
+                        t!("今日 %{total}", total = fmt_hms(status.today_total_seconds))
                     ),
                 };
                 let _ = tray.set_tooltip(Some(tip));

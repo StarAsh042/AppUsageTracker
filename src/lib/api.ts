@@ -266,6 +266,33 @@ export function fmtDuration(sec: number): string {
   return `${s}秒`;
 }
 
+/**
+ * 分类名的英文映射。只覆盖系统内置的分类：tracker-core 默认规则里的八个分类名
+ * 与 UNCATEGORIZED。用户自建的同名分类会被一起翻译，这是可接受的取舍 ——
+ * 分类名是数据不是文案，不能走 t() 字典。
+ */
+const CATEGORY_EN: Record<string, string> = {
+  [UNCATEGORIZED]: 'Uncategorized',
+  开发: 'Development',
+  浏览器: 'Browser',
+  办公: 'Office',
+  沟通: 'Communication',
+  设计: 'Design',
+  娱乐: 'Entertainment',
+  工具: 'Tools',
+  系统: 'System',
+};
+
+const mapCat = (name: string) => CATEGORY_EN[name] ?? name;
+
+export function categoryLabel(cat: string, lang: 'zh' | 'en' = 'zh'): string {
+  if (lang !== 'en') return cat;
+  // 分类支持「父/子」层级写法（Dashboard 的 catTree 按 '/' 拆），只翻父级：
+  // 顶层可能是内置分类名，子级一定是用户自己写的。
+  const cut = cat.indexOf('/');
+  return cut < 0 ? mapCat(cat) : mapCat(cat.slice(0, cut).trim()) + cat.slice(cut);
+}
+
 export function stateLabel(state: string, lang: 'zh' | 'en' = 'zh'): string {
   if (lang === 'en') {
     const en: Record<string, string> = {
