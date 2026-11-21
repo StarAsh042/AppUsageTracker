@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+（暂无未发布变更）
+
+## [0.6.5] - 2026-11-21
+
 ### Added
 
 - **settings:** 设置页新增「数据库维护」面板：一键做完整性检查 + VACUUM，并把 WAL 日志截断，结果里显示完整性检查结论、压缩是否成功、主库体积、页数与空闲页数。
@@ -256,7 +260,8 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...v0.6.2
