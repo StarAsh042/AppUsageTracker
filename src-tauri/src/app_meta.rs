@@ -30,7 +30,11 @@ pub(crate) fn icon_data_url(exe_path: &str) -> Option<String> {
     }
 }
 
-pub(crate) fn chinese_name(exe_path: &str, process_name: &str, display_name: &str) -> Option<String> {
+pub(crate) fn chinese_name(
+    exe_path: &str,
+    process_name: &str,
+    display_name: &str,
+) -> Option<String> {
     if has_cjk(display_name) {
         return None;
     }
@@ -147,10 +151,8 @@ fn extract_icon_data_url(exe_path: &str) -> Option<String> {
         BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
     };
     use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
-    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGFI_ICON, SHGFI_SMALLICON, SHFILEINFOW};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        DestroyIcon, GetIconInfo, HICON, ICONINFO,
-    };
+    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON};
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
 
     struct IconResources {
         dc: Option<windows::Win32::Graphics::Gdi::HDC>,
@@ -213,7 +215,13 @@ fn extract_icon_data_url(exe_path: &str) -> Option<String> {
 
     let mut bitmap = BITMAP::default();
     let bitmap_len = std::mem::size_of::<BITMAP>() as i32;
-    if unsafe { GetObjectW(HGDIOBJ(hbm.0), bitmap_len, Some(&mut bitmap as *mut _ as *mut _)) } != bitmap_len
+    if unsafe {
+        GetObjectW(
+            HGDIOBJ(hbm.0),
+            bitmap_len,
+            Some(&mut bitmap as *mut _ as *mut _),
+        )
+    } != bitmap_len
         || bitmap.bmWidth <= 0
         || bitmap.bmHeight <= 0
     {
@@ -292,7 +300,12 @@ mod tests {
             Some("任务管理器")
         );
         assert_eq!(
-            chinese_name("C:\\Program Files\\Microsoft\\Edge\\msedge.exe", "msedge", "Microsoft Edge").as_deref(),
+            chinese_name(
+                "C:\\Program Files\\Microsoft\\Edge\\msedge.exe",
+                "msedge",
+                "Microsoft Edge"
+            )
+            .as_deref(),
             Some("微软 Edge 浏览器")
         );
         assert_eq!(
