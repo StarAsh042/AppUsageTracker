@@ -1,14 +1,18 @@
 <script lang="ts">
   import {
     api,
+    UNCATEGORIZED,
+    categoryLabel,
     type TrackerSettings,
     type CategoryRule,
     type ScannedApp,
     type UpdateInfo,
     type ExtInstallResult,
+    type DbMaintenance,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
   import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
+  import Modal from './lib/Modal.svelte';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -28,6 +32,9 @@
   let extInstalling = $state(false);
   let extResults = $state<ExtInstallResult[]>([]);
   let fileInput: HTMLInputElement | undefined = $state();
+  let maint = $state<DbMaintenance | null>(null);
+  let maintBusy = $state(false);
+  let maintError = $state('');
 
   $effect(() => {
     if (showExtInstall) {
@@ -75,7 +82,7 @@
     if (scanned) {
       scanned = scanned.map((a) => (a.app_key === appKey ? { ...a, category: cat } : a));
     }
-    status = '分类已更新';
+    status = t('分类已更新');
   }
 
   $effect(() => {
@@ -105,9 +112,9 @@
         .map((x) => x.trim())
         .filter(Boolean);
       await api.saveSettings(snapshot);
-      status = $lang === 'en' ? 'Saved. Changes apply immediately' : '已保存，设置即时生效';
+      status = t('已保存，设置即时生效');
     } catch (e) {
-      status = `保存失败: ${e}`;
+      status = `${t('保存失败')}: ${e}`;
     } finally {
       saving = false;
     }
@@ -133,16 +140,16 @@
           .map((x) => x.trim())
           .filter(Boolean);
         if (!name && !keywords.length) continue; // 空行跳过
-        if (!name) throw new Error('分类名不能为空');
-        if (seen.has(name)) throw new Error(`分类「${name}」重复`);
+        if (!name) throw new Error(t('分类名不能为空'));
+        if (seen.has(name)) throw new Error(`${t('分类')}${t('「')}${name}${t('」')}${t('重复')}`);
         seen.add(name);
-        if (!keywords.length) throw new Error(`分类「${name}」至少需要一个关键词`);
+        if (!keywords.length) throw new Error(`${t('分类')}${t('「')}${name}${t('」')}${t('至少需要一个关键词')}`);
         out.push({ name, keywords });
       }
-      if (!out.length) throw new Error('至少保留一条分类规则');
+      if (!out.length) throw new Error(t('至少保留一条分类规则'));
       await api.saveCategoryRules(out);
       if (s) s.category_rules = out;
-      status = '分类规则已保存';
+      status = t('分类规则已保存');
     } catch (e) {
       status = String(e);
     }
@@ -153,14 +160,14 @@
     try {
       const path = await api.exportBackupJson();
       backups = await api.listBackups();
-      status = `已导出: ${path}`;
+      status = `${t('已导出')}: ${path}`;
     } catch (e) {
       status = String(e);
     }
   }
 
   async function deleteBackup(name: string) {
-    if (!confirm(`${t('删除备份')} ${name}？`)) return;
+    if (!confirm(`${t('删除备份')} ${name}${t('？')}`)) return;
     try {
       await api.deleteBackup(name);
       backups = await api.listBackups();
@@ -171,12 +178,37 @@
   }
 
   async function importBackup() {
-    if (!confirm('导入将清空当前全部数据并以最新备份替换，确定继续？')) return;
+    if (!confirm(t('导入将清空当前全部数据并以最新备份替换，确定继续？'))) return;
     status = '';
     try {
       status = await api.importBackupJson();
     } catch (e) {
       status = String(e);
+    }
+  }
+
+  function formatBytes(n: number): string {
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let v = n;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i += 1;
+    }
+    return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  }
+
+  async function runMaintenance() {
+    maintBusy = true;
+    maintError = '';
+    try {
+      maint = await api.dbMaintenance();
+    } catch (e) {
+      maintError = String(e);
+      maint = null;
+    } finally {
+      maintBusy = false;
     }
   }
 
@@ -189,7 +221,7 @@
   }
 
   async function restoreBackup(name: string) {
-    if (!confirm(`${t('恢复备份')} ${name}？${t('将清空当前全部数据')}，确定继续？`)) return;
+    if (!confirm(`${t('恢复备份')} ${name}${t('？')}${t('将清空当前全部数据')}${t('，')}${t('确定继续？')}`)) return;
     status = '';
     try {
       status = await api.restoreBackupNamed(name);
@@ -206,7 +238,7 @@
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    if (!confirm(`${t('从所选文件恢复')} ${file.name}？${t('将清空当前全部数据')}，确定继续？`)) {
+    if (!confirm(`${t('从所选文件恢复')} ${file.name}${t('？')}${t('将清空当前全部数据')}${t('，')}${t('确定继续？')}`)) {
       input.value = '';
       return;
     }
@@ -230,10 +262,10 @@
       if (info) {
         updateInfo = info;
       } else {
-        updateStatus = '当前已是最新版本';
+        updateStatus = t('当前已是最新版本');
       }
     } catch (e) {
-      updateStatus = `检查失败: ${e}`;
+      updateStatus = `${t('检查失败')}: ${e}`;
     } finally {
       updateChecking = false;
     }
@@ -244,7 +276,7 @@
     try {
       await api.installUpdate();
     } catch (e) {
-      updateStatus = `更新失败: ${e}`;
+      updateStatus = `${t('更新失败')}: ${e}`;
       updateInstalling = false;
     }
   }
@@ -282,11 +314,11 @@
       case 'not_found':
         return t('未检测到该浏览器');
       case 'pack_failed':
-        return `${t('打包失败')}：${r.message}`;
+        return `${t('打包失败')}${t('：')}${r.message}`;
       case 'bad_crx':
         return t('打包产物无效，请改用手动安装');
       case 'registry_failed':
-        return `${t('写入注册表失败')}：${r.message}`;
+        return `${t('写入注册表失败')}${t('：')}${r.message}`;
       default:
         return r.message;
     }
@@ -310,9 +342,9 @@
   }
 
   async function clearData() {
-    if (confirm('确定清空全部统计数据？此操作不可恢复。')) {
+    if (confirm(t('确定清空全部统计数据？此操作不可恢复。'))) {
       await api.clearAllData();
-      status = '统计数据已清空';
+      status = t('统计数据已清空');
     }
   }
 
@@ -358,7 +390,7 @@
             <input type="number" min="250" max="10000" step="250" bind:value={s.foreground_poll_ms} />
           </label>
           <label>
-            <span>{t('休息提醒')}（{t('分钟')}，0 = {t('关闭')}）</span>
+            <span>{t('休息提醒')}{t('（')}{t('分钟')}{t('，')}0 = {t('关闭')}{t('）')}</span>
             <input type="number" min="0" max="240" bind:value={s.rest_reminder_minutes} />
           </label>
           <label>
@@ -394,11 +426,11 @@
                 <input type="text" bind:value={s.hotkey_widget} spellcheck="false" />
               </label>
             </div>
-            <p class="hint" style="margin:8px 0 0">组合写法如 Ctrl+Alt+D / Ctrl+Shift+P，保存时校验有效性。</p>
+            <p class="hint" style="margin:8px 0 0">{t('组合写法如 Ctrl+Alt+D / Ctrl+Shift+P，保存时校验有效性。')}</p>
           {/if}
           <label class="check-row">
             <input type="checkbox" bind:checked={s.api_enabled} />
-            <span>{t('本地')}:{s.api_port}，{t('供第三方工具读取统计')}</span>
+            <span>{t('本地')}:{s.api_port}{t('，')}{t('供第三方工具读取统计')}</span>
           </label>
         </div>
         {#if s.api_enabled}
@@ -422,14 +454,14 @@
       </section>
 
       <section class="panel">
-        <h3>{t('隐私')}：{t('窗口标题记录')}</h3>
+        <h3>{t('隐私')}{t('：')}{t('窗口标题记录')}</h3>
         <label class="check-row" style="margin-bottom:10px">
           <input type="checkbox" bind:checked={s.record_window_titles} />
           <span>{t('记录前台窗口标题')}</span>
         </label>
         <label class="check-row">
           <input type="checkbox" bind:checked={s.record_web} />
-          <span>{t('网页浏览统计')}（{t('需安装浏览器扩展')}）</span>
+          <span>{t('网页浏览统计')}{t('（')}{t('需安装浏览器扩展')}{t('）')}</span>
         </label>
         {#if s.record_web}
           <div class="grid2" style="margin-top:8px">
@@ -440,7 +472,7 @@
           </div>
         {/if}
         {#if s.record_window_titles}
-          <p class="hint">{t('排除规则')}——{t('每行一条子串')}。</p>
+          <p class="hint">{t('排除规则——每行一条子串。')}</p>
           <textarea
             rows="4"
             bind:value={titlePatternsText}
@@ -476,16 +508,16 @@
 
       <section class="panel">
         <h3>{t('排除应用')}</h3>
-        <p class="hint">{t('每行一个')}。</p>
+        <p class="hint">{t('每行一个。')}</p>
         <textarea rows="5" bind:value={excludedText} spellcheck="false"></textarea>
       </section>
 
       <section class="panel">
-        <h3>{t('分类每日限额')}（{t('分钟')}，0 = {t('不限')}）</h3>
+        <h3>{t('分类每日限额')}{t('（')}{t('分钟')}{t('，')}0 = {t('不限')}{t('）')}</h3>
         <div class="limits">
           {#each ruleNames() as name (name)}
             <label class="limit-row">
-              <span>{name}</span>
+              <span>{categoryLabel(name, $lang)}</span>
               <input
                 type="number"
                 min="0"
@@ -503,19 +535,19 @@
               </select>
             </label>
           {/each}
-          <p class="hint">{t('产出')} / {t('中性')} / {t('分心')} → {t('效率趋势')}。</p>
+          <p class="hint">{t('产出 / 中性 / 分心 → 效率趋势。')}</p>
         </div>
       </section>
 
       <section class="panel">
         <h3>{t('分类规则')}</h3>
-        <p class="hint">{t('关键词以')} — {t('层级')}。</p>
+        <p class="hint">{t('关键词以 | 分隔，可写「父—子」层级。')}</p>
         <div class="rules-editor">
           {#each rules as r, i (`${r.name}-${i}`)}
             <div class="rule-row">
               <input class="rule-name" placeholder={t('分类名')} bind:value={r.name} spellcheck="false" />
               <input class="rule-kw" placeholder={t('关键词1')} bind:value={r.keywords} spellcheck="false" />
-              <button class="rule-del" title="删除分类" onclick={() => delRule(i)}>✕</button>
+              <button class="rule-del" title={t('删除分类')} onclick={() => delRule(i)}>✕</button>
             </div>
           {/each}
         </div>
@@ -531,18 +563,18 @@
         <div class="row-actions">
           <button class="ghost" disabled={scanning} onclick={runScan}>{scanning ? t('扫描中') + '…' : t('扫描应用')}</button>
           {#if scanned}
-            <span class="hint">{t('共')} {scanned.length} {t('个应用')}，{t('其中未分类')} {scanned.filter((a) => a.category === '未分类').length}</span>
+            <span class="hint">{t('共')} {scanned.length} {t('个应用')}{t('，')}{t('其中未分类')} {scanned.filter((a) => a.category === UNCATEGORIZED).length}</span>
           {/if}
         </div>
         {#if scanned && scanned.length}
           <div class="scan-list">
             {#each scanned as a (a.app_key)}
-              <div class="scan-row" class:uncat={a.category === '未分类'}>
+              <div class="scan-row" class:uncat={a.category === UNCATEGORIZED}>
                 <span class="scan-name" title={a.app_key}>{a.display_name} <span class="scan-src">{a.source}</span></span>
-                <span class="cat-chip">{a.category}</span>
+                <span class="cat-chip">{categoryLabel(a.category, $lang)}</span>
                 <select
-                  value={a.category === '未分类' ? '' : a.category}
-                  onchange={(e) => assignCategory(a.app_key, (e.currentTarget as HTMLSelectElement).value || '未分类')}
+                  value={a.category === UNCATEGORIZED ? '' : a.category}
+                  onchange={(e) => assignCategory(a.app_key, (e.currentTarget as HTMLSelectElement).value || UNCATEGORIZED)}
                 >
                   <option value="">{t('设为分类')}</option>
                   {#each ruleNames() as name (name)}
@@ -569,7 +601,7 @@
         </div>
         <label class="check-row" style="margin-bottom:12px">
           <input type="checkbox" bind:checked={s.update_use_proxy} onchange={save} />
-          <span>{t('更新时使用系统代理')}（{t('默认关闭：强制直连、跳过代理')}）</span>
+          <span>{t('更新时使用系统代理')}{t('（')}{t('默认关闭：强制直连、跳过代理')}{t('）')}</span>
         </label>
         <div class="row-actions">
           <button class="ghost" disabled={updateChecking} onclick={checkUpdateNow}>
@@ -591,7 +623,7 @@
       </section>
 
       <section class="panel">
-        <h3>{t('备份与恢复')}（JSON）</h3>
+        <h3>{t('备份与恢复')}{t('（')}JSON{t('）')}</h3>
         <p class="hint">{t('备份保存在数据目录')}</p>
         <div class="row-actions">
           <button class="ghost" onclick={exportBackup}>{t('导出全部数据')}</button>
@@ -626,36 +658,56 @@
         {/if}
       </section>
 
+      <section class="panel">
+        <h3>{t('数据库维护')}</h3>
+        <p class="hint">{t('压缩数据库并截断 WAL 日志文件')}</p>
+        <div class="row-actions">
+          <button class="ghost" disabled={maintBusy} onclick={runMaintenance}>
+            {maintBusy ? t('处理中') : t('完整性检查 + 压缩 (VACUUM)')}
+          </button>
+        </div>
+        {#if maint}
+          <p class="hint">
+            {t('完整性检查')}{t('：')}{maint.integrity} · {t('体积')} {formatBytes(maint.db_bytes)} ·
+            {t('页数')} {maint.page_count} · {t('空闲页')} {maint.freelist}
+          </p>
+          <p class="hint">
+            {maint.vacuum_ok ? t('压缩完成') : t('压缩失败')} ·
+            {maint.checkpoint_ok ? t('WAL 已截断') : t('WAL 截断失败')}
+          </p>
+        {/if}
+        {#if maintError}
+          <p class="hint error-text">{maintError}</p>
+        {/if}
+      </section>
+
     </div>
 
     {#if showExtInstall}
-      <div class="modal-mask" onclick={() => (showExtInstall = false)}>
-        <div class="modal" onclick={(e) => e.stopPropagation()}>
-          <div class="modal-head">
-            <div class="m-name">{t('安装浏览器扩展')}</div>
-            <button class="m-close" onclick={() => (showExtInstall = false)}>✕</button>
-          </div>
-          <p class="hint" style="margin:12px 0">{t('选择你的浏览器，将打开扩展管理页')}</p>
-          <div class="ext-browser-row">
-            <button class="ext-browser-btn" onclick={() => installExt('chrome')}>
-              <span class="ext-icon">🌐</span> Chrome
-            </button>
-            <button class="ext-browser-btn" onclick={() => installExt('edge')}>
-              <span class="ext-icon">⚡</span> Edge
-            </button>
-          </div>
-          <div class="ext-steps">
-            <p>{t('扩展管理页打开后：')}</p>
-            <p>1. {t('开启「开发者模式」')}</p>
-            <p>2. {t('点击「加载已解压的扩展程序」')}</p>
-            <p>3. {t('选择以下目录（已复制到剪贴板）')}</p>
-            <code class="ext-path">{extPathCopied ? t('已复制到剪贴板 ✓') : extPath}</code>
-          </div>
-          <button class="primary" style="margin-top:12px;width:100%" onclick={() => copyExtPath()}>
-            {extPathCopied ? t('已复制到剪贴板 ✓') : t('复制扩展目录路径')}
+      <Modal label={t('安装浏览器扩展')} onclose={() => (showExtInstall = false)}>
+        {#snippet head()}
+          <div class="m-name">{t('安装浏览器扩展')}</div>
+        {/snippet}
+        <p class="hint" style="margin:12px 0">{t('选择你的浏览器，将打开扩展管理页')}</p>
+        <div class="ext-browser-row">
+          <button class="ext-browser-btn" onclick={() => installExt('chrome')}>
+            <span class="ext-icon">🌐</span> Chrome
+          </button>
+          <button class="ext-browser-btn" onclick={() => installExt('edge')}>
+            <span class="ext-icon">⚡</span> Edge
           </button>
         </div>
-      </div>
+        <div class="ext-steps">
+          <p>{t('扩展管理页打开后：')}</p>
+          <p>1. {t('开启「开发者模式」')}</p>
+          <p>2. {t('点击「加载已解压的扩展程序」')}</p>
+          <p>3. {t('选择以下目录（已复制到剪贴板）')}</p>
+          <code class="ext-path">{extPathCopied ? t('已复制到剪贴板 ✓') : extPath}</code>
+        </div>
+        <button class="primary" style="margin-top:12px;width:100%" onclick={() => copyExtPath()}>
+          {extPathCopied ? t('已复制到剪贴板 ✓') : t('复制扩展目录路径')}
+        </button>
+      </Modal>
     {/if}
 
     <div class="save-bar">
@@ -819,6 +871,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+  }
+
+  /* 弹窗标题（Modal 组件只管外壳，标题排版留给调用方） */
+  .m-name {
+    font-size: 17px;
+    font-weight: 700;
   }
 
   .ext-browser-row {
@@ -1051,6 +1109,15 @@
     display: flex;
     gap: 10px;
     margin-top: 12px;
+  }
+
+  .row-actions button[disabled] {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .error-text {
+    color: var(--danger);
   }
 
   .ghost {

@@ -2,6 +2,7 @@
   import {
     api,
     fmtDuration,
+    categoryLabel,
     localDateKey,
     stateLabel,
     CATEGORY_PALETTE,
@@ -15,7 +16,17 @@
 
   let { initialDate = localDateKey() }: { initialDate?: string } = $props();
 
-  let date = $state(initialDate);
+  // initialDate 只在挂载时取一次：之后日期由组件自己的日期控件接管，
+  // 父组件后续再改 prop 也不该覆盖用户正在看的这天。
+  // 不直接写 $state(initialDate)，既避开 svelte-check 的 state_referenced_locally，
+  // 也让这段同步只跑一次（initialized 为真后 return，不再读 initialDate）。
+  let date = $state(localDateKey());
+  let initialized = false;
+  $effect.pre(() => {
+    if (initialized) return;
+    initialized = true;
+    date = initialDate;
+  });
   let data = $state<TimelineData | null>(null);
   let titles = $state<TopTitle[]>([]);
   let web = $state<TopWeb[]>([]);
@@ -192,16 +203,16 @@
     <button class="nav" onclick={() => shiftDay(-1)}>◀</button>
     <input type="date" bind:value={date} />
     <button class="nav" onclick={() => shiftDay(1)}>▶</button>
-    <button class="ghost" onclick={() => (date = localDateKey())}>今天</button>
-    <button class="ghost" onclick={resetZoom} disabled={view[0] === 0 && view[1] === 86400}>重置缩放</button>
-    <span class="hint">滚轮缩放 · 拖动平移 · 悬停查看详情</span>
+    <button class="ghost" onclick={() => (date = localDateKey())}>{t('今天')}</button>
+    <button class="ghost" onclick={resetZoom} disabled={view[0] === 0 && view[1] === 86400}>{t('重置缩放')}</button>
+    <span class="hint">{t('滚轮缩放 · 拖动平移 · 悬停查看详情')}</span>
     <input class="search" placeholder={t('搜索应用')} bind:value={search} spellcheck="false" />
-    <button class="ghost" onclick={() => (showTable = !showTable)}>{showTable ? '收起明细' : '展开明细'}</button>
+    <button class="ghost" onclick={() => (showTable = !showTable)}>{showTable ? t('收起明细') : t('展开明细')}</button>
   </div>
 
   {#if data}
     <div class="panel">
-      <div class="band-title">应用</div>
+      <div class="band-title">{t('应用')}</div>
       <div
         class="band"
         onwheel={onWheel}
@@ -215,7 +226,7 @@
           <div
             class="seg"
             style="{segStyle(seg.start_time, seg.end_time)};background:{appColor(data.segments, seg.app_key)}"
-            title="{seg.display_name} {seg.start_time.slice(11, 16)}–{seg.end_time.slice(11, 16)}（{fmtDuration(seg.duration_seconds)}）"
+            title="{seg.display_name} {seg.start_time.slice(11, 16)}–{seg.end_time.slice(11, 16)}{t('（')}{fmtDuration(seg.duration_seconds)}{t('）')}"
           ></div>
         {/each}
         {#each hourTicks as t (t)}
@@ -227,13 +238,13 @@
         {/each}
       </div>
 
-      <div class="band-title">状态</div>
+      <div class="band-title">{t('状态')}</div>
       <div class="band thin">
         {#each data.states as st (st.start_time + st.state)}
           <div
             class="seg"
             style="{segStyle(st.start_time, st.end_time)};background:{STATE_COLORS[st.state] ?? '#565d6e'}"
-            title="{stateLabel(st.state, $lang)} {st.start_time.slice(11, 16)}–{st.end_time.slice(11, 16)}（{fmtDuration(st.duration_seconds)}）"
+            title="{stateLabel(st.state, $lang)} {st.start_time.slice(11, 16)}–{st.end_time.slice(11, 16)}{t('（')}{fmtDuration(st.duration_seconds)}{t('）')}"
           ></div>
         {/each}
         {#each hourTicks as t (t)}
@@ -248,20 +259,20 @@
             {stateLabel(s.state, $lang)} {fmtDuration(s.seconds)}
           </span>
         {:else}
-          <span class="empty">该日暂无状态记录</span>
+          <span class="empty">{t('该日暂无状态记录')}</span>
         {/each}
       </div>
     </div>
 
     {#if showTable}
       <div class="panel">
-        <div class="band-title">明细（最多 300 条）</div>
+        <div class="band-title">{t('明细（最多 300 条）')}</div>
         <div class="table-head">
-          <span class="col-t">开始</span>
-          <span class="col-t">结束</span>
-          <span class="col-n">应用</span>
-          <span class="col-n">分类</span>
-          <span class="col-d">时长</span>
+          <span class="col-t">{t('开始')}</span>
+          <span class="col-t">{t('结束')}</span>
+          <span class="col-n">{t('应用')}</span>
+          <span class="col-n">{t('分类')}</span>
+          <span class="col-d">{t('时长')}</span>
         </div>
         <div class="table-body">
           {#each filtered as seg (seg.start_time + seg.app_key)}
@@ -269,31 +280,31 @@
               <span class="col-t">{seg.start_time.slice(11, 19)}</span>
               <span class="col-t">{seg.end_time.slice(11, 19)}</span>
               <span class="col-n">{seg.display_name}</span>
-              <span class="col-n cat">{seg.category}</span>
+              <span class="col-n cat">{categoryLabel(seg.category, $lang)}</span>
               <span class="col-d">{fmtDuration(seg.duration_seconds)}</span>
             </div>
           {:else}
-            <div class="empty">无匹配记录</div>
+            <div class="empty">{t('无匹配记录')}</div>
           {/each}
         </div>
       </div>
     {/if}
 
     <div class="panel legend">
-      <div class="band-title">图例（按时长）</div>
+      <div class="band-title">{t('图例（按时长）')}</div>
       <div class="legend-list">
         {#each [...new Map(data.segments.map((s) => [s.app_key, s])).values()] as seg, i (seg.app_key)}
           <span class="legend-item">
             <span class="sw" style="background:{appColor(data.segments, seg.app_key)}"></span>
             {seg.display_name}
-            <span class="cat">{seg.category}</span>
+            <span class="cat">{categoryLabel(seg.category, $lang)}</span>
           </span>
         {/each}
       </div>
     </div>
     {#if web.length}
       <div class="panel">
-        <div class="band-title">{t('Top 网页')}（{t('该日累计')}）</div>
+        <div class="band-title">{t('Top 网页（该日累计）')}</div>
         <div class="rows">
           {#each web as wv, i (wv.domain + wv.title + i)}
             <div class="trow">
@@ -310,14 +321,14 @@
     {/if}
     {#if titles.length}
       <div class="panel">
-        <div class="band-title">Top 标题（该日累计）</div>
+        <div class="band-title">{t('Top 标题（该日累计）')}</div>
         <div class="rows">
           {#each titles as t, i (t.app_key + t.title + i)}
             <div class="trow">
               <span class="rk">{i + 1}</span>
               <span class="tmain">
                 <span class="ttl">{t.title}</span>
-                <span class="tapp">{t.display_name} · {t.category}</span>
+                <span class="tapp">{t.display_name} · {categoryLabel(t.category, $lang)}</span>
               </span>
               <span class="tdur">{fmtDuration(t.seconds)}</span>
             </div>

@@ -5,6 +5,7 @@
   import {
     api,
     fmtDuration,
+    categoryLabel,
     stateLabel,
     CATEGORY_PALETTE,
     WIDGET_ACCENTS,
@@ -144,8 +145,14 @@
   }
 </script>
 
+<!-- 悬浮窗整块是拖拽/双击表面，不是一个可聚焦控件：
+     键盘用户走主窗口，这里保留鼠标交互并由 aria-label 描述。
+     svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="widget"
+  role="application"
+  aria-label={t('软件使用时间统计')}
   class:compact={prefs?.compact === true}
   class:collapsed
   class:h-edge={edge === 'top' || edge === 'bottom'}
@@ -184,7 +191,7 @@
       {#if live?.current_app}
         <div class="app-name">{live.current_app.display_name}</div>
         <div class="app-meta">
-          {live.current_category} · {t('本轮')} {fmtDuration(live.current_seconds)}
+          {categoryLabel(live.current_category ?? '', $lang)} · {t('本轮')} {fmtDuration(live.current_seconds)}
         </div>
       {:else}
         <div class="app-name muted">{t('当前无前台应用')}</div>
@@ -193,12 +200,12 @@
 
     {#if prefs?.compact !== true}
       <div class="tops">
-        {#each live?.top_apps ?? [] as t, i (t.display_name + i)}
+        {#each live?.top_apps ?? [] as top, i (top.display_name + i)}
           <div class="top-row">
             <span class="rank">{i + 1}</span>
-            <span class="name">{t.display_name}</span>
-            <span class="cat" style="color:{catColor(t.category)}">{t.category}</span>
-            <span class="dur">{fmtDuration(t.active_seconds)}</span>
+            <span class="name">{top.display_name}</span>
+            <span class="cat" style="color:{catColor(top.category)}">{categoryLabel(top.category, $lang)}</span>
+            <span class="dur">{fmtDuration(top.active_seconds)}</span>
           </div>
         {/each}
       </div>

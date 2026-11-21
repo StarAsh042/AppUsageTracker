@@ -1,7 +1,8 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
+  import { api, fmtDuration, categoryLabel, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
   import { lang, en } from './lib/i18n';
+  import Modal from './lib/Modal.svelte';
 
   let {
     focusDate = null,
@@ -306,7 +307,7 @@
     if (!menu) return;
     const key = menu.appKey;
     const name = data?.apps.find((a) => a.app_key === key)?.display_name ?? key;
-    if (!confirm(`「${name}」— ${t('将停止统计并清除其全部记录')}`)) return;
+    if (!confirm(`${t('「')}${name}${t('」')} — ${t('将停止统计并清除其全部记录')}`)) return;
     menu = null;
     await api.excludeApp(key);
     await load();
@@ -360,7 +361,7 @@
         <div class="label">{t('总活跃时长')}</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
         {#if isMultiDay}
-          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}（{dayCount} {t('天')}）</div>
+          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}{t('（')}{dayCount} {t('天')}{t('）')}</div>
         {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
@@ -378,7 +379,7 @@
       </div>
       {#if scoreInfo}
         <div class="card">
-          <div class="label">效率评分</div>
+          <div class="label">{t('效率评分')}</div>
           <div class="score-row">
             <svg viewBox="0 0 100 100" class="ring">
               <circle cx="50" cy="50" r="42" class="ring-bg"></circle>
@@ -392,7 +393,7 @@
             </svg>
             <div>
               <div class="value">{scoreInfo.pct}%</div>
-              <div class="delta">按分类性质加权</div>
+              <div class="delta">{t('按分类性质加权')}</div>
             </div>
           </div>
         </div>
@@ -415,21 +416,22 @@
         </div>
         <div class="table-body">
           {#each data.apps as a, i (a.app_key)}
-            <div
+            <button
               class="row"
+              type="button"
               onclick={() => openDetail(a.app_key)}
               oncontextmenu={(e) => rowMenu(e, a.app_key, a.category)}
               title={a.exe_path}
             >
               <span class="col-rank">{i + 1}</span>
               <span class="col-name">{aliasName(a.app_key, a.display_name)}</span>
-              <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{a.category}</span></span>
+              <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span></span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
               <span class="col-bar">
                 <span class="bar"><span class="fill" style="width:{Math.min(100, a.percent)}%"></span></span>
                 <span class="pct">{a.percent.toFixed(1)}%</span>
               </span>
-            </div>
+            </button>
           {:else}
             <div class="empty">{t('该时间段暂无数据')}</div>
           {/each}
@@ -459,7 +461,7 @@
                 {#each catTree.filter((c) => c.depth === 0) as c (c.name)}
                   <span class="legend-item">
                     <span class="sw" style="background:{catColor(c.name)}"></span>
-                    {c.name}
+                    {categoryLabel(c.name, $lang)}
                   </span>
                 {/each}
               </div>
@@ -469,13 +471,13 @@
             {#each catTree as c (c.name)}
               <div class="cat-row" class:child={c.depth > 0}>
                 <span class="cat-name" class:dim={c.depth > 0}>
-                  {c.depth > 0 ? '└ ' : ''}{c.name}
+                  {c.depth > 0 ? '└ ' : ''}{categoryLabel(c.name, $lang)}
                 </span>
                 <span class="cat-bar"><span class="fill" style="width:{c.percent}%"></span></span>
                 <span class="cat-dur">{fmtDuration(c.seconds)}</span>
               </div>
             {:else}
-              <div class="empty">暂无数据</div>
+              <div class="empty">{t('暂无数据')}</div>
             {/each}
           </div>
         </div>
@@ -489,24 +491,24 @@
             </span>
           </div>
           <div class="trend">
-            {#each data.trend as t (t.date)}
+            {#each data.trend as pt (pt.date)}
               {@const val =
                 trendMode === 'score'
-                  ? t.score === null
+                  ? pt.score === null
                     ? 0
-                    : t.score
-                  : t.seconds}
+                    : pt.score
+                  : pt.seconds}
               {@const pct =
                 trendMode === 'score'
                   ? Math.min(100, val)
                   : (val / trendMax(data.trend)) * 100}
               <div
                 class="t-col"
-                title="{t.date} {trendMode === 'score'
-                  ? t.score === null
-                    ? '无评分'
-                    : `效率 ${t.score}%`
-                  : fmtDuration(t.seconds)}"
+                title="{pt.date} {trendMode === 'score'
+                  ? pt.score === null
+                    ? t('无评分')
+                    : `${t('效率')} ${pt.score}%`
+                  : fmtDuration(pt.seconds)}"
               >
                 <div class="t-bar-wrap">
                   <div
@@ -519,10 +521,10 @@
                 </div>
                 <div class="t-label">
                   {trendMode === 'score'
-                    ? t.score === null
+                    ? pt.score === null
                       ? '·'
-                      : `${t.score}%`
-                    : t.date.slice(5)}
+                      : `${pt.score}%`
+                    : pt.date.slice(5)}
                 </div>
               </div>
             {:else}
@@ -551,40 +553,37 @@
 </div>
 
 {#if detail}
-  <div class="modal-mask" onclick={() => (detail = null)}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-head">
-        <div>
-          <div class="m-name">{aliasName(detail.app_key, detail.display_name)}</div>
-          <div class="m-meta"><span class="cat-chip">{detail.category}</span> <span class="m-path">{detail.exe_path}</span></div>
-        </div>
-        <button class="m-close" onclick={() => (detail = null)}>✕</button>
-      </div>
-      <div class="alias-row">
-        <input
-          class="alias-input"
-          placeholder={t('自定义显示名')}
-          bind:value={aliasDraft}
-          spellcheck="false"
-        />
-        <button class="alias-save" onclick={saveAlias}>{t('改名')}</button>
-      </div>
-      <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>
-      <div class="m-trend">
-        {#each detail.daily as pt (pt.date)}
-          <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
-            <div class="t-bar-wrap">
-              <div class="t-fill" style="height:{(pt.seconds / maxDetailPoints(detail.daily)) * 100}%"></div>
-            </div>
-            <div class="t-label">{pt.date.slice(5)}</div>
-          </div>
-        {:else}
-          <div class="empty">{t('该区间无数据')}</div>
-        {/each}
-      </div>
-      <div class="m-hint">{t('右键排行行可随时改分类')}</div>
+  <!-- 窄化用 @const 落到局部变量：snippet 内部访问外层 detail 时 TS 拿不到非空推断 -->
+  {@const d = detail}
+  <Modal label={aliasName(d.app_key, d.display_name)} onclose={() => (detail = null)}>
+    {#snippet head()}
+      <div class="m-name">{aliasName(d.app_key, d.display_name)}</div>
+      <div class="m-meta"><span class="cat-chip">{categoryLabel(d.category, $lang)}</span> <span class="m-path">{d.exe_path}</span></div>
+    {/snippet}
+    <div class="alias-row">
+      <input
+        class="alias-input"
+        placeholder={t('自定义显示名')}
+        bind:value={aliasDraft}
+        spellcheck="false"
+      />
+      <button class="alias-save" onclick={saveAlias}>{t('改名')}</button>
     </div>
-  </div>
+    <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>
+    <div class="m-trend">
+      {#each detail.daily as pt (pt.date)}
+        <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
+          <div class="t-bar-wrap">
+            <div class="t-fill" style="height:{(pt.seconds / maxDetailPoints(detail.daily)) * 100}%"></div>
+          </div>
+          <div class="t-label">{pt.date.slice(5)}</div>
+        </div>
+      {:else}
+        <div class="empty">{t('该区间无数据')}</div>
+      {/each}
+    </div>
+    <div class="m-hint">{t('右键排行行可随时改分类')}</div>
+  </Modal>
 {/if}
 
 {#if menu}
@@ -714,11 +713,6 @@
     text-overflow: ellipsis;
   }
 
-  .card .value.small {
-    font-size: 16px;
-    line-height: 26px;
-  }
-
   .content {
     flex: 1;
     display: grid;
@@ -770,6 +764,22 @@
     gap: 8px;
     align-items: center;
     padding: 7px 6px;
+  }
+
+  /* 排行行是可点进详情的，所以用 button：键盘能 Tab 到、能回车触发。
+     按钮默认样式要全部抹掉，否则继承浏览器底色和边框。 */
+  button.row {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    width: 100%;
+  }
+
+  button.row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .table-head {
@@ -1086,31 +1096,8 @@
     border-radius: 3px;
   }
 
-  .modal-mask {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-  }
-
-  .modal {
-    width: min(560px, 88%);
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 18px;
-  }
-
-  .modal-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
+  /* 弹窗外壳（遮罩 / 卡片 / 关闭按钮）在 lib/Modal.svelte 里，
+     这里只留弹窗内部内容自己的样式。 */
   .m-name {
     font-size: 17px;
     font-weight: 700;
@@ -1130,19 +1117,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 340px;
-  }
-
-  .m-close {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    border-radius: 7px;
-    padding: 4px 10px;
-    cursor: pointer;
-  }
-
-  .m-close:hover {
-    color: var(--text);
   }
 
   .alias-row {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, fmtDuration, CATEGORY_PALETTE, type DashboardData } from './lib/api';
+  import { api, fmtDuration, categoryLabel, CATEGORY_PALETTE, type DashboardData } from './lib/api';
   import {
     deltaClass,
     formatDelta,
@@ -123,7 +123,7 @@
   }
 
   function deltaText(a: number, b: number): string {
-    return formatDelta(orderedDelta(a, b));
+    return formatDelta(orderedDelta(a, b), t('新增'));
   }
 
   function deltaCls(a: number, b: number): string {
@@ -146,7 +146,7 @@
     <input type="date" bind:value={aTo} min={aFrom} />
     <span class="tag b">B</span>
     <input type="date" bind:value={bFrom} max={bTo} />
-    <span class="tilde">至</span>
+    <span class="tilde">{t('至')}</span>
     <input type="date" bind:value={bTo} min={bFrom} />
     <button class="ghost" onclick={swap}>⇄ {t('交换')}</button>
     <div class="spacer"></div>
@@ -182,14 +182,14 @@
     <div class="panel">
       <div class="panel-title">{t('应用对比')}</div>
       <div class="head">
-        <span class="c-name">应用</span>
-        <span class="c-bars">A vs B（{t('时长')}）</span>
+        <span class="c-name">{t('应用')}</span>
+        <span class="c-bars">A vs B{t('（')}{t('时长')}{t('）')}</span>
       </div>
       <div class="rows">
         {#each appRows as r (r.key)}
           {@const d = orderedDelta(r.a, r.b)}
           <div class="row" title={r.key}>
-            <span class="c-name">{r.name}<span class="c-cat">{r.cat}</span></span>
+            <span class="c-name">{r.name}<span class="c-cat">{categoryLabel(r.cat, $lang)}</span></span>
             <span class="c-bars">
               <span class="duo">
                 <span class="bar a" style="width:{(r.a / appMax) * 100}%"><i>{fmtDuration(r.a)}</i></span>
@@ -211,7 +211,7 @@
           {@const d = orderedDelta(r.a, r.b)}
           <div class="row">
             <span class="c-name">
-              <span class="sw" style="background:{catColor(r.name)}"></span>{r.name}
+              <span class="sw" style="background:{catColor(r.name)}"></span>{categoryLabel(r.name, $lang)}
             </span>
             <span class="c-bars">
               <span class="duo">
@@ -222,7 +222,7 @@
             </span>
           </div>
         {:else}
-          <div class="empty">暂无数据</div>
+          <div class="empty">{t('暂无数据')}</div>
         {/each}
       </div>
     </div>
