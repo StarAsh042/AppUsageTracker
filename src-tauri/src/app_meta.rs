@@ -97,6 +97,16 @@ fn curated_name(key: &str) -> Option<&'static str> {
         "applicationframehost" => "应用框架宿主",
         "photos" => "照片",
         "windowsterminal" | "wt" => "Windows 终端",
+        "sublime_text" | "subl" => "Sublime Text 编辑器",
+        "obsidian" => "Obsidian 笔记",
+        "7zfm" => "7-Zip 压缩软件",
+        "tortoisegitproc" => "海龟 Git",
+        "opencode" => "OpenCode 编程助手",
+        "pixpin" => "PixPin 截图工具",
+        "geek64" => "Geek 卸载工具",
+        "bodian_pc" => "波点音乐",
+        "scrcpy" => "scrcpy 安卓投屏",
+        "gamescrcpy" => "GameScrcpy 安卓投屏",
         _ => return None,
     })
 }
@@ -107,6 +117,9 @@ fn path_specific_name(exe_path: &str) -> Option<&'static str> {
     let path = exe_path.to_lowercase();
     if path.contains("centbrowser") {
         return Some("百分浏览器");
+    }
+    if path.contains("qingjian") {
+        return Some("青简");
     }
     None
 }
@@ -306,6 +319,36 @@ mod tests {
             )
             .as_deref(),
             Some("百分浏览器")
+        );
+    }
+
+    #[test]
+    fn verified_app_names_are_annotated() {
+        for (proc, expected) in [
+            ("sublime_text", Some("Sublime Text 编辑器")),
+            ("obsidian", Some("Obsidian 笔记")),
+            ("7zFM", Some("7-Zip 压缩软件")),
+            ("TortoiseGitProc", Some("海龟 Git")),
+            ("OpenCode", Some("OpenCode 编程助手")),
+            ("PixPin", Some("PixPin 截图工具")),
+            ("geek64", Some("Geek 卸载工具")),
+            ("bodian_pc", Some("波点音乐")),
+            ("scrcpy", Some("scrcpy 安卓投屏")),
+        ] {
+            assert_eq!(
+                chinese_name("C:\\Apps\\test.exe", proc, proc).as_deref(),
+                expected,
+                "process {proc}"
+            );
+        }
+        assert_eq!(
+            chinese_name(
+                "C:\\Program Files\\Qingjian\\qingjian-settings.exe",
+                "qingjian-settings",
+                "qingjian-settings"
+            )
+            .as_deref(),
+            Some("青简")
         );
     }
 
