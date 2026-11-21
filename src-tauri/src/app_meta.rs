@@ -95,6 +95,11 @@ fn curated_name(key: &str) -> Option<&'static str> {
         "cleanmgr" => "磁盘清理",
         "searchhost" => "搜索",
         "applicationframehost" => "应用框架宿主",
+        "shellexperiencehost" => "Shell 体验宿主",
+        "startmenuexperiencehost" => "开始菜单体验主机",
+        "pickerhost" => "文件选取器",
+        "credentialuibroker" => "凭据管理器",
+        "powershell" | "powershell_ise" => "PowerShell",
         "photos" => "照片",
         "windowsterminal" | "wt" => "Windows 终端",
         "sublime_text" | "subl" => "Sublime Text 编辑器",
@@ -350,6 +355,21 @@ mod tests {
             .as_deref(),
             Some("青简")
         );
+    }
+
+    #[test]
+    fn windows_host_apps_are_annotated() {
+        for proc in [
+            "ShellExperienceHost",
+            "StartMenuExperienceHost",
+            "PickerHost",
+            "CredentialUIBroker",
+        ] {
+            assert!(
+                chinese_name("C:\\Windows\\System32\\test.exe", proc, proc).is_some(),
+                "process {proc}"
+            );
+        }
     }
 
     #[test]
