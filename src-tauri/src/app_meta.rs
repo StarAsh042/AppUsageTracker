@@ -43,6 +43,11 @@ pub(crate) fn chinese_name(exe_path: &str, process_name: &str, display_name: &st
         .to_lowercase();
     let shown = display_name.trim().to_lowercase();
     for name in [key.as_str(), stem.as_str(), shown.as_str()] {
+        // chrome.exe is shared by Google Chrome and many Chromium forks; only
+        // annotate when the executable actually belongs to Google Chrome.
+        if name == "chrome" && !is_google_chrome(exe_path) {
+            continue;
+        }
         if let Some(zh) = curated_name(name) {
             return Some(zh.to_string());
         }
@@ -88,6 +93,11 @@ fn curated_name(key: &str) -> Option<&'static str> {
         "applicationframehost" => "应用框架宿主",
         _ => return None,
     })
+}
+
+fn is_google_chrome(exe_path: &str) -> bool {
+    let path = exe_path.to_lowercase();
+    path.contains("\\google\\chrome\\") || path.contains("/google/chrome/")
 }
 
 fn has_cjk(s: &str) -> bool {
@@ -257,6 +267,28 @@ mod tests {
         );
         assert_eq!(
             chinese_name("C:\\Apps\\Unknown.exe", "Unknown", "Unknown Tool").as_deref(),
+            None
+        );
+    }
+
+    #[test]
+    fn chrome_annotation_is_scoped_to_google_chrome() {
+        assert_eq!(
+            chinese_name(
+                "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                "chrome",
+                "Google Chrome"
+            )
+            .as_deref(),
+            Some("Chrome 浏览器")
+        );
+        assert_eq!(
+            chinese_name(
+                "C:\\Program Files (x86)\\cent\\CentBrowser\\Application\\chrome.exe",
+                "chrome",
+                "Cent Browser"
+            )
+            .as_deref(),
             None
         );
     }
