@@ -36,7 +36,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 它解决的是「想客观回顾自己每天把时间花在哪些软件上」这一个问题；数据只落在本机 SQLite 文件里，不依赖账号或云端服务。目标用户是个人使用者；它不是员工监控工具，也不做跨设备同步。
 
-当前发布版本为 `v0.6.5`（2026-11-21），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
+当前发布版本为 `v0.6.6`（2026-11-22），代码为 Rust + Tauri 2 全量重写版；`dev` 为集成分支、`main` 为发布分支，分支模型见「贡献」。
 
 ## 功能
 
@@ -109,7 +109,7 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 
 从已发布安装包安装（推荐给使用者）：
 
-1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.5` 中下载 `AppUsageTracker_0.6.5_x64-setup.exe`（NSIS 安装包）。
+1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.6` 中下载 `AppUsageTracker_0.6.6_x64-setup.exe`（NSIS 安装包）。
 2. 双击运行安装向导，按提示完成安装。
 3. 从开始菜单启动。
 
@@ -121,11 +121,11 @@ AppUsageTracker 在后台记录「哪个应用在前台被你主动使用了多�
 curl -s http://127.0.0.1:59598/api/version
 ```
 
-预期返回包含当前版本号 `0.6.5` 的 JSON（字段结构以实际响应为准）。系统托盘出现图标、主界面显示仪表盘属于界面现象，标记【未验证】，请你手动确认。
+预期返回包含当前版本号 `0.6.6` 的 JSON（字段结构以实际响应为准）。系统托盘出现图标、主界面显示仪表盘属于界面现象，标记【未验证】，请你手动确认。
 
 > 安装包未做 Windows Authenticode 代码签名；发布流水线只生成 Tauri 更新器使用的 `.sig` 签名。首次运行可能触发 SmartScreen 提示（【推测】，未在真机验证）。
 
-从源码构建（面向开发者）见「快速开始」；构建产物为 `target/release/app-usage-tracker.exe`（独立 exe）与 `target/release/bundle/nsis/*_0.6.5_x64-setup.exe`（安装包）。
+从源码构建（面向开发者）见「快速开始」；构建产物为 `target/release/app-usage-tracker.exe`（独立 exe）与 `target/release/bundle/nsis/*_0.6.6_x64-setup.exe`（安装包）。
 
 ## 快速开始
 
@@ -348,10 +348,10 @@ Tauri 权限清单在 `src-tauri/capabilities/default.json`：identifier 为 `de
 
 ## 维护状态与已知限制
 
-- 单人维护；当前发布版本 `v0.6.5`，发布日期 2026-11-21。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.5`。
-- `v0.6.5` 是内部整理与国际化版本：悬浮窗改为配置声明 + 按需建窗，修复主界面点「悬浮窗」后卡死，收紧 CSP，移除 `tauri` 的 `unstable` feature，把 `lib.rs` 拆成 16 个模块，并把前端所有裸中文、全角标点与内置分类名接进中英词条。详见 `CHANGELOG.md` 的 `[0.6.5]`；上一版 `v0.6.4` 的工程质量改动见 `[0.6.4]`；后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+- 单人维护；当前发布版本 `v0.6.6`，发布日期 2026-11-22。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，四者均为 `0.6.6`。
+- `v0.6.6` 是应用排行展示增强版本：图标、中文备注（仅中文界面）、长名悬停滚动与占比表头对齐。详见 `CHANGELOG.md` 的 `[0.6.6]`。上一版 `v0.6.5` 为内部整理与国际化版本（悬浮窗配置化、修复建窗卡死、收紧 CSP、移除 `unstable` feature、拆分 `lib.rs`、前端文案全量走词条），见 `[0.6.5]`；再上一版 `v0.6.4` 的工程质量改动见 `[0.6.4]`；后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 - Rust + Tauri 2 + Svelte 5 重写版已取代旧 C#/WPF 实现；`main` 为发布分支，与集成分支 `dev` 保持同步。
-- `main` 与 `dev` 的 CI 必需检查 `ci`（`frontend` / `rust` / `tauri-build` / `cross-check` 四 job 的聚合）在 `v0.6.3` / `v0.6.4` / `v0.6.5` 发布提交上全部通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 为准。
+- `main` 与 `dev` 的 CI 必需检查 `ci`（`frontend` / `rust` / `tauri-build` / `cross-check` 四 job 的聚合）在 `v0.6.3` / `v0.6.4` / `v0.6.5` / `v0.6.6` 发布提交上全部通过；`main` 旧版的 `ci` / `security` 曾失败，合并到重写版后以新 CI workflow 为准。
 - 已补齐 `docs/assets/` 下的真实窗口截图（主窗口仪表盘与桌面悬浮窗），见「截图与演示」。
 - `CHANGELOG.md` 的 `0.1.0` / `0.2.0` 属于旧 C# 版历史记录，没有对应的 Git tag 与 GitHub Release，因此没有 compare 链接；`0.3.0` 为破坏性全量重写，仓库未提供旧版数据到新版数据的迁移说明。
 - 界面外观见「截图与演示」的真实截图；扩展上报间隔、更新回滚与未签名安装包的 SmartScreen 表现仍为【未验证】或【推测】，需由你在真机手动验证。
