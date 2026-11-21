@@ -10,6 +10,17 @@
 
 （暂无未发布变更）
 
+## [0.6.6] - 2026-11-22
+
+### Added
+
+- **dashboard:** 应用排行新增应用图标，按可执行文件提取并缓存为 data URL；行内图标与名称同排显示。
+- **dashboard:** 为常用应用与 Windows 系统工具补充中文备注（如 `Taskmgr(任务管理器)`、`百分浏览器`），中文备注仅在中文界面显示；名称过长时省略号截断，鼠标悬停滚动展示完整名称。
+
+### Fixed
+
+- **dashboard:** 应用排行「占比」表头与下方百分比右对齐，不再错位。
+
 ## [0.6.5] - 2026-11-21
 
 ### Added
@@ -260,7 +271,8 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.2...v0.6.3
