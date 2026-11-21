@@ -10,6 +10,49 @@
 
 （暂无未发布变更）
 
+## [0.6.5] - 2026-11-21
+
+### Added
+
+- **settings:** 设置页新增「数据库维护」面板：一键做完整性检查 + VACUUM，并把 WAL 日志截断，结果里显示完整性检查结论、压缩是否成功、主库体积、页数与空闲页数。
+
+### Changed
+
+- **frontend:** 弹窗外壳抽成共用组件 `src/lib/Modal.svelte`（遮罩点击关闭、Esc 关闭、打开即把焦点移进弹窗、内容超高时自己滚动），仪表盘的应用详情与设置页的扩展安装两处共用一套实现。设置页的扩展安装弹窗此前没有配套样式，是裸元素直接铺在页面上，现在与仪表盘弹窗外观一致。
+- **frontend:** 仪表盘应用排行行由 `div` 改为 `button`，键盘可以 Tab 聚焦、回车打开详情，聚焦时有可见描边；行内文字排版与右键菜单行为不变。
+- **frontend:** 界面上的中文文案此前只有一部分走了 `t()`，切换到英文后仍会露出中文。现在把时间线、仪表盘、对比、设置、悬浮窗、弹窗等处的剩余文案全部收进 `t()`（`src/lib/i18n.ts` 字典从 222 条增到 270 条）。拼在 `t()` 之外的中文标点（`，。：？（ ）「」`）也改成词条，英文下按各自的英文写法渲染，不再出现「Rest reminder（min，0 = off）」这种混排。内置分类名（开发 / 浏览器 / 办公 / 沟通 / 设计 / 娱乐 / 工具 / 系统 / 未分类）经新增的 `categoryLabel()` 在英文下显示成 Development / Browser / … / Uncategorized，用户自建的分类名保持原样（`分类/子类` 这种层级写法只翻父级）。几处说明文字原来由多段文案拼成，改为整句词条，避免中文标点在英文语境里错位。
+- **app:** 后端还有两处文案硬编码中文、切换语言后不会跟着变：休息提醒的通知正文、托盘图标的悬停提示（「软件使用时间统计」与「今日 X」），现在都走 `rust_i18n` 的 `t!` 词条，`src-tauri/locales/en-US.json` 补上 `今日 %{total} · %{app}` 一条；英文下托盘提示显示成两行 App Usage Tracker / Today X。
+
+### Fixed
+
+- **a11y:** 把 `npm run check` 的 svelte-check 告警从 13 条清到 0 条：两处弹窗支持 Esc 关闭（此前按 Esc 无反应，只能点遮罩或关闭按钮）；`TimelineView` 不再在初始化时直接引用 prop（`state_referenced_locally`），改为挂载后同步一次；悬浮窗根节点补 `role="application"` 与 `aria-label` 说明它是整块拖拽表面；删除未使用的 `.card .value.small` 选择器。
+- **app:** 修复启动瞬间先闪一下白底/灰底、随后才变暗的问题：主窗口在透明模式下启用 `noRedirectionBitmap`（`WS_EX_NOREDIRECTIONBITMAP`）并把 `backgroundColor` 设为全透明，WebView2 首帧渲染前不再露出白色默认底。
+- **app:** 修复主界面点「悬浮窗」按钮后整个界面卡死、图表不再更新的问题。悬浮窗是首次开启时按需创建的，创建代码跑在同步 IPC 命令里，而 Windows 上建 WebView 窗口需要等主线程事件循环（tauri 文档明确写了在同步命令 / 事件处理器里调用会死锁，见 wry#583），于是主线程自己等自己、所有 IPC 永不返回。现在把建窗挪到独立线程（并加锁串行化，避免连点起两个线程重复建窗），主线程立刻返回继续转事件循环，窗口建好后再挂贴边约束。
+
+### Internal
+
+- **core:** 窗口定义收敛：悬浮窗（label `widget`）改为在 `src-tauri/tauri.conf.json` 的 `app.windows` 里声明（标题、300×216 初始尺寸、位置 12,12、无边框、透明、不可缩放、无阴影、不占任务栏、置顶），并置 `"create": false` 让它在启动时不自动建窗；`src-tauri/src/windows.rs` 的 `create_widget_window` 改为按 label 从 `app.config().app.windows` 取这份配置、用 `WebviewWindowBuilder::from_config` 建窗，只保留配置表达不了的两项——随偏好变化的初始尺寸（`inner_size`，紧凑模式 200×76）与 `always_on_top`——用 builder 覆写。建窗仍在独立线程里（建窗死锁的修法不变），DWM 背板、圆角、重新置顶与 `on_menu_event` 顺序不变。
+- **core:** 收紧 CSP：`src-tauri/tauri.conf.json` 的 `app.security.csp` 从 `null` 改为 `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; font-src 'self'; object-src 'none'; base-uri 'self'`。前端不引用任何外链资源（无图片/字体/CDN，构建产物只有 3 个 JS + 3 个 CSS 与各自一个 `<script type="module">`），所以脚本侧不需要 `'unsafe-inline'`；`style-src` 保留 `'unsafe-inline'` 是因为 Svelte 会输出内联 `style` 属性；`connect-src` 放行 `ipc:` 与 `http://ipc.localhost` 供 Tauri IPC 使用。
+- **core:** 去掉 `tauri` 的 `unstable` feature：全仓库唯一的不稳定 API 是 `show_widget_menu` 里的 `AppHandle::get_window`，改用稳定的 `get_webview_window` + `WebviewWindow::popup_menu`，`src-tauri/Cargo.toml` 的 `features` 只剩 `["tray-icon"]`，行为不变。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十六步：四条通用 IPC 命令（`clear_all_data`、`export_csv`、`open_path`、`get_app_version`）搬到 `src-tauri/src/commands.rs`（80 行），`backup.rs` 改为从 `crate::commands` 导入 `open_path`，行为不变，`lib.rs` 从 397 行降到 324 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十五步：实时状态搬到 `src-tauri/src/live.rs`（109 行，含 `LiveTopApp`/`LiveStatus` 两个结构与 `live_status`、`get_live_status` 命令），`api_server.rs` 与 `monitor.rs` 改为从 `crate::live` 导入，行为不变，`lib.rs` 从 494 行降到 397 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十四步：本地工具函数 `fmt_hms`/`csv_escape` 从 `lib.rs` 的「小工具」段搬进 `crates/tracker-core/src/fmt.rs`（51 行），补两个单测（时长按量级切换单位、CSV 只在必要时加引号），`cargo test` 从 25 例增加到 27 例；`lib.rs`、`monitor.rs`、`reports.rs` 改为从 `tracker_core::fmt` 导入，行为不变，`lib.rs` 从 517 行降到 494 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十三步：报表与维护相关的代码搬到 `src-tauri/src/reports.rs`（184 行，含 `DbMaintenance` 结构、`db_maintenance` 命令、`export_weekly_report` 周报导出、`TopTitle`/`TopWeb` 两个排行榜结构与 `get_top_titles`/`get_top_web`），行为不变，`lib.rs` 从 699 行降到 517 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十二步：悬浮窗相关的五个 IPC 命令（`show_widget_menu`、`toggle_widget`、`close_widget`、`set_widget_collapsed`、`update_widget_settings`）搬进 `src-tauri/src/windows.rs`，与它们操作的窗口代码放在一起，行为不变，`lib.rs` 从 804 行降到 699 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十一步：设置链路整体搬到 `src-tauri/src/settings.rs`（341 行，含 `display_alias`、`resolve_locale`/`apply_locale`、`db_path`、`load_settings`/`migrate_settings`、`save_settings_file`、`set_widget_visible`、`set_paused_internal`，以及 `get_settings`、`save_settings`、`set_paused`、`set_app_display_name`、`exclude_app`、`set_app_category`、`save_category_rules`、`list_available_categories` 八个 IPC 命令），`apply_hotkeys` 提为 `pub(crate)` 供其调用，其余模块改从 `crate::settings` 导入，行为不变，`lib.rs` 从 1114 行降到 804 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第十步：应用详情与应用扫描整体搬到 `src-tauri/src/apps.rs`（217 行，含 `AppDetail`/`ScannedApp`、`get_app_detail`、`scan_installed_apps` 与 `collect_lnks` 递归遍历桌面 / 开始菜单 `.lnk`），行为不变，`lib.rs` 从 1320 行降到 1114 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第九步：时间线数据整体搬到 `src-tauri/src/timeline.rs`（81 行，含 `TimelineSegment`/`TimelineState`/`TimelineData`、`get_timeline` 命令与 `timeline_data`），`api_server.rs` 改为从新模块导入，行为不变，`lib.rs` 从 1395 行降到 1320 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第八步：仪表盘 / 周报的数据聚合搬到 `src-tauri/src/dashboard.rs`（210 行，含 `DashboardApp`/`DashboardCategory`/`DashboardTrendPoint`/`DashboardData` 四个结构、`get_dashboard` 命令与 `build_dashboard`），`api_server.rs` 改为从新模块导入，行为不变，`lib.rs` 从 1588 行降到 1395 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第七步：JSON 备份与恢复整体搬到 `src-tauri/src/backup.rs`（229 行，含 `BackupFile` v2 结构、导出、按名/按内容恢复、删除与列表），行为不变，`lib.rs` 从 1810 行降到 1588 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第六步：本地 HTTP API 整体搬到 `src-tauri/src/api_server.rs`（308 行，含 `spawn_api_server`、`handle_api` 路由、`extract_domain`、浏览器扩展心跳 `heartbeat_web`），实时状态 `live_status` 留在 `lib.rs`（API 与 IPC 共用），行为不变，`lib.rs` 从 2107 行降到 1810 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第五步：浏览器扩展安装整体搬到 `src-tauri/src/ext_install.rs`（583 行，含扩展落盘、CRX3 打包、注册表注册与 17 款 Chromium 浏览器的智能安装），行为不变，`lib.rs` 从 2682 行降到 2107 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第四步：监控线程相关逻辑（自身进程名识别、前台窗口识别与进程名缓存、轮询主循环、落库 `flush_state`、保留策略清理、分类限额提醒）整体搬到 `src-tauri/src/monitor.rs`，行为不变，`lib.rs` 从 2987 行降到 2682 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第三步：窗口相关逻辑（主窗显示/隐藏与热键切换、悬浮窗创建与 DWM 背板/圆角、贴边收起与展开、smoothstep 尺寸动画、悬浮窗右键菜单）连同三种窗口尺寸常量整体搬到 `src-tauri/src/windows.rs`，行为不变，`lib.rs` 从 3465 行降到 2987 行。模块与 Win32 绑定 crate 同名，模块内引用 Win32 时写全路径 `::windows::...`。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第二步：系统托盘（图标、右键菜单五项、左键唤起主界面、退出前 flush + checkpoint）（113 行）整体搬到 `src-tauri/src/tray.rs`，菜单项句柄 `TrayHandles` 一并迁出，`AppState.tray` 改为持有 `tray::TrayHandles`，行为不变，`lib.rs` 从 3565 行降到 3465 行。
+- **core:** 拆分 `src-tauri/src/lib.rs` 的第一步：应用内更新（下载通道解析、`check_update` / `install_update` 两个命令）整体搬到 `src-tauri/src/update.rs`，端点选择与代理/镜像回退行为不变，`lib.rs` 从 3624 行降到 3565 行。
+- **core:** 治理 WAL 日志膨胀：建库时显式设 `wal_autocheckpoint=1000` 与 `journal_size_limit=1048576`，监控线程每 5 分钟做一次 `wal_checkpoint(TRUNCATE)`，退出、切换数据目录与冒烟模式下也会截断一次。此前全仓库没有一处 checkpoint 调用，`journal_size_limit` 是 SQLite 默认的 -1，自动 checkpoint 只把 WAL 置零复用、不缩文件，实测出现过 3.7 MB 的主库旁挂着 7.3 MB 的 `usage.db-wal`。
+- **core:** 把 `src-tauri/src/lib.rs` 里的纯逻辑抽到 `crates/tracker-core`：新增 `ext.rs`（protobuf varint 读取、CRX3 头部解析取扩展 ID、公钥哈希到扩展 ID 的 a-p 编码、读 `manifest.json` 版本号）与 `accent.rs`（悬浮窗亚克力着色的混色计算），补 10 个单元测试，`cargo test --all --locked` 从 12 例增加到 22 例。`lib.rs` 只保留同名薄封装，调用点与运行时行为不变。
+
 ## [0.6.4] - 2026-11-16
 
 ### Added
@@ -217,7 +260,8 @@
 - **settings:** 首次实现设置窗口（阈值、轮询、排除、规则、限额、自启、主题）、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.1...v0.6.2

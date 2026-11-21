@@ -1,13 +1,13 @@
 [package]
 name = "app-usage-tracker"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2021"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "unstable"] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"

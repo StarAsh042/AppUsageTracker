@@ -151,7 +151,7 @@
       <button class="nav" onclick={() => shiftMonth(1)}>▶</button>
     {:else}
       <button class="nav" onclick={() => shiftYear(-1)}>◀</button>
-      <span class="month">{yearCursor} 年</span>
+      <span class="month">{$lang === 'en' ? `${yearCursor}` : `${yearCursor} 年`}</span>
       <button class="nav" onclick={() => shiftYear(1)}>▶</button>
     {/if}
     <span class="total">{fmtDuration(total)}</span>
@@ -168,7 +168,7 @@
         </div>
         <div class="yh-body">
           <div class="yh-days">
-            {#each ['一','','三','','五','','日'] as d, i (i)}
+            {#each ($lang === 'en' ? ['M','','W','','F','','S'] : ['一','','三','','五','','日']) as d, i (i)}
               <span class="yh-day" class:visible={i % 2 === 0}>{d}</span>
             {/each}
           </div>
@@ -224,7 +224,7 @@
             >
               <span class="day">{d}</span>
               {#if seconds !== undefined && seconds > 0}
-                <span class="min">{Math.round(seconds / 60)}分</span>
+                <span class="min">{Math.round(seconds / 60)}{$lang === 'en' ? 'm' : '分'}</span>
               {/if}
             </button>
           {/if}

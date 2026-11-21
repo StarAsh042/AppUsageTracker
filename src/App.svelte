@@ -96,7 +96,7 @@
   <header>
     <div class="brand">
       <span class="logo">⏱</span>
-      <span>软件使用时间统计</span>
+      <span>{t('软件使用时间统计')}</span>
     </div>
     <div class="live">
       {#if live}
@@ -119,7 +119,7 @@
 
   {#if restTip}
     <div class="rest-banner">
-      ⏸ {t('已连续使用较久')}，{t('建议起身休息一下')}
+      ⏸ {t('已连续使用较久')}{t('，')}{t('建议起身休息一下')}
       <button onclick={() => (restTip = false)}>{t('知道了')}</button>
     </div>
   {/if}

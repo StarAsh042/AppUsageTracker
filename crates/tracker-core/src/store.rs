@@ -9,7 +9,13 @@ impl SqliteStore {
     pub fn open(path: &str) -> Result<Self, rusqlite::Error> {
         let conn = rusqlite::Connection::open(path)?;
         conn.execute_batch(
+            // journal_size_limit：checkpoint 之后把 -wal 截断到 1 MiB。没有它时
+            // 自动 checkpoint 只把 WAL 置零复用，文件长度会一直停在水位最高点
+            // （实测一个 3.7 MB 的主库旁挂着 7.3 MB 的 usage.db-wal）。
+            // wal_autocheckpoint 是 SQLite 默认值，这里显式写出来表明我们在依赖它。
             "PRAGMA journal_mode=WAL;
+             PRAGMA wal_autocheckpoint=1000;
+             PRAGMA journal_size_limit=1048576;
              CREATE TABLE IF NOT EXISTS ForegroundIntervals (
                  Id INTEGER PRIMARY KEY AUTOINCREMENT,
                  AppKey TEXT NOT NULL, ProcessName TEXT NOT NULL,
@@ -338,6 +344,26 @@ impl SqliteStore {
         self.conn.execute_batch("VACUUM;")
     }
 
+    /// 手动 checkpoint 并截断 -wal 文件，返回 (忙标志, WAL 帧数, 已落盘帧数)。
+    ///
+    /// 自动 checkpoint 只复用 WAL 空间、不缩小文件；再配合 journal_size_limit
+    /// 才能在 truncate 模式下真正把 -wal 收回 1 MiB 以内。退出前与「数据库
+    /// 维护」按钮都会调它，避免 -wal 长期大于主库。
+    pub fn checkpoint(&self) -> Result<(i64, i64, i64), rusqlite::Error> {
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+    }
+
+    /// 数据库体积统计：(页大小, 总页数, 空闲页数)。
+    pub fn db_stats(&self) -> Result<(i64, i64, i64), rusqlite::Error> {
+        let page_size = self.pragma_i64("PRAGMA page_size")?;
+        let page_count = self.pragma_i64("PRAGMA page_count")?;
+        let freelist = self.pragma_i64("PRAGMA freelist_count")?;
+        Ok((page_size, page_count, freelist))
+    }
+
     /// 删除某应用的全部记录（用于剔除统计程序自身的历史行）。
     pub fn delete_app_rows(&self, app_key: &str) -> Result<(), rusqlite::Error> {
         self.conn.execute_batch(&format!(
@@ -591,5 +617,48 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn checkpoint_不报错且不丢数据() {
+        let store = temp_db();
+        // 写一点东西，让 WAL 里确实有脏页
+        store
+            .save_daily_replace(&[DailyUsage {
+                usage_date: "2026-11-16".into(),
+                app_key: "a".into(),
+                process_name: "a".into(),
+                display_name: "A".into(),
+                exe_path: "a.exe".into(),
+                active_seconds: 42.0,
+            }])
+            .unwrap();
+        // busy 标志在单连接、无并发读的环境下应为 0；后面两个数字与帧数相关，
+        // 这里只断言不 panic 且数据仍在，避免把 SQLite 内部计数当契约。
+        let (busy, _, _) = store.checkpoint().unwrap();
+        assert_eq!(busy, 0, "无并发读者时 checkpoint 不应 busy");
+        let rows = store.query_daily("2026-11-16", "2026-11-16").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].active_seconds, 42.0);
+    }
+
+    #[test]
+    fn 打开后_wal_上限已配置() {
+        let store = temp_db();
+        assert_eq!(store.pragma_i64("PRAGMA wal_autocheckpoint").unwrap(), 1000);
+        assert_eq!(
+            store.pragma_i64("PRAGMA journal_size_limit").unwrap(),
+            1048576,
+            "journal_size_limit 决定 checkpoint 后 -wal 能被截到多小"
+        );
+    }
+
+    #[test]
+    fn db_stats_页大小与页数自洽() {
+        let store = temp_db();
+        let (page_size, page_count, freelist) = store.db_stats().unwrap();
+        assert_eq!(page_size, 4096, "建库默认页大小");
+        assert!(page_count > 0);
+        assert!(freelist >= 0 && freelist <= page_count);
     }
 }
