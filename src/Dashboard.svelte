@@ -36,6 +36,27 @@
     return aliases.get(key) || fallback;
   }
 
+  function hoverMarquee(node: HTMLElement) {
+    const move = () => {
+      const wrap = node.querySelector<HTMLElement>('.name-wrap');
+      const inner = node.querySelector<HTMLElement>('.name-inner');
+      if (!wrap || !inner || inner.scrollWidth <= wrap.clientWidth + 1) return;
+      wrap.style.setProperty('--cw', `${wrap.clientWidth}px`);
+      wrap.classList.add('scrolling');
+    };
+    const stop = () => {
+      node.querySelector('.name-wrap')?.classList.remove('scrolling');
+    };
+    node.addEventListener('pointerenter', move);
+    node.addEventListener('pointerleave', stop);
+    return {
+      destroy() {
+        node.removeEventListener('pointerenter', move);
+        node.removeEventListener('pointerleave', stop);
+      },
+    };
+  }
+
   $effect(() => {
     api.getSettings().then((s) => (settings = s));
     api.listCategories().then((cats) => {
@@ -412,7 +433,7 @@
           <span class="col-name">{t('应用')}</span>
           <span class="col-cat">{t('分类')}</span>
           <span class="col-dur">{t('活跃时长')}</span>
-          <span class="col-bar">{t('占比')}</span>
+          <span class="col-bar"><span class="pct-head">{t('占比')}</span></span>
         </div>
         <div class="table-body">
           {#each data.apps as a, i (a.app_key)}
@@ -424,7 +445,10 @@
               title={a.exe_path}
             >
               <span class="col-rank">{i + 1}</span>
-              <span class="col-name">{aliasName(a.app_key, a.display_name)}</span>
+              <span class="col-name" use:hoverMarquee>
+                {#if a.icon_data_url}<img class="app-icon" src={a.icon_data_url} alt="" />{/if}
+                <span class="name-wrap"><span class="name-inner">{a.zh_name ? aliasName(a.app_key, a.display_name) + "(" + a.zh_name + ")" : aliasName(a.app_key, a.display_name)}</span></span>
+              </span>
               <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span></span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
               <span class="col-bar">
@@ -808,9 +832,48 @@
   }
 
   .col-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: visible;
+    min-width: 0;
+  }
+
+  .app-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    object-fit: contain;
+    border-radius: 3px;
+  }
+
+  .name-wrap {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .name-inner {
+    white-space: nowrap;
+  }
+
+  .name-wrap:global(.scrolling) .name-inner {
+    display: inline-block;
+    padding-right: 14px;
+    animation: app-name-marquee 7s linear infinite;
+  }
+
+  @keyframes app-name-marquee {
+    0%,
+    12% {
+      transform: translateX(0);
+    }
+    88%,
+    100% {
+      transform: translateX(calc(-100% + var(--cw, 0px)));
+    }
   }
 
   .cat-chip {
@@ -855,6 +918,12 @@
     width: 52px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+
+  .pct-head {
+    margin-left: auto;
+    width: 52px;
+    text-align: right;
   }
 
   .cats {
