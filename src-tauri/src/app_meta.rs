@@ -35,6 +35,10 @@ pub(crate) fn chinese_name(exe_path: &str, process_name: &str, display_name: &st
         return None;
     }
 
+    if let Some(zh) = path_specific_name(exe_path) {
+        return Some(zh.to_string());
+    }
+
     let key = process_key(process_name).to_lowercase();
     let stem = std::path::Path::new(exe_path)
         .file_stem()
@@ -91,8 +95,20 @@ fn curated_name(key: &str) -> Option<&'static str> {
         "cleanmgr" => "磁盘清理",
         "searchhost" => "搜索",
         "applicationframehost" => "应用框架宿主",
+        "photos" => "照片",
+        "windowsterminal" | "wt" => "Windows 终端",
         _ => return None,
     })
+}
+
+/// Well-known apps that share an executable name with a different product.
+/// Matched by install path before the generic process-name rules.
+fn path_specific_name(exe_path: &str) -> Option<&'static str> {
+    let path = exe_path.to_lowercase();
+    if path.contains("centbrowser") {
+        return Some("百分浏览器");
+    }
+    None
 }
 
 fn is_google_chrome(exe_path: &str) -> bool {
@@ -289,7 +305,7 @@ mod tests {
                 "Cent Browser"
             )
             .as_deref(),
-            None
+            Some("百分浏览器")
         );
     }
 
