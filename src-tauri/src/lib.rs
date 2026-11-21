@@ -1,4 +1,5 @@
 mod api_server;
+mod app_meta;
 mod apps;
 mod autostart;
 mod backup;
