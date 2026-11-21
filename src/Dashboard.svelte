@@ -1,6 +1,6 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, categoryLabel, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
+  import { api, fmtDuration, categoryLabel, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardApp, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
   import { lang, en } from './lib/i18n';
   import Modal from './lib/Modal.svelte';
 
@@ -34,6 +34,12 @@
 
   function aliasName(key: string, fallback: string): string {
     return aliases.get(key) || fallback;
+  }
+
+  // The Chinese annotation is only useful when the interface itself is Chinese.
+  function displayName(a: DashboardApp): string {
+    const name = aliasName(a.app_key, a.display_name);
+    return $lang === 'zh' && a.zh_name ? `${name}(${a.zh_name})` : name;
   }
 
   function hoverMarquee(node: HTMLElement) {
@@ -447,7 +453,7 @@
               <span class="col-rank">{i + 1}</span>
               <span class="col-name" use:hoverMarquee>
                 {#if a.icon_data_url}<img class="app-icon" src={a.icon_data_url} alt="" />{/if}
-                <span class="name-wrap"><span class="name-inner">{a.zh_name ? aliasName(a.app_key, a.display_name) + "(" + a.zh_name + ")" : aliasName(a.app_key, a.display_name)}</span></span>
+                <span class="name-wrap"><span class="name-inner">{displayName(a)}</span></span>
               </span>
               <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span></span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
