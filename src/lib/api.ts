@@ -93,6 +93,8 @@ export interface DashboardApp {
   display_name: string;
   process_name: string;
   exe_path: string;
+  icon_data_url: string | null;
+  zh_name: string | null;
   category: string;
   active_seconds: number;
   percent: number;

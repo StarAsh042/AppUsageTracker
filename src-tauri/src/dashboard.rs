@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tracker_core::models::DailyUsage;
 
+use crate::app_meta;
 use crate::settings::display_alias;
 use crate::AppState;
 
@@ -16,6 +17,8 @@ pub(crate) struct DashboardApp {
     pub(crate) display_name: String,
     pub(crate) process_name: String,
     pub(crate) exe_path: String,
+    pub(crate) icon_data_url: Option<String>,
+    pub(crate) zh_name: Option<String>,
     pub(crate) category: String,
     pub(crate) active_seconds: f64,
     pub(crate) percent: f64,
@@ -145,11 +148,15 @@ pub(crate) fn build_dashboard(
                 let s = state.settings.lock().unwrap();
                 display_alias(&s, &app_key, &e.display_name)
             };
+            let icon_data_url = app_meta::icon_data_url(&e.exe_path);
+            let zh_name = app_meta::chinese_name(&e.exe_path, &e.process_name, &e.display_name);
             DashboardApp {
                 app_key,
                 display_name: shown,
                 process_name: e.process_name,
                 exe_path: e.exe_path,
+                icon_data_url,
+                zh_name,
                 category,
                 active_seconds: e.seconds,
                 percent: if total > 0.0 {
