@@ -2,7 +2,9 @@
 // optional Chinese annotation when the app's own name is not already Chinese.
 #![allow(non_snake_case)]
 
+#[cfg(windows)]
 use std::collections::HashMap;
+#[cfg(windows)]
 use std::sync::{Mutex, OnceLock};
 
 use crate::version_info::file_description;
@@ -11,7 +13,7 @@ pub(crate) fn icon_data_url(exe_path: &str) -> Option<String> {
     #[cfg(not(windows))]
     {
         let _ = exe_path;
-        return None;
+        None
     }
 
     #[cfg(windows)]
