@@ -13,7 +13,7 @@
   import { lang, translate } from './lib/i18n';
   import { errCode, errText } from './lib/errors';
   import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
-  import Modal from './lib/Modal.svelte';
+  import ExtensionModal from './lib/ExtensionModal.svelte';
 
   let s = $state<TrackerSettings | null>(null);
   let rules = $state<{ name: string; keywords: string }[]>([]);
@@ -28,24 +28,12 @@
   let updateChecking = $state(false);
   let updateInstalling = $state(false);
   let showExtInstall = $state(false);
-  let extPathCopied = $state(false);
-  let extPath = $state('');
   let extInstalling = $state(false);
   let extResults = $state<ExtInstallResult[]>([]);
   let fileInput: HTMLInputElement | undefined = $state();
   let maint = $state<DbMaintenance | null>(null);
   let maintBusy = $state(false);
   let maintError = $state('');
-
-  $effect(() => {
-    if (showExtInstall) {
-      extPathCopied = false;
-      api
-        .getExtensionPath()
-        .then((p) => (extPath = p))
-        .catch(() => (extPath = ''));
-    }
-  });
 
   const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
   let scanned = $state<ScannedApp[] | null>(null);
@@ -286,16 +274,6 @@
     }
   }
 
-  async function installExt(browser: string) {
-    await api.openBrowserExtPage(browser);
-    extPathCopied = true;
-    try {
-      await navigator.clipboard.writeText(extPath);
-    } catch {
-      // 剪贴板不可用时静默：路径已经显示在界面上，用户仍可手动选中复制
-    }
-  }
-
   async function smartInstall() {
     extInstalling = true;
     extResults = [];
@@ -325,15 +303,6 @@
         return t('写入注册表失败：{message}', { message: r.message });
       default:
         return r.message;
-    }
-  }
-
-  async function copyExtPath() {
-    try {
-      await navigator.clipboard.writeText(extPath);
-      extPathCopied = true;
-    } catch {
-      // 剪贴板不可用时静默：路径已经显示在界面上，用户仍可手动选中复制
     }
   }
 
@@ -712,30 +681,7 @@
     </div>
 
     {#if showExtInstall}
-      <Modal label={t('安装浏览器扩展')} onclose={() => (showExtInstall = false)}>
-        {#snippet head()}
-          <div class="m-name">{t('安装浏览器扩展')}</div>
-        {/snippet}
-        <p class="hint" style="margin:12px 0">{t('选择你的浏览器，将打开扩展管理页')}</p>
-        <div class="ext-browser-row">
-          <button class="ext-browser-btn" onclick={() => installExt('chrome')}>
-            <span class="ext-icon">🌐</span> Chrome
-          </button>
-          <button class="ext-browser-btn" onclick={() => installExt('edge')}>
-            <span class="ext-icon">⚡</span> Edge
-          </button>
-        </div>
-        <div class="ext-steps">
-          <p>{t('扩展管理页打开后：')}</p>
-          <p>1. {t('开启「开发者模式」')}</p>
-          <p>2. {t('点击「加载已解压的扩展程序」')}</p>
-          <p>3. {t('选择以下目录（已复制到剪贴板）')}</p>
-          <code class="ext-path">{extPathCopied ? t('已复制到剪贴板 ✓') : extPath}</code>
-        </div>
-        <button class="primary" style="margin-top:12px;width:100%" onclick={() => copyExtPath()}>
-          {extPathCopied ? t('已复制到剪贴板 ✓') : t('复制扩展目录路径')}
-        </button>
-      </Modal>
+      <ExtensionModal onclose={() => (showExtInstall = false)} />
     {/if}
 
     <div class="save-bar">
@@ -901,65 +847,6 @@
     gap: 10px;
   }
 
-  /* 弹窗标题（Modal 组件只管外壳，标题排版留给调用方） */
-  .m-name {
-    font-size: 17px;
-    font-weight: 700;
-  }
-
-  .ext-browser-row {
-    display: flex;
-    gap: 10px;
-    margin: 12px 0;
-  }
-
-  .ext-browser-btn {
-    flex: 1;
-    background: var(--card2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    border-radius: 10px;
-    padding: 14px;
-    font-size: 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: border-color 0.12s;
-  }
-
-  .ext-browser-btn:hover {
-    border-color: var(--accent);
-  }
-
-  .ext-icon {
-    font-size: 18px;
-  }
-
-  .ext-steps {
-    background: var(--card2);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-
-  .ext-steps p {
-    margin: 2px 0;
-  }
-
-  .ext-path {
-    display: block;
-    margin-top: 4px;
-    padding: 4px 8px;
-    background: var(--bg);
-    border-radius: 4px;
-    font-family: Consolas, monospace;
-    font-size: 11px;
-    color: var(--accent);
-    word-break: break-all;
-  }
   .ext-results {
     margin-top: 12px;
     display: flex;
