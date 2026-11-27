@@ -9,10 +9,10 @@
     type TopTitle,
     type TopWeb,
   } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
   import { errText } from './lib/errors';
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
 
   let { initialDate = localDateKey() }: { initialDate?: string } = $props();
 
@@ -220,9 +220,12 @@
           <div
             class="seg"
             style="{segStyle(seg.start_time, seg.end_time)};background:{appColor(data.segments, seg.app_key)}"
-            title="{seg.display_name} {seg.start_time.slice(11, 16)}–{seg.end_time.slice(11, 16)}{t('（')}{fmtDuration(
-              seg.duration_seconds,
-            )}{t('）')}"
+            title={t('{app} {start}–{end}（{dur}）', {
+              app: seg.display_name,
+              start: seg.start_time.slice(11, 16),
+              end: seg.end_time.slice(11, 16),
+              dur: fmtDuration(seg.duration_seconds),
+            })}
           ></div>
         {/each}
         {#each hourTicks as t (t)}
@@ -240,9 +243,12 @@
           <div
             class="seg"
             style="{segStyle(st.start_time, st.end_time)};background:{STATE_COLORS[st.state] ?? '#565d6e'}"
-            title="{stateLabel(st.state, $lang)} {st.start_time.slice(11, 16)}–{st.end_time.slice(11, 16)}{t(
-              '（',
-            )}{fmtDuration(st.duration_seconds)}{t('）')}"
+            title={t('{state} {start}–{end}（{dur}）', {
+              state: stateLabel(st.state, $lang),
+              start: st.start_time.slice(11, 16),
+              end: st.end_time.slice(11, 16),
+              dur: fmtDuration(st.duration_seconds),
+            })}
           ></div>
         {/each}
         {#each hourTicks as t (t)}

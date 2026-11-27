@@ -6,7 +6,7 @@
   import CompareView from './CompareView.svelte';
   import SettingsView from './SettingsView.svelte';
   import { api, fmtDuration, stateLabel, type LiveStatus } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
 
   let view = $state<'dashboard' | 'timeline' | 'calendar' | 'compare' | 'settings'>('dashboard');
   let live = $state<LiveStatus | null>(null);
@@ -21,7 +21,7 @@
   // 备份恢复 / 清空数据后自增，重挂载数据视图以重新拉数据
   let dataEpoch = $state(0);
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
 
   $effect(() => {
     api.getVersion().then((v) => (version = v));
@@ -125,7 +125,7 @@
 
   {#if restTip}
     <div class="rest-banner">
-      ⏸ {t('已连续使用较久')}{t('，')}{t('建议起身休息一下')}
+      ⏸ {t('已连续使用较久，建议起身休息一下')}
       <button onclick={() => (restTip = false)}>{t('知道了')}</button>
     </div>
   {/if}

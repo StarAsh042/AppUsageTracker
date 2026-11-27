@@ -1,7 +1,7 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
   import {
     api,
     fmtDuration,
@@ -21,7 +21,7 @@
   let collapsedUi = $state(false);
   let edge = $state<'none' | 'left' | 'right' | 'top' | 'bottom'>('none');
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
   let catColors = $state<Map<string, string>>(new Map());
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
   // 未贴边就想收起时，Rust 发 widget://hint = "edge_required"

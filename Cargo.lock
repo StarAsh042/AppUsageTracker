@@ -4948,7 +4948,6 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
  "windows 0.58.0",
 ]
 

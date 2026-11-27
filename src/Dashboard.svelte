@@ -12,9 +12,12 @@
     type LiveStatus,
     type TrackerSettings,
   } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
   import { errText } from './lib/errors';
   import Modal from './lib/Modal.svelte';
+  import RankingPanel from './lib/RankingPanel.svelte';
+  import CategoryBreakdown from './lib/CategoryBreakdown.svelte';
+  import TrendChart, { type TrendBar } from './lib/TrendChart.svelte';
 
   let {
     focusDate = null,
@@ -30,7 +33,7 @@
   let prevTotal = $state<number | null>(null);
   // 首帧就是"加载中"：挂载时 load() 还没跑完，否则会先闪一下"暂无数据"。
   let loading = $state(true);
-  // 加载失败与空数据必须显示成可见文案，否则整块内容会看起来"消失"了。
+  // 加载失败与空数据必须显示成可见文案，否则整块内容会看起来"消失了"。
   let loadError = $state<string | null>(null);
   let loadSeq = 0;
   let categories = $state<string[]>([]);
@@ -41,7 +44,7 @@
   let catColors = $state<Map<string, string>>(new Map());
   let trendMode = $state<'duration' | 'score'>('duration');
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
   let aliases = $state<Map<string, string>>(new Map());
 
   function aliasName(key: string, fallback: string): string {
@@ -52,27 +55,6 @@
   function displayName(a: DashboardApp): string {
     const name = aliasName(a.app_key, a.display_name);
     return $lang === 'zh' && a.zh_name ? `${name}(${a.zh_name})` : name;
-  }
-
-  function hoverMarquee(node: HTMLElement) {
-    const move = () => {
-      const wrap = node.querySelector<HTMLElement>('.name-wrap');
-      const inner = node.querySelector<HTMLElement>('.name-inner');
-      if (!wrap || !inner || inner.scrollWidth <= wrap.clientWidth + 1) return;
-      wrap.style.setProperty('--cw', `${wrap.clientWidth}px`);
-      wrap.classList.add('scrolling');
-    };
-    const stop = () => {
-      node.querySelector('.name-wrap')?.classList.remove('scrolling');
-    };
-    node.addEventListener('pointerenter', move);
-    node.addEventListener('pointerleave', stop);
-    return {
-      destroy() {
-        node.removeEventListener('pointerenter', move);
-        node.removeEventListener('pointerleave', stop);
-      },
-    };
   }
 
   $effect(() => {
@@ -128,31 +110,9 @@
     return Math.min(100, Math.round((data.total_active_seconds / (goal * 60)) * 100));
   });
 
-  // 分类环形图
   // 秒级走表：load 时记录基准，tick 时给当前应用加上进行中的区间
   let baseSeconds = new Map<string, number>();
   let baseTotal = 0;
-  const donut = $derived.by(() => {
-    if (!catTree.length) return null;
-    const total = catTree.reduce((s, c) => s + c.seconds, 0) || 1;
-    const R = 42;
-    const C = 2 * Math.PI * R;
-    let acc = 0;
-    const tops = catTree.filter((c) => c.depth === 0);
-    const segs = tops.map((c) => {
-      const frac = c.seconds / total;
-      const dash = Math.max(frac * C - 1.5, 0.6);
-      const seg = {
-        color: catColor(c.name),
-        dash: `${dash} ${C - dash}`,
-        offset: C * (1 - acc) + C / 4,
-        name: c.name,
-      };
-      acc += frac;
-      return seg;
-    });
-    return { segs, C, R };
-  });
 
   let aliasDraft = $state('');
 
@@ -191,10 +151,6 @@
     if (!detail) return;
     await api.setAppDisplayName(detail.app_key, aliasDraft);
     await load();
-  }
-
-  function maxDetailPoints(points: { seconds: number }[]): number {
-    return Math.max(1, ...points.map((p) => p.seconds)) * 1.4;
   }
 
   // 日历页点选日期 → 聚焦该日，并且只消费一次。
@@ -294,6 +250,36 @@
     };
   });
 
+  // 趋势柱。柱子高度留 40% 余量，否则最高那根会顶到面板边缘。
+  const trendBars = $derived.by<TrendBar[]>(() => {
+    if (!data) return [];
+    const max = Math.max(1, ...data.trend.map((p) => p.seconds)) * 1.4;
+    const score = trendMode === 'score';
+    return data.trend.map((pt) => {
+      const val = score ? (pt.score === null ? 0 : pt.score) : pt.seconds;
+      const title = score ? (pt.score === null ? t('无评分') : `${t('效率')} ${pt.score}%`) : fmtDuration(pt.seconds);
+      return {
+        key: pt.date,
+        title: `${pt.date} ${title}`,
+        label: score ? (pt.score === null ? '·' : `${pt.score}%`) : pt.date.slice(5),
+        percent: score ? Math.min(100, val) : (val / max) * 100,
+        score,
+        tone: score ? (val >= 60 ? 'good' : val < 40 ? 'bad' : undefined) : undefined,
+      };
+    });
+  });
+
+  const detailBars = $derived.by<TrendBar[]>(() => {
+    if (!detail) return [];
+    const max = Math.max(1, ...detail.daily.map((p) => p.seconds)) * 1.4;
+    return detail.daily.map((pt) => ({
+      key: pt.date,
+      title: `${pt.date} ${fmtDuration(pt.seconds)}`,
+      label: pt.date.slice(5),
+      percent: (pt.seconds / max) * 100,
+    }));
+  });
+
   function setRange(kind: 'today' | 'yesterday' | 'week' | 'month') {
     const d = new Date();
     if (kind === 'today') {
@@ -346,7 +332,7 @@
     if (!menu) return;
     const key = menu.appKey;
     const name = data?.apps.find((a) => a.app_key === key)?.display_name ?? key;
-    if (!confirm(`${t('「')}${name}${t('」')} — ${t('将停止统计并清除其全部记录')}`)) return;
+    if (!confirm(t('「{name}」 — 将停止统计并清除其全部记录', { name }))) return;
     menu = null;
     await api.excludeApp(key);
     await load();
@@ -369,10 +355,6 @@
     menu = null;
     await api.setAppCategory(m.appKey, cat);
     await load();
-  }
-
-  function trendMax(points: { seconds: number }[]): number {
-    return Math.max(1, ...points.map((p) => p.seconds)) * 1.4;
   }
 </script>
 
@@ -400,7 +382,9 @@
         <div class="label">{t('总活跃时长')}</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
         {#if isMultiDay}
-          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}{t('（')}{dayCount} {t('天')}{t('）')}</div>
+          <div class="delta">
+            {t('日均 {total}（{days} 天）', { total: fmtDuration(dailyAvg), days: dayCount })}
+          </div>
         {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
@@ -445,86 +429,12 @@
     </div>
 
     <div class="content">
-      <div class="panel ranking">
-        <div class="panel-title">{t('应用排行')}</div>
-        <div class="table-head">
-          <span class="col-rank">#</span>
-          <span class="col-name">{t('应用')}</span>
-          <span class="col-cat">{t('分类')}</span>
-          <span class="col-dur">{t('活跃时长')}</span>
-          <span class="col-bar"><span class="pct-head">{t('占比')}</span></span>
-        </div>
-        <div class="table-body">
-          {#each data.apps as a, i (a.app_key)}
-            <button
-              class="row"
-              type="button"
-              onclick={() => openDetail(a.app_key)}
-              oncontextmenu={(e) => rowMenu(e, a.app_key, a.category)}
-              title={a.exe_path}
-            >
-              <span class="col-rank">{i + 1}</span>
-              <span class="col-name" use:hoverMarquee>
-                {#if a.icon_data_url}<img class="app-icon" src={a.icon_data_url} alt="" />{/if}
-                <span class="name-wrap"><span class="name-inner">{displayName(a)}</span></span>
-              </span>
-              <span class="col-cat">
-                <span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span>
-              </span>
-              <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
-              <span class="col-bar">
-                <span class="bar"><span class="fill" style="width:{Math.min(100, a.percent)}%"></span></span>
-                <span class="pct">{a.percent.toFixed(1)}%</span>
-              </span>
-            </button>
-          {:else}
-            <div class="empty">{t('该时间段暂无数据')}</div>
-          {/each}
-        </div>
-      </div>
+      <RankingPanel apps={data.apps} nameOf={displayName} colorOf={catColor} onopen={openDetail} onmenu={rowMenu} />
 
       <div class="side">
         <div class="panel">
           <div class="panel-title">{t('分类占比')}</div>
-          {#if donut}
-            <div class="donut-wrap">
-              <svg viewBox="0 0 100 100" class="donut">
-                {#each donut.segs as s (s.name)}
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r={donut.R}
-                    fill="none"
-                    stroke={s.color}
-                    stroke-width="13"
-                    stroke-dasharray={s.dash}
-                    stroke-dashoffset={s.offset}
-                  ></circle>
-                {/each}
-              </svg>
-              <div class="donut-legend">
-                {#each catTree.filter((c) => c.depth === 0) as c (c.name)}
-                  <span class="legend-item">
-                    <span class="sw" style="background:{catColor(c.name)}"></span>
-                    {categoryLabel(c.name, $lang)}
-                  </span>
-                {/each}
-              </div>
-            </div>
-          {/if}
-          <div class="cats">
-            {#each catTree as c (c.name)}
-              <div class="cat-row" class:child={c.depth > 0}>
-                <span class="cat-name" class:dim={c.depth > 0}>
-                  {c.depth > 0 ? '└ ' : ''}{categoryLabel(c.name, $lang)}
-                </span>
-                <span class="cat-bar"><span class="fill" style="width:{c.percent}%"></span></span>
-                <span class="cat-dur">{fmtDuration(c.seconds)}</span>
-              </div>
-            {:else}
-              <div class="empty">{t('暂无数据')}</div>
-            {/each}
-          </div>
+          <CategoryBreakdown tree={catTree} colorOf={catColor} />
         </div>
         {#if data.trend.length >= 2}
           <div class="panel trend">
@@ -537,35 +447,7 @@
                 <button class:on={trendMode === 'score'} onclick={() => (trendMode = 'score')}>{t('效率')}</button>
               </span>
             </div>
-            <div class="trend">
-              {#each data.trend as pt (pt.date)}
-                {@const val = trendMode === 'score' ? (pt.score === null ? 0 : pt.score) : pt.seconds}
-                {@const pct = trendMode === 'score' ? Math.min(100, val) : (val / trendMax(data.trend)) * 100}
-                <div
-                  class="t-col"
-                  title="{pt.date} {trendMode === 'score'
-                    ? pt.score === null
-                      ? t('无评分')
-                      : `${t('效率')} ${pt.score}%`
-                    : fmtDuration(pt.seconds)}"
-                >
-                  <div class="t-bar-wrap">
-                    <div
-                      class="t-fill"
-                      class:score={trendMode === 'score'}
-                      class:good={trendMode === 'score' && val >= 60}
-                      class:bad={trendMode === 'score' && val < 40}
-                      style="height:{pct}%"
-                    ></div>
-                  </div>
-                  <div class="t-label">
-                    {trendMode === 'score' ? (pt.score === null ? '·' : `${pt.score}%`) : pt.date.slice(5)}
-                  </div>
-                </div>
-              {:else}
-                <div class="empty">{t('暂无数据')}</div>
-              {/each}
-            </div>
+            <TrendChart bars={trendBars} empty={t('暂无数据')} />
           </div>
         {/if}
       </div>
@@ -603,16 +485,7 @@
     </div>
     <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>
     <div class="m-trend">
-      {#each detail.daily as pt (pt.date)}
-        <div class="t-col" title="{pt.date} {fmtDuration(pt.seconds)}">
-          <div class="t-bar-wrap">
-            <div class="t-fill" style="height:{(pt.seconds / maxDetailPoints(detail.daily)) * 100}%"></div>
-          </div>
-          <div class="t-label">{pt.date.slice(5)}</div>
-        </div>
-      {:else}
-        <div class="empty">{t('该区间无数据')}</div>
-      {/each}
+      <TrendChart bars={detailBars} compact empty={t('该区间无数据')} />
     </div>
     <div class="m-hint">{t('右键排行行可随时改分类')}</div>
   </Modal>
@@ -789,228 +662,6 @@
     margin-bottom: 10px;
   }
 
-  .table-head,
-  .row {
-    display: grid;
-    grid-template-columns: 36px 1fr 88px 96px 1fr;
-    gap: 8px;
-    align-items: center;
-    padding: 7px 6px;
-  }
-
-  /* 排行行是可点进详情的，所以用 button：键盘能 Tab 到、能回车触发。
-     按钮默认样式要全部抹掉，否则继承浏览器底色和边框。 */
-  button.row {
-    background: transparent;
-    border: 0;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    width: 100%;
-  }
-
-  button.row:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
-
-  .table-head {
-    color: var(--text-dim);
-    font-size: 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .table-body {
-    flex: 1;
-    overflow-y: auto;
-  }
-
-  .row {
-    border-radius: 8px;
-    cursor: context-menu;
-  }
-
-  .row:hover {
-    background: var(--card2);
-  }
-
-  .col-rank {
-    color: var(--text-dim);
-    font-size: 12px;
-  }
-
-  .col-name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow: visible;
-    min-width: 0;
-  }
-
-  .app-icon {
-    width: 16px;
-    height: 16px;
-    flex: 0 0 16px;
-    object-fit: contain;
-    border-radius: 3px;
-  }
-
-  .name-wrap {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 1;
-  }
-
-  .name-inner {
-    white-space: nowrap;
-  }
-
-  .name-wrap:global(.scrolling) .name-inner {
-    display: inline-block;
-    padding-right: 14px;
-    animation: app-name-marquee 7s linear infinite;
-  }
-
-  @keyframes app-name-marquee {
-    0%,
-    12% {
-      transform: translateX(0);
-    }
-    88%,
-    100% {
-      transform: translateX(calc(-100% + var(--cw, 0px)));
-    }
-  }
-
-  .cat-chip {
-    background: color-mix(in srgb, var(--cc, #4f8cff) 16%, transparent);
-    color: var(--cc, var(--accent));
-    border: 1px solid color-mix(in srgb, var(--cc, #4f8cff) 38%, transparent);
-    font-size: 12px;
-    border-radius: 6px;
-    padding: 2px 8px;
-    white-space: nowrap;
-  }
-
-  .col-dur {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .col-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .bar {
-    flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--card2);
-    overflow: hidden;
-  }
-
-  .fill {
-    display: block;
-    height: 100%;
-    border-radius: 3px;
-    background: linear-gradient(90deg, #4f8cff, #7aa8ff);
-  }
-
-  .pct {
-    color: var(--text-dim);
-    font-size: 12px;
-    width: 52px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .pct-head {
-    margin-left: auto;
-    width: 52px;
-    text-align: right;
-  }
-
-  .cats {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    flex: 1 1 auto;
-    min-height: 72px;
-    overflow-y: auto;
-    padding-right: 4px;
-  }
-
-  .cat-row {
-    display: grid;
-    grid-template-columns: 64px 1fr 84px;
-    gap: 8px;
-    align-items: center;
-    font-size: 13px;
-  }
-
-  .cat-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .cat-row.child {
-    padding-left: 10px;
-  }
-
-  .cat-name.dim {
-    color: var(--text-dim);
-    font-size: 12px;
-  }
-
-  .cat-bar {
-    height: 6px;
-    border-radius: 3px;
-    background: var(--card2);
-    overflow: hidden;
-  }
-
-  .cat-bar .fill {
-    background: linear-gradient(90deg, #3ecf8e, #6ee7b7);
-  }
-
-  .cat-dur {
-    text-align: right;
-    color: var(--text-dim);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .trend {
-    flex: 1;
-    display: flex;
-    align-items: stretch;
-    justify-content: center;
-    gap: 6px;
-    min-height: 0;
-  }
-
-  .t-col {
-    flex: 0 1 72px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .t-bar-wrap {
-    flex: 1;
-    display: flex;
-    align-items: flex-end;
-    background: var(--card2);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-
   .trend-head {
     display: flex;
     align-items: center;
@@ -1036,40 +687,6 @@
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
-  }
-
-  .t-fill {
-    width: 100%;
-    background: linear-gradient(180deg, #4f8cff, #3566cc);
-    border-radius: 6px 6px 0 0;
-    min-height: 2px;
-  }
-
-  .t-fill.score {
-    background: linear-gradient(180deg, #f5a623, #c77f10);
-  }
-
-  .t-fill.score.good {
-    background: linear-gradient(180deg, #3ecf8e, #23a56d);
-  }
-
-  .t-fill.score.bad {
-    background: linear-gradient(180deg, #ff5f5f, #c73e3e);
-  }
-
-  .t-label {
-    font-size: 10px;
-    color: var(--text-dim);
-    text-align: center;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .empty {
-    color: var(--text-dim);
-    padding: 18px 0;
-    text-align: center;
-    font-size: 13px;
   }
 
   .loading {
@@ -1136,43 +753,6 @@
     stroke-linecap: round;
   }
 
-  .donut-wrap {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 12px;
-    flex: none;
-  }
-
-  .donut {
-    width: 92px;
-    height: 92px;
-    flex: none;
-  }
-
-  /* 图例改成两列并限高：分类多时（本月最容易多）单列图例会顶穿面板。 */
-  .donut-legend {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 12px;
-    font-size: 12px;
-    max-height: 92px;
-    overflow-y: auto;
-    align-content: start;
-  }
-
-  .legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .donut-legend .sw {
-    width: 9px;
-    height: 9px;
-    border-radius: 3px;
-  }
-
   /* 弹窗外壳（遮罩 / 卡片 / 关闭按钮）在 lib/Modal.svelte 里，
      这里只留弹窗内部内容自己的样式。 */
   .m-name {
@@ -1185,6 +765,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* 详情弹窗里的分类标签；排行表里的同名标签已随组件搬走。 */
+  .m-meta .cat-chip {
+    background: color-mix(in srgb, var(--cc, #4f8cff) 16%, transparent);
+    color: var(--cc, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--cc, #4f8cff) 38%, transparent);
+    font-size: 12px;
+    border-radius: 6px;
+    padding: 2px 8px;
+    white-space: nowrap;
   }
 
   .m-path {
@@ -1235,40 +826,7 @@
 
   .m-trend {
     display: flex;
-    align-items: stretch;
-    justify-content: center;
-    gap: 5px;
     height: 110px;
-  }
-
-  .m-trend .t-col {
-    flex: 0 1 72px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .m-trend .t-bar-wrap {
-    flex: 1;
-    display: flex;
-    align-items: flex-end;
-    background: var(--card2);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-
-  .m-trend .t-fill {
-    width: 100%;
-    background: linear-gradient(180deg, #4f8cff, #3566cc);
-    border-radius: 4px 4px 0 0;
-    min-height: 2px;
-  }
-
-  .m-trend .t-label {
-    font-size: 9px;
-    color: var(--text-dim);
-    text-align: center;
   }
 
   .m-hint {
