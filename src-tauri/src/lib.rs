@@ -142,7 +142,7 @@ pub fn run() {
             backup::restore_backup_content,
         ])
         .setup(|app| {
-            let settings = settings::load_settings();
+            let (settings, load_event) = settings::load_settings();
             logging::init(&settings.data_directory);
             log::info!(
                 "启动 v{}，数据目录 {}",
@@ -197,6 +197,8 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
+            // 配置读取出过问题的话，到这里才有通知通道可用。
+            settings::report_load_event(&handle, load_event);
             // 老版本写进 HKCU Run 的是裸 exe 路径（无引号、无标记）。这里按当前
             // 设置再写一次，把历史值就地规范化成 "exe" --autostart 的形式。
             if handle
