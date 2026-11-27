@@ -85,7 +85,7 @@ pub(crate) fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     let st = app.state::<AppState>();
                     let store = st.store.lock().unwrap();
                     if let Err(e) = store.checkpoint() {
-                        eprintln!("checkpoint on quit failed: {e}");
+                        log::error!("checkpoint on quit failed: {e}");
                     }
                 }
                 app.exit(0);

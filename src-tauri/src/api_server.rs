@@ -39,7 +39,7 @@ pub(crate) fn spawn_api_server(app: &AppHandle) {
         let listener = match std::net::TcpListener::bind(&addr) {
             Ok(l) => l,
             Err(e) => {
-                eprintln!("本地 API 启动失败({addr}): {e}");
+                log::error!("本地 API 启动失败({addr}): {e}");
                 return;
             }
         };

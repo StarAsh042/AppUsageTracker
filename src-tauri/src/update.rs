@@ -91,6 +91,6 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
         .download_and_install(|_, _| {}, || {})
         .await
         .map_err(|e| format!("安装更新失败: {e}"))?;
-    println!("已更新到 {version}，应用即将重启");
+    log::info!("已更新到 {version}，应用即将重启");
     Ok(())
 }

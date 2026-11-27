@@ -177,7 +177,7 @@ pub(crate) fn spawn_monitor(app: AppHandle) {
             if last_checkpoint.elapsed() >= std::time::Duration::from_secs(300) {
                 last_checkpoint = std::time::Instant::now();
                 if let Err(e) = state.store.lock().unwrap().checkpoint() {
-                    eprintln!("periodic checkpoint failed: {e}");
+                    log::error!("periodic checkpoint failed: {e}");
                 }
             }
             check_limits(&app);
@@ -252,26 +252,26 @@ pub(crate) fn flush_state(app: &AppHandle) {
     };
     let store = state.store.lock().unwrap();
     if let Err(e) = store.save_daily_replace(&daily) {
-        eprintln!("save_daily failed: {e}");
+        log::error!("save_daily failed: {e}");
     }
     if !intervals.is_empty() {
         if let Err(e) = store.save_intervals(&intervals) {
-            eprintln!("save_intervals failed: {e}");
+            log::error!("save_intervals failed: {e}");
         }
     }
     if !state_intervals.is_empty() {
         if let Err(e) = store.save_state_intervals(&state_intervals) {
-            eprintln!("save_state_intervals failed: {e}");
+            log::error!("save_state_intervals failed: {e}");
         }
     }
     if !title_intervals.is_empty() {
         if let Err(e) = store.save_title_intervals(&title_intervals) {
-            eprintln!("save_title_intervals failed: {e}");
+            log::error!("save_title_intervals failed: {e}");
         }
     }
     if !web_intervals.is_empty() {
         if let Err(e) = store.save_web_intervals(&web_intervals) {
-            eprintln!("save_web_intervals failed: {e}");
+            log::error!("save_web_intervals failed: {e}");
         }
     }
 }
@@ -288,7 +288,7 @@ pub(crate) fn purge_expired(app: &AppHandle) {
         .to_string();
     let result = state.store.lock().unwrap().purge_before(&cutoff);
     if let Err(e) = result {
-        eprintln!("purge_before failed: {e}");
+        log::error!("purge_before failed: {e}");
     }
 }
 

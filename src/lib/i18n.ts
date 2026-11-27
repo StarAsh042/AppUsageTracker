@@ -127,6 +127,7 @@ export const en: Record<string, string> = {
   'API 端口': 'API port',
   数据目录: 'Data directory',
   打开数据目录: 'Open data folder',
+  打开日志目录: 'Open log folder',
   清空全部数据: 'Erase all data',
   已保存设置即时生效: 'Saved. Changes apply immediately',
   排除应用: 'Excluded Apps',
