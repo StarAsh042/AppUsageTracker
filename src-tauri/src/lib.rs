@@ -7,6 +7,7 @@ mod commands;
 mod dashboard;
 mod ext_install;
 mod live;
+mod logging;
 mod monitor;
 mod reports;
 mod settings;
@@ -139,6 +140,12 @@ pub fn run() {
         ])
         .setup(|app| {
             let settings = settings::load_settings();
+            logging::init(&settings.data_directory);
+            log::info!(
+                "启动 v{}，数据目录 {}",
+                env!("CARGO_PKG_VERSION"),
+                settings.data_directory
+            );
             std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
             let store = SqliteStore::open(&settings::db_path(&settings.data_directory))
                 .map_err(|e| format!("打开数据库失败: {e}"))?;
@@ -284,7 +291,14 @@ pub fn run() {
                         s.data_directory.clone()
                     };
                     let path = std::path::Path::new(&dir).join("smoke-report.json");
-                    let _ = std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap());
+                    match serde_json::to_string_pretty(&report) {
+                        Ok(json) => {
+                            if let Err(e) = std::fs::write(&path, json) {
+                                log::error!("smoke report write failed: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("smoke report serialize failed: {e}"),
+                    }
                     println!("smoke-report: {}", path.display());
                     if report["healthy"].as_bool().unwrap_or(false) {
                         h.exit(0);

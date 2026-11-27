@@ -68,6 +68,7 @@ dependencies = [
  "dirs 5.0.1",
  "encoding_rs",
  "lnk",
+ "log",
  "png",
  "rust-i18n",
  "serde",

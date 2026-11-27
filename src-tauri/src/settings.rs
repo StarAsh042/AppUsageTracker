@@ -15,7 +15,7 @@ use tracker_core::settings::{CategoryRuleDef, TrackerSettings};
 use tracker_core::store::SqliteStore;
 
 use crate::monitor::foreground_identity;
-use crate::{api_server, apply_hotkeys, autostart, windows, AppState};
+use crate::{api_server, apply_hotkeys, autostart, logging, windows, AppState};
 
 /// 应用别名：仅影响展示，不改历史数据与分类匹配。
 pub(crate) fn display_alias(settings: &TrackerSettings, app_key: &str, original: &str) -> String {
@@ -101,7 +101,7 @@ pub(crate) fn set_widget_visible(app: &AppHandle, visible: bool) {
                     return;
                 }
                 if let Err(e) = windows::create_widget_window(&handle) {
-                    eprintln!("create widget failed: {e}");
+                    log::error!("create widget failed: {e}");
                     return;
                 }
                 windows::setup_widget_clamp(&handle);
@@ -192,6 +192,7 @@ pub(crate) fn save_settings(
             .save_intervals(&intervals)
             .map_err(|e| e.to_string())?;
         *state.store.lock().unwrap() = new_store;
+        logging::set_dir(&settings.data_directory);
     }
 
     {

@@ -352,6 +352,10 @@
     if (s) await api.openPath(s.data_directory);
   }
 
+  async function openLogDir() {
+    if (s) await api.openPath(`${s.data_directory}\\logs`);
+  }
+
   function limitOf(name: string): number {
     return limitOfSetting(s?.category_daily_limit_minutes, name);
   }
@@ -449,6 +453,7 @@
         </div>
         <div class="row-actions">
           <button class="ghost" onclick={openDataDir}>{t('打开数据目录')}</button>
+          <button class="ghost" onclick={openLogDir}>{t('打开日志目录')}</button>
           <button class="danger" onclick={clearData}>{t('清空全部数据')}</button>
         </div>
       </section>
