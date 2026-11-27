@@ -143,6 +143,14 @@ npm run tauri build                         # 生产构建（NSIS 安装包 + �
 
 默认开启（`api_enabled: true`），只监听 `127.0.0.1:59598`。
 
+**来源策略**：请求带 `Origin` 头时只放行浏览器扩展（`chrome-extension://` / `moz-extension://`），
+其它来源一律返回 403，且不回 `Access-Control-Allow-Origin`。这样任意网页都无法通过 `fetch`
+读到本机的窗口标题与域名统计。扩展来源也只允许调用 `POST /api/web-heartbeat`，读统计的端点
+留给不带 `Origin` 的本地客户端（curl、第三方工具）。
+
+**并发上限**：固定 4 个处理线程，连接排队上限 8 个，队列满时新连接直接收到 503。
+外部开多少连接都不会增加本进程的线程数。
+
 ```text
 GET  /                              端点索引
 GET  /api/live                      实时状态（当前应用 / 今日总时长 / Top5）
@@ -159,6 +167,9 @@ curl -s "http://127.0.0.1:59598/api/dashboard?from=2026-11-01&to=2026-11-07"
 ```
 
 预期返回该区间的应用排行、分类占比与趋势数据，字段结构以实际响应为准。`POST /api/web-heartbeat` 在 `record_web` 关闭时返回 403。
+
+错误响应统一是 `{"error": "..."}` 的合法 JSON，状态码区分 400 / 403 / 404 / 500 / 503；
+服务端序列化失败返回 500 而不是空 body。
 
 ## 数据存储与维护
 
