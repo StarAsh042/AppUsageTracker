@@ -204,7 +204,8 @@ const en05: Record<string, string> = {
   'WAL 截断失败': 'WAL truncate failed',
   '处理中': 'Working…',
   '浏览器扩展': 'Browser Extension',
-  '安装说明': 'Load the extension folder via chrome://extensions (Developer mode → Load unpacked), then enable "Web browsing stats" above.',
+  '安装说明':
+    'Load the extension folder via chrome://extensions (Developer mode → Load unpacked), then enable "Web browsing stats" above.',
   '打开浏览器扩展页': 'Open Browser Extensions Page',
   '打开扩展目录': 'Open Extension Folder',
   '网页心跳间隔（秒，MV3 下限 30）': 'Web heartbeat interval (sec, MV3 min 30)',
@@ -229,7 +230,8 @@ const en05: Record<string, string> = {
   // 设置页：浏览器扩展智能安装
   '安装浏览器扩展': 'Install Browser Extension',
   '智能安装扩展（推荐）': 'Smart install (recommended)',
-  '一键安装：自动识别 Chrome / Edge，打包并注册扩展，重启浏览器后生效': 'One click: detects Chrome / Edge, packs and registers the extension. Restart the browser to activate.',
+  '一键安装：自动识别 Chrome / Edge，打包并注册扩展，重启浏览器后生效':
+    'One click: detects Chrome / Edge, packs and registers the extension. Restart the browser to activate.',
   '手动安装': 'Manual install',
   '安装中': 'Installing',
   '已注册，重启浏览器后生效': 'registered, activate by restarting the browser',
@@ -246,7 +248,8 @@ const en05: Record<string, string> = {
   '恢复备份': 'Restore backup',
   '将清空当前全部数据': 'This clears all current data.',
   '从所选文件恢复': 'Restore from',
-  '一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效': 'One-click install: auto-detects installed Chromium browsers (Chrome / Edge / Cent / Brave / Vivaldi, etc.), packs and registers the extension; restart the browser to activate',
+  '一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效':
+    'One-click install: auto-detects installed Chromium browsers (Chrome / Edge / Cent / Brave / Vivaldi, etc.), packs and registers the extension; restart the browser to activate',
   // 补全：此前漏在 t() 之外的文案
   '软件使用时间统计': 'App Usage Tracker',
   '效率评分': 'Efficiency score',
@@ -266,7 +269,8 @@ const en05: Record<string, string> = {
   '窗口标题记录': 'Window titles',
   '语言切换即时生效，托盘菜单重启后应用': 'Language applies immediately; the tray menu updates after restart',
   '已保存，设置即时生效': 'Saved. Changes apply immediately',
-  '导入将清空当前全部数据并以最新备份替换，确定继续？': 'Import erases all current data and replaces it with the latest backup. Continue?',
+  '导入将清空当前全部数据并以最新备份替换，确定继续？':
+    'Import erases all current data and replaces it with the latest backup. Continue?',
   '选择你的浏览器，将打开扩展管理页': 'Pick a browser to open its extension page',
   '扩展管理页打开后：': 'Once the extension page is open:',
   '开启「开发者模式」': 'Turn on Developer mode',
@@ -281,7 +285,8 @@ const en05: Record<string, string> = {
   'Top 网页（该日累计）': 'Top sites (that day)',
   '至少需要一个关键词': 'At least one keyword is required',
   '重复': 'already exists',
-  '组合写法如 Ctrl+Alt+D / Ctrl+Shift+P，保存时校验有效性。': 'Use combos like Ctrl+Alt+D / Ctrl+Shift+P; validity is checked on save.',
+  '组合写法如 Ctrl+Alt+D / Ctrl+Shift+P，保存时校验有效性。':
+    'Use combos like Ctrl+Alt+D / Ctrl+Shift+P; validity is checked on save.',
   '确定清空全部统计数据？此操作不可恢复。': 'Erase all tracking data? This cannot be undone.',
   '确定继续？': 'Continue?',
   '排除规则——每行一条子串。': 'Exclusion rules — one substring per line.',

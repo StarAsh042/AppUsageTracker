@@ -35,7 +35,7 @@ async function sendHeartbeat() {
       chrome.alarms.clear('hb');
       chrome.alarms.create('hb', { periodInMinutes: currentIntervalSec / 60 });
     }
-  } catch (e) {
+  } catch {
     // AppUsageTracker 未运行或未开启网页统计：静默忽略
   }
 }

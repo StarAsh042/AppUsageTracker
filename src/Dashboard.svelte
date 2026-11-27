@@ -1,6 +1,17 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
-  import { api, fmtDuration, categoryLabel, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardApp, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
+  import {
+    api,
+    fmtDuration,
+    categoryLabel,
+    localDateKey,
+    CATEGORY_PALETTE,
+    type AppDetail,
+    type DashboardApp,
+    type DashboardData,
+    type LiveStatus,
+    type TrackerSettings,
+  } from './lib/api';
   import { lang, en } from './lib/i18n';
   import { errText } from './lib/errors';
   import Modal from './lib/Modal.svelte';
@@ -158,9 +169,7 @@
     const total = data.total_active_seconds || 1;
     for (const [top, secs] of [...tops.entries()].sort((a, b) => b[1] - a[1])) {
       rows.push({ name: top, seconds: secs, depth: 0, percent: (secs / maxTop) * 100 });
-      const kids = data.categories
-        .filter((c) => c.name.startsWith(top + '/'))
-        .sort((a, b) => b.seconds - a.seconds);
+      const kids = data.categories.filter((c) => c.name.startsWith(top + '/')).sort((a, b) => b.seconds - a.seconds);
       for (const k of kids) {
         rows.push({
           name: k.name,
@@ -237,7 +246,9 @@
 
   const isMultiDay = $derived(from < to);
   const dayCount = $derived(
-    from < to ? Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86400000) + 1 : 1
+    from < to
+      ? Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86400000) + 1
+      : 1,
   );
   const dailyAvg = $derived(data ? data.total_active_seconds / dayCount : 0);
   const deltaPct = $derived.by(() => {
@@ -393,7 +404,8 @@
         {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>
-            {t('较上一周期')} {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
+            {t('较上一周期')}
+            {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
           </div>
         {/if}
         {#if goalPct !== null}
@@ -456,7 +468,9 @@
                 {#if a.icon_data_url}<img class="app-icon" src={a.icon_data_url} alt="" />{/if}
                 <span class="name-wrap"><span class="name-inner">{displayName(a)}</span></span>
               </span>
-              <span class="col-cat"><span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span></span>
+              <span class="col-cat">
+                <span class="cat-chip" style="--cc:{catColor(a.category)}">{categoryLabel(a.category, $lang)}</span>
+              </span>
               <span class="col-dur">{fmtDuration(a.active_seconds)}</span>
               <span class="col-bar">
                 <span class="bar"><span class="fill" style="width:{Math.min(100, a.percent)}%"></span></span>
@@ -513,56 +527,46 @@
           </div>
         </div>
         {#if data.trend.length >= 2}
-        <div class="panel trend">
-          <div class="panel-title trend-head">
-            <span>{trendMode === 'duration' ? t('每日活跃') : t('效率趋势')}</span>
-            <span class="t-switch">
-              <button class:on={trendMode === 'duration'} onclick={() => (trendMode = 'duration')}>{t('时长')}</button>
-              <button class:on={trendMode === 'score'} onclick={() => (trendMode = 'score')}>{t('效率')}</button>
-            </span>
-          </div>
-          <div class="trend">
-            {#each data.trend as pt (pt.date)}
-              {@const val =
-                trendMode === 'score'
-                  ? pt.score === null
-                    ? 0
-                    : pt.score
-                  : pt.seconds}
-              {@const pct =
-                trendMode === 'score'
-                  ? Math.min(100, val)
-                  : (val / trendMax(data.trend)) * 100}
-              <div
-                class="t-col"
-                title="{pt.date} {trendMode === 'score'
-                  ? pt.score === null
-                    ? t('无评分')
-                    : `${t('效率')} ${pt.score}%`
-                  : fmtDuration(pt.seconds)}"
-              >
-                <div class="t-bar-wrap">
-                  <div
-                    class="t-fill"
-                    class:score={trendMode === 'score'}
-                    class:good={trendMode === 'score' && val >= 60}
-                    class:bad={trendMode === 'score' && val < 40}
-                    style="height:{pct}%"
-                  ></div>
-                </div>
-                <div class="t-label">
-                  {trendMode === 'score'
+          <div class="panel trend">
+            <div class="panel-title trend-head">
+              <span>{trendMode === 'duration' ? t('每日活跃') : t('效率趋势')}</span>
+              <span class="t-switch">
+                <button class:on={trendMode === 'duration'} onclick={() => (trendMode = 'duration')}>
+                  {t('时长')}
+                </button>
+                <button class:on={trendMode === 'score'} onclick={() => (trendMode = 'score')}>{t('效率')}</button>
+              </span>
+            </div>
+            <div class="trend">
+              {#each data.trend as pt (pt.date)}
+                {@const val = trendMode === 'score' ? (pt.score === null ? 0 : pt.score) : pt.seconds}
+                {@const pct = trendMode === 'score' ? Math.min(100, val) : (val / trendMax(data.trend)) * 100}
+                <div
+                  class="t-col"
+                  title="{pt.date} {trendMode === 'score'
                     ? pt.score === null
-                      ? '·'
-                      : `${pt.score}%`
-                    : pt.date.slice(5)}
+                      ? t('无评分')
+                      : `${t('效率')} ${pt.score}%`
+                    : fmtDuration(pt.seconds)}"
+                >
+                  <div class="t-bar-wrap">
+                    <div
+                      class="t-fill"
+                      class:score={trendMode === 'score'}
+                      class:good={trendMode === 'score' && val >= 60}
+                      class:bad={trendMode === 'score' && val < 40}
+                      style="height:{pct}%"
+                    ></div>
+                  </div>
+                  <div class="t-label">
+                    {trendMode === 'score' ? (pt.score === null ? '·' : `${pt.score}%`) : pt.date.slice(5)}
+                  </div>
                 </div>
-              </div>
-            {:else}
-              <div class="empty">{t('暂无数据')}</div>
-            {/each}
+              {:else}
+                <div class="empty">{t('暂无数据')}</div>
+              {/each}
+            </div>
           </div>
-        </div>
         {/if}
       </div>
     </div>
@@ -589,15 +593,12 @@
   <Modal label={aliasName(d.app_key, d.display_name)} onclose={() => (detail = null)}>
     {#snippet head()}
       <div class="m-name">{aliasName(d.app_key, d.display_name)}</div>
-      <div class="m-meta"><span class="cat-chip">{categoryLabel(d.category, $lang)}</span> <span class="m-path">{d.exe_path}</span></div>
+      <div class="m-meta">
+        <span class="cat-chip">{categoryLabel(d.category, $lang)}</span> <span class="m-path">{d.exe_path}</span>
+      </div>
     {/snippet}
     <div class="alias-row">
-      <input
-        class="alias-input"
-        placeholder={t('自定义显示名')}
-        bind:value={aliasDraft}
-        spellcheck="false"
-      />
+      <input class="alias-input" placeholder={t('自定义显示名')} bind:value={aliasDraft} spellcheck="false" />
       <button class="alias-save" onclick={saveAlias}>{t('改名')}</button>
     </div>
     <div class="m-total">{t('区间内活跃')} <b>{fmtDuration(detail.total_seconds)}</b></div>

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+src-tauri/icons/
+docs/assets/
+package-lock.json
+
+# 本地专用：债务清单与 dsh 侧车目录都不进版本库
+TECH-DEBT-PLAN.md
+.dsh-ops/
