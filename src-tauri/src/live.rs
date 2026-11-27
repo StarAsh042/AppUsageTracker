@@ -9,6 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tracker_core::models::{AppIdentity, TrackingState};
 
+use crate::sync::MutexExt;
 use crate::AppState;
 
 #[derive(Serialize, Clone)]
@@ -31,13 +32,13 @@ pub(crate) struct LiveStatus {
 /// 组一份实时快照；IPC 的 get_live_status、HTTP 的 /api/live 与监控线程的 tick 共用。
 pub(crate) fn live_status(app: &AppHandle) -> LiveStatus {
     let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
+    let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
     // 先把设置整份快照出来再进聚合器锁：既避免 settings→aggregator 反序造成的
     // ABBA 死锁，也让下面的别名校验不再每行加一次锁。
     let (aliases, excluded) = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock_or_recover();
         let mut excluded: HashSet<String> = s.excluded_app_keys.iter().cloned().collect();
         if let Ok(self_exe) = std::env::current_exe() {
             excluded.insert(self_exe.to_string_lossy().to_lowercase());
@@ -50,7 +51,7 @@ pub(crate) fn live_status(app: &AppHandle) -> LiveStatus {
             .cloned()
             .unwrap_or_else(|| original.to_string())
     };
-    let agg = state.aggregator.lock().unwrap();
+    let agg = state.aggregator.lock_or_recover();
     // 被排除的应用不再作为「当前前台应用」外露（悬浮窗 / 顶栏状态）
     let current = agg
         .current_app()

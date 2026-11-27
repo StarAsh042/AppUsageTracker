@@ -15,6 +15,7 @@ use tracker_core::settings::{CategoryRuleDef, TrackerSettings};
 use tracker_core::store::SqliteStore;
 
 use crate::monitor::foreground_identity;
+use crate::sync::MutexExt;
 use crate::{api_server, apply_hotkeys, autostart, logging, windows, AppState};
 
 /// 应用别名：仅影响展示，不改历史数据与分类匹配。
@@ -38,7 +39,7 @@ pub(crate) fn resolve_locale(language: &str) -> &'static str {
 pub(crate) fn apply_locale(app: &AppHandle) {
     let lang = {
         let st = app.state::<AppState>();
-        let v = st.settings.lock().unwrap().language.clone();
+        let v = st.settings.lock_or_recover().language.clone();
         v
     };
     rust_i18n::set_locale(resolve_locale(&lang));
@@ -72,7 +73,7 @@ pub(crate) fn migrate_settings(s: &mut TrackerSettings) {
 
 pub(crate) fn save_settings_file(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let s = state.settings.lock().unwrap().clone();
+    let s = state.settings.lock_or_recover().clone();
     let _ = std::fs::create_dir_all(&s.data_directory);
     let path = std::path::Path::new(&s.data_directory).join("settings.json");
     if let Ok(json) = serde_json::to_string_pretty(&s) {
@@ -93,9 +94,7 @@ pub(crate) fn set_widget_visible(app: &AppHandle, visible: bool) {
             let handle = app.clone();
             std::thread::spawn(move || {
                 // 拿不到锁（被毒化）也要继续建窗，锁只是用来串行化
-                let _guard = WIDGET_CREATION_LOCK
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let _guard = WIDGET_CREATION_LOCK.lock_or_recover();
                 // 排队期间前一个线程可能已经把窗口建好了
                 if handle.get_webview_window("widget").is_some() {
                     return;
@@ -114,7 +113,7 @@ pub(crate) fn set_widget_visible(app: &AppHandle, visible: bool) {
     }
     {
         let state = app.state::<AppState>();
-        state.settings.lock().unwrap().show_floating_widget = visible;
+        state.settings.lock_or_recover().show_floating_widget = visible;
     }
     save_settings_file(app);
     let _ = app.emit("widget://visibility", visible);
@@ -123,7 +122,7 @@ pub(crate) fn set_widget_visible(app: &AppHandle, visible: bool) {
 pub(crate) fn set_paused_internal(app: &AppHandle, paused: bool) {
     let state = app.state::<AppState>();
     state.user_paused.store(paused, Ordering::Relaxed);
-    let mut agg = state.aggregator.lock().unwrap();
+    let mut agg = state.aggregator.lock_or_recover();
     let now = Local::now();
     if paused {
         agg.pause(now);
@@ -135,7 +134,7 @@ pub(crate) fn set_paused_internal(app: &AppHandle, paused: bool) {
 
 #[tauri::command]
 pub(crate) fn get_settings(state: State<AppState>) -> TrackerSettings {
-    state.settings.lock().unwrap().clone()
+    state.settings.lock_or_recover().clone()
 }
 
 #[tauri::command]
@@ -158,7 +157,7 @@ pub(crate) fn save_settings(
             return Err("主界面与悬浮窗热键不能相同".into());
         }
     }
-    let old_dir = state.settings.lock().unwrap().data_directory.clone();
+    let old_dir = state.settings.lock_or_recover().data_directory.clone();
     let dir_changed = old_dir != settings.data_directory;
 
     autostart::set(
@@ -171,7 +170,7 @@ pub(crate) fn save_settings(
     if dir_changed {
         std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
         let (daily, intervals) = {
-            let st = state.store.lock().unwrap();
+            let st = state.store.lock_or_recover();
             let daily = st
                 .query_daily("0000-01-01", "9999-12-31")
                 .map_err(|e| e.to_string())?;
@@ -191,7 +190,7 @@ pub(crate) fn save_settings(
         new_store
             .save_intervals(&intervals)
             .map_err(|e| e.to_string())?;
-        *state.store.lock().unwrap() = new_store;
+        *state.store.lock_or_recover() = new_store;
         logging::set_dir(&settings.data_directory);
     }
 
@@ -200,11 +199,11 @@ pub(crate) fn save_settings(
         if let Ok(self_exe) = std::env::current_exe() {
             excluded.insert(self_exe.to_string_lossy().to_lowercase());
         }
-        let mut agg = state.aggregator.lock().unwrap();
+        let mut agg = state.aggregator.lock_or_recover();
         agg.apply_settings(settings.idle_threshold_seconds as f64, excluded);
     }
 
-    *state.settings.lock().unwrap() = settings.clone();
+    *state.settings.lock_or_recover() = settings.clone();
     save_settings_file(&app);
     // 先重建 resolver 缓存，再通知前端，避免前端刷新时仍读到旧分类
     rebuild_resolver(&app);
@@ -214,7 +213,7 @@ pub(crate) fn save_settings(
     api_server::spawn_api_server(&app);
 
     // 悬浮窗可见性同步
-    let want = state.settings.lock().unwrap().show_floating_widget;
+    let want = state.settings.lock_or_recover().show_floating_widget;
     let now_visible = app
         .get_webview_window("widget")
         .map(|w| w.is_visible().unwrap_or(false))
@@ -222,7 +221,7 @@ pub(crate) fn save_settings(
     if want != now_visible {
         set_widget_visible(&app, want);
     }
-    if let Some(h) = state.tray.lock().unwrap().as_ref() {
+    if let Some(h) = state.tray.lock_or_recover().as_ref() {
         let _ = h.widget_toggle.set_checked(want);
     }
     Ok(())
@@ -231,7 +230,7 @@ pub(crate) fn save_settings(
 #[tauri::command]
 pub(crate) fn set_paused(app: AppHandle, state: State<AppState>, paused: bool) {
     set_paused_internal(&app, paused);
-    if let Some(h) = state.tray.lock().unwrap().as_ref() {
+    if let Some(h) = state.tray.lock_or_recover().as_ref() {
         let _ = h.pause_toggle.set_checked(paused);
     }
 }
@@ -245,7 +244,7 @@ pub(crate) fn set_app_display_name(
     name: String,
 ) {
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock_or_recover();
         let trimmed = name.trim().to_string();
         if trimmed.is_empty() {
             s.app_display_names.remove(&app_key);
@@ -254,7 +253,7 @@ pub(crate) fn set_app_display_name(
         }
     }
     save_settings_file(&app);
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock_or_recover().clone();
     let _ = app.emit("app://settings", &settings);
 }
 
@@ -266,7 +265,7 @@ pub(crate) fn exclude_app(
     app_key: String,
 ) -> Result<(), String> {
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock_or_recover();
         if !s.excluded_app_keys.contains(&app_key) {
             s.excluded_app_keys.push(app_key.clone());
         }
@@ -274,14 +273,14 @@ pub(crate) fn exclude_app(
     save_settings_file(&app);
     {
         let (idle, excluded_list) = {
-            let s = state.settings.lock().unwrap();
+            let s = state.settings.lock_or_recover();
             (s.idle_threshold_seconds as f64, s.excluded_app_keys.clone())
         };
         let mut excluded: HashSet<String> = excluded_list.into_iter().collect();
         if let Ok(self_exe) = std::env::current_exe() {
             excluded.insert(self_exe.to_string_lossy().to_lowercase());
         }
-        let mut agg = state.aggregator.lock().unwrap();
+        let mut agg = state.aggregator.lock_or_recover();
         agg.apply_settings(idle, excluded);
         agg.daily.retain(|_, v| v.app_key != app_key);
         agg.pending_intervals.retain(|v| v.app_key != app_key);
@@ -289,8 +288,7 @@ pub(crate) fn exclude_app(
     }
     state
         .store
-        .lock()
-        .unwrap()
+        .lock_or_recover()
         .delete_app_rows(&app_key)
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -300,10 +298,11 @@ pub(crate) fn exclude_app(
 pub(crate) fn rebuild_resolver(app: &AppHandle) {
     let state = app.state::<AppState>();
     let (rules, overrides) = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock_or_recover();
         (s.category_rules.clone(), s.app_category_overrides.clone())
     };
-    *state.resolver.lock().unwrap() = std::sync::Arc::new(CategoryResolver::new(rules, overrides));
+    *state.resolver.lock_or_recover() =
+        std::sync::Arc::new(CategoryResolver::new(rules, overrides));
 }
 
 #[tauri::command]
@@ -314,7 +313,7 @@ pub(crate) fn set_app_category(
     category: String,
 ) {
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock_or_recover();
         if category == UNCATEGORIZED {
             s.app_category_overrides.remove(&app_key);
         } else {
@@ -323,7 +322,7 @@ pub(crate) fn set_app_category(
     }
     save_settings_file(&app);
     rebuild_resolver(&app);
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock_or_recover().clone();
     let _ = app.emit("app://settings", &settings);
 }
 
@@ -342,19 +341,19 @@ pub(crate) fn save_category_rules(
         }
     }
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock_or_recover();
         s.category_rules = rules;
     }
     save_settings_file(&app);
     rebuild_resolver(&app);
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock_or_recover().clone();
     let _ = app.emit("app://settings", &settings);
     Ok(())
 }
 
 #[tauri::command]
 pub(crate) fn list_available_categories(state: State<AppState>) -> Vec<String> {
-    let s = state.settings.lock().unwrap();
+    let s = state.settings.lock_or_recover();
     let mut cats: Vec<String> = s.category_rules.iter().map(|r| r.name.clone()).collect();
     cats.push(UNCATEGORIZED.to_string());
     cats

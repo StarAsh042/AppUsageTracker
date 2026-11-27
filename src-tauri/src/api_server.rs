@@ -9,6 +9,7 @@ use tracker_core::models::WebInterval;
 
 use crate::dashboard::build_dashboard;
 use crate::live::live_status;
+use crate::sync::MutexExt;
 use crate::timeline::timeline_data;
 use crate::AppState;
 
@@ -18,12 +19,12 @@ static API_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new
 pub(crate) fn spawn_api_server(app: &AppHandle) {
     let (enabled, port) = {
         let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
+        let s = st.settings.lock_or_recover();
         (s.api_enabled, s.api_port)
     };
     {
         let st = app.state::<AppState>();
-        let mut last = st.api_last.lock().unwrap();
+        let mut last = st.api_last.lock_or_recover();
         if *last == Some((enabled, port)) {
             return; // 配置未变，不打扰现有服务
         }
@@ -84,13 +85,13 @@ fn extract_domain(url: &str) -> Option<String> {
 fn heartbeat_web(app: &AppHandle, domain: String, title: String) {
     let state = app.state::<AppState>();
     let now = Local::now();
-    let mut open = state.web_open.lock().unwrap();
+    let mut open = state.web_open.lock_or_recover();
     let extend = matches!(open.as_ref(), Some((d, t, _)) if *d == domain && *t == title);
     if !extend {
         if let Some((d, t, start)) = open.take() {
             let dur = (now - start).num_milliseconds() as f64 / 1000.0;
             if dur >= 5.0 {
-                state.web_pending.lock().unwrap().push(WebInterval {
+                state.web_pending.lock_or_recover().push(WebInterval {
                     domain: d,
                     title: t,
                     start_time: start.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
@@ -179,7 +180,7 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
         "/api/web-heartbeat" if method == "POST" => {
             let (api_on, record) = {
                 let st = app.state::<AppState>();
-                let s = st.settings.lock().unwrap();
+                let s = st.settings.lock_or_recover();
                 (s.api_enabled, s.record_web)
             };
             if !api_on || !record {
@@ -204,8 +205,7 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
                     let interval = app
                         .state::<AppState>()
                         .settings
-                        .lock()
-                        .unwrap()
+                        .lock_or_recover()
                         .web_heartbeat_interval_secs;
                     api_json(
                         &mut stream,
@@ -225,7 +225,7 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
                 .unwrap_or(15);
             let st = app.state::<AppState>();
             let rows = {
-                let s = st.store.lock().unwrap();
+                let s = st.store.lock_or_recover();
                 s.top_web(&from, &to, limit.clamp(1, 200))
                     .map_err(|e| e.to_string())
             };
@@ -294,7 +294,7 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
         }
         "/api/settings" => {
             let st = app.state::<AppState>();
-            let s = st.settings.lock().unwrap().clone();
+            let s = st.settings.lock_or_recover().clone();
             api_json(
                 &mut stream,
                 200,

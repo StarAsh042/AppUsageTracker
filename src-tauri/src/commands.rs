@@ -5,26 +5,27 @@
 use tauri::{AppHandle, Emitter, State};
 use tracker_core::fmt::{csv_escape, fmt_hms};
 
+use crate::sync::MutexExt;
 use crate::AppState;
 
 #[tauri::command]
 pub(crate) fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     {
-        let st = state.store.lock().unwrap();
+        let st = state.store.lock_or_recover();
         st.clear_all().map_err(|e| e.to_string())?;
     }
     {
-        let mut agg = state.aggregator.lock().unwrap();
+        let mut agg = state.aggregator.lock_or_recover();
         agg.daily.clear();
         agg.pending_intervals.clear();
         agg.pending_state_intervals.clear();
         agg.pending_title_intervals.clear();
     }
     {
-        state.web_open.lock().unwrap().take();
-        state.web_pending.lock().unwrap().clear();
+        state.web_open.lock_or_recover().take();
+        state.web_pending.lock_or_recover().clear();
     }
-    state.notified_limits.lock().unwrap().clear();
+    state.notified_limits.lock_or_recover().clear();
     let _ = app.emit("app://data", ());
     Ok(())
 }

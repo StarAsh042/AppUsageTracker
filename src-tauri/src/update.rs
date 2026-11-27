@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
+use crate::sync::MutexExt;
 use crate::AppState;
 
 const OFFICIAL_LATEST: &str =
@@ -36,7 +37,7 @@ pub struct UpdateInfo {
 pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let (channel, use_proxy) = {
         let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
+        let s = st.settings.lock_or_recover();
         (s.update_channel.clone(), s.update_use_proxy)
     };
     let mut builder = app
@@ -64,7 +65,7 @@ pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> 
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     let (channel, use_proxy) = {
         let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
+        let s = st.settings.lock_or_recover();
         (s.update_channel.clone(), s.update_use_proxy)
     };
     let mut builder = app
