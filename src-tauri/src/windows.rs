@@ -235,39 +235,34 @@ pub(crate) fn clamp_widget_pos(w: &WebviewWindow) {
     }
 }
 
-/// 贴边收起：把悬浮窗缩成小条并吸附到最近的屏幕边缘。
-pub(crate) fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
-    let (mon, sf, compact) = match (win.current_monitor(), win.scale_factor()) {
-        (Ok(Some(m)), Ok(f)) => (
-            m,
-            f,
-            app.state::<AppState>()
-                .settings
-                .lock_or_recover()
-                .widget
-                .compact,
-        ),
-        _ => return,
-    };
-    let anchor = *app.state::<AppState>().widget_anchor.lock_or_recover();
+/// 贴边收起的几何计算：算出吸附哪条边、线放在哪、线多大。
+///
+/// 只做算术、不碰窗口，所以能直接单测 —— 贴边是纯坐标问题，
+/// 而调窗口 API 出错时程序只会静默不动作，最难查。
+///
+/// 返回 None 表示窗口离四条边都超过 8 逻辑像素，不该收起。
+fn collapse_target(
+    mon_pos: (i32, i32),
+    mon_size: (u32, u32),
+    anchor: (i32, i32),
+    sf: f64,
+    compact: bool,
+) -> Option<(&'static str, i32, i32, f64, f64)> {
     let (ew, eh) = if compact {
         WIDGET_COMPACT
     } else {
         WIDGET_NORMAL
     };
-    let mp = mon.position();
-    let ms = mon.size();
+    let (mx, my) = mon_pos;
+    let (mw, mh) = (mon_size.0 as i32, mon_size.1 as i32);
     // 只有悬浮窗本身贴近屏幕边缘才收起（间隙按窗口矩形计算，逻辑像素）
     let gap_l = anchor.0 as f64 / sf;
     let gap_t = anchor.1 as f64 / sf;
-    let gap_r = (mp.x + ms.width as i32 - anchor.0 - (ew * sf) as i32) as f64 / sf;
-    let gap_b = (mp.y + ms.height as i32 - anchor.1 - (eh * sf) as i32) as f64 / sf;
+    let gap_r = (mx + mw - anchor.0 - (ew * sf) as i32) as f64 / sf;
+    let gap_b = (my + mh - anchor.1 - (eh * sf) as i32) as f64 / sf;
     let min = gap_l.min(gap_r).min(gap_t).min(gap_b);
     if min > 8.0 {
-        // 不贴边：保持展开，并给前端一个明确的提示（旧实现直接 return 导致空白）
-        let _ = app.emit("widget://edge", "none");
-        let _ = app.emit("widget://hint", "edge_required");
-        return;
+        return None;
     }
     // 线沿边缘摆放的位置以锚点窗口中心为基准
     let cx = anchor.0 + ((ew * sf) as i32) / 2;
@@ -283,28 +278,47 @@ pub(crate) fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
     };
     let (pw, ph) = ((lw * sf) as i32, (lh * sf) as i32);
     let (x, y) = if edge == "left" {
-        (
-            mp.x,
-            (cy - ph / 2).clamp(mp.y, mp.y + ms.height as i32 - ph),
-        )
+        (mx, (cy - ph / 2).clamp(my, my + mh - ph))
     } else if edge == "right" {
-        (
-            mp.x + ms.width as i32 - pw,
-            (cy - ph / 2).clamp(mp.y, mp.y + ms.height as i32 - ph),
-        )
+        (mx + mw - pw, (cy - ph / 2).clamp(my, my + mh - ph))
     } else if edge == "top" {
-        ((cx - pw / 2).clamp(mp.x, mp.x + ms.width as i32 - pw), mp.y)
+        ((cx - pw / 2).clamp(mx, mx + mw - pw), my)
     } else {
-        (
-            (cx - pw / 2).clamp(mp.x, mp.x + ms.width as i32 - pw),
-            mp.y + ms.height as i32 - ph,
-        )
+        ((cx - pw / 2).clamp(mx, mx + mw - pw), my + mh - ph)
+    };
+    Some((edge, x, y, lw, lh))
+}
+
+/// 贴边收起：把悬浮窗缩成小条并吸附到最近的屏幕边缘。
+pub(crate) fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
+    let (mon, sf, compact) = match (win.current_monitor(), win.scale_factor()) {
+        (Ok(Some(m)), Ok(f)) => (
+            m,
+            f,
+            app.state::<AppState>()
+                .settings
+                .lock_or_recover()
+                .widget
+                .compact,
+        ),
+        _ => return,
+    };
+    let anchor = *app.state::<AppState>().widget_anchor.lock_or_recover();
+    let mp = mon.position();
+    let ms = mon.size();
+    let Some((edge, x, y, lw, lh)) =
+        collapse_target((mp.x, mp.y), (ms.width, ms.height), anchor, sf, compact)
+    else {
+        // 不贴边：保持展开，并给前端一个明确的提示（旧实现直接 return 导致空白）
+        let _ = app.emit("widget://edge", "none");
+        let _ = app.emit("widget://hint", "edge_required");
+        return;
     };
     let cur = (
         win.outer_position().map(|p| p.x).unwrap_or(x),
         win.outer_position().map(|p| p.y).unwrap_or(y),
-        win.outer_size().map(|s| s.width as f64 / sf).unwrap_or(ew),
-        win.outer_size().map(|s| s.height as f64 / sf).unwrap_or(eh),
+        win.outer_size().map(|s| s.width as f64 / sf).unwrap_or(lw),
+        win.outer_size().map(|s| s.height as f64 / sf).unwrap_or(lh),
     );
     // 先切样式再收窗：前端只画一根 4px 居中细线，线随窗口一起收到边缘
     let _ = app.emit("widget://edge", edge);
@@ -599,4 +613,87 @@ pub(crate) fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
 pub(crate) fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), AppError> {
     apply_widget_prefs(&app, &widget);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 1080p 主屏、缩放 1.0、悬浮窗在左上角。
+    const MON_POS: (i32, i32) = (0, 0);
+    const MON_SIZE: (u32, u32) = (1920, 1080);
+
+    fn target(anchor: (i32, i32)) -> Option<(&'static str, i32, i32, f64, f64)> {
+        collapse_target(MON_POS, MON_SIZE, anchor, 1.0, false)
+    }
+
+    #[test]
+    fn 离四边都远时不收起() {
+        assert!(target((600, 400)).is_none(), "屏幕中间不该收起");
+        // 离左边 9px 就超过阈值了，边界要卡在 8。
+        assert!(target((9, 400)).is_none(), "9px 间隙不该收起");
+    }
+
+    #[test]
+    fn 贴左边缘收成竖线() {
+        let (edge, x, y, lw, lh) = target((0, 400)).expect("贴左边应收起");
+        assert_eq!(edge, "left");
+        assert_eq!(x, 0, "线应紧贴左边缘");
+        assert_eq!((lw, lh), WIDGET_LINE_V, "左边缘用竖线");
+        assert_eq!(y + (lh as i32) / 2, 400 + 108, "线中心应对齐悬浮窗中心");
+    }
+
+    #[test]
+    fn 贴右边缘收成竖线并贴住屏幕右边() {
+        let anchor = (1920 - WIDGET_NORMAL.0 as i32, 300);
+        let (edge, x, _, lw, lh) = target(anchor).expect("贴右边应收起");
+        assert_eq!(edge, "right");
+        assert_eq!((lw, lh), WIDGET_LINE_V);
+        assert_eq!(x + lw as i32, 1920, "线的右沿应贴住屏幕右沿");
+    }
+
+    #[test]
+    fn 贴上边缘收成横线() {
+        let (edge, x, y, lw, lh) = target((700, 0)).expect("贴上边应收起");
+        assert_eq!(edge, "top");
+        assert_eq!(y, 0, "线应紧贴上边缘");
+        assert_eq!((lw, lh), WIDGET_LINE_H, "上下边缘用横线");
+        assert_eq!(x + (lw as i32) / 2, 700 + 150, "线中心应对齐悬浮窗中心");
+    }
+
+    #[test]
+    fn 贴下边缘收成横线并贴住屏幕下沿() {
+        let anchor = (700, 1080 - WIDGET_NORMAL.1 as i32);
+        let (edge, _, y, lw, lh) = target(anchor).expect("贴下边应收起");
+        assert_eq!(edge, "bottom");
+        assert_eq!((lw, lh), WIDGET_LINE_H);
+        assert_eq!(y + lh as i32, 1080, "线的下沿应贴住屏幕下沿");
+    }
+
+    #[test]
+    fn 角落同时贴两边时按左和上的先序取一条() {
+        // 左上角：四条间隙都是 0，按 left→right→top→bottom 的顺序取 left。
+        assert_eq!(target((0, 0)).map(|t| t.0), Some("left"));
+    }
+
+    #[test]
+    fn 缩略形态用缩略高度算间隙() {
+        // 同一个锚点，正常形态下沿到 1076（离屏幕下沿 4px），缩略形态只到 936。
+        let anchor = (700, 860);
+        let normal =
+            collapse_target(MON_POS, MON_SIZE, anchor, 1.0, false).expect("正常形态贴下沿应收起");
+        assert_eq!(normal.0, "bottom");
+        assert!(
+            collapse_target(MON_POS, MON_SIZE, anchor, 1.0, true).is_none(),
+            "缩略形态没那么高，还不算贴边"
+        );
+    }
+
+    #[test]
+    fn 线不会因为锚点越界而被推到屏幕外() {
+        // 锚点已经顶到屏幕上沿：线仍必须落在屏幕内。
+        let (_, _, y, _, lh) = target((700, -400)).expect("应算出吸附位置");
+        assert!(y >= 0, "线不该跑到屏幕上方: {y}");
+        assert!(y + lh as i32 <= 1080, "线不该跑到屏幕下方");
+    }
 }

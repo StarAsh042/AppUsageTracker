@@ -575,4 +575,45 @@ mod tests {
         assert!(dir.join(SETTINGS_CORRUPT).exists(), "损坏的文件应留下证据");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn 旧版本号被抬到当前版本且只抬一次() {
+        let mut s = TrackerSettings {
+            schema_version: 0,
+            ..Default::default()
+        };
+        migrate_settings(&mut s);
+        assert_eq!(s.schema_version, 1, "v0 的设置应升到 v1");
+        // 已经是当前版本的不能被再动，否则每次启动都改写用户文件。
+        migrate_settings(&mut s);
+        assert_eq!(s.schema_version, 1, "重复迁移应保持不变");
+    }
+
+    #[test]
+    fn 缺版本号的旧文件读进来就带当前版本() {
+        let dir = temp_dir("migrate");
+        std::fs::create_dir_all(&dir).expect("建目录");
+        // v0 的 settings.json：字段齐全，只是还没有 schema_version 这个键。
+        let s = TrackerSettings {
+            api_port: 60333,
+            ..Default::default()
+        };
+        let mut old: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&s).expect("应能序列化"))
+                .expect("应是 JSON");
+        old.as_object_mut()
+            .expect("应是对象")
+            .remove("schema_version");
+        std::fs::write(
+            dir.join(SETTINGS_FILE),
+            serde_json::to_string(&old).expect("应能序列化"),
+        )
+        .expect("写旧文件");
+
+        let (loaded, event) = load_settings_from(&dir);
+        assert_eq!(event, LoadEvent::Ok, "旧文件不算损坏");
+        assert_eq!(loaded.api_port, 60333, "旧字段应原样保留");
+        assert_eq!(loaded.schema_version, 1, "读入后应补上当前版本号");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

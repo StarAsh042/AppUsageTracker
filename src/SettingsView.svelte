@@ -519,7 +519,12 @@
       <section class="panel">
         <h3>{t('排除应用')}</h3>
         <p class="hint">{t('每行一个。')}</p>
-        <textarea rows="5" bind:value={excludedText} spellcheck="false"></textarea>
+        <textarea
+          rows="5"
+          bind:value={excludedText}
+          spellcheck="false"
+          aria-label={t('排除应用')}
+        ></textarea>
       </section>
 
       <section class="panel">
