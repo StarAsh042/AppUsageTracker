@@ -38,6 +38,8 @@ export const en: Record<string, string> = {
   已连续使用较久: 'You have been active for a while',
   建议起身休息一下: 'Consider taking a break',
   知道了: 'Got it',
+  // 监控异常横幅
+  '监控遇到异常，已自动恢复': 'Tracking hit an error and recovered automatically',
   // 仪表盘
   总活跃时长: 'Total Active',
   日均: 'Daily avg',

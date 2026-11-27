@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, Window
 use tracker_core::settings::WidgetPrefs;
 
 use crate::settings::{save_settings_file, set_widget_visible};
+use crate::sync::MutexExt;
 use crate::AppState;
 use rust_i18n::t;
 
@@ -70,8 +71,7 @@ pub(crate) fn create_widget_window(app: &AppHandle) -> tauri::Result<()> {
     let prefs = {
         app.state::<AppState>()
             .settings
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .widget
             .clone()
     };
@@ -188,7 +188,7 @@ pub(crate) fn setup_widget_clamp(app: &AppHandle) {
                 if let (Ok(p), Ok(s)) = (w.outer_position(), w.outer_size()) {
                     let st = h.state::<AppState>();
                     let (ew, eh) = {
-                        let settings = st.settings.lock().unwrap();
+                        let settings = st.settings.lock_or_recover();
                         let (lw, lh) = if settings.widget.compact {
                             WIDGET_COMPACT
                         } else {
@@ -202,7 +202,7 @@ pub(crate) fn setup_widget_clamp(app: &AppHandle) {
                         && (s.width as f64 - ew * sf).abs() < 8.0
                         && (s.height as f64 - eh * sf).abs() < 8.0
                     {
-                        *st.widget_anchor.lock().unwrap() = (p.x, p.y);
+                        *st.widget_anchor.lock_or_recover() = (p.x, p.y);
                     }
                 }
             }
@@ -242,14 +242,13 @@ pub(crate) fn collapse_widget(app: &AppHandle, win: &WebviewWindow) {
             f,
             app.state::<AppState>()
                 .settings
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .widget
                 .compact,
         ),
         _ => return,
     };
-    let anchor = *app.state::<AppState>().widget_anchor.lock().unwrap();
+    let anchor = *app.state::<AppState>().widget_anchor.lock_or_recover();
     let (ew, eh) = if compact {
         WIDGET_COMPACT
     } else {
@@ -359,7 +358,7 @@ pub(crate) fn expand_widget(app: &AppHandle, win: &WebviewWindow, compact: bool)
         )
     } else {
         // 线不在边缘（兜底）：回到锚点
-        let a = *app.state::<AppState>().widget_anchor.lock().unwrap();
+        let a = *app.state::<AppState>().widget_anchor.lock_or_recover();
         (a.0, a.1)
     };
     let cur = (
@@ -422,7 +421,7 @@ pub(crate) fn animate_window(
             let _ = win.set_size(tauri::LogicalSize::new(to.2, to.3));
             let _ = win.set_position(PhysicalPosition::new(to.0 as i32, to.1 as i32));
             if let Some((ax, ay)) = end_anchor {
-                *app.state::<AppState>().widget_anchor.lock().unwrap() = (ax, ay);
+                *app.state::<AppState>().widget_anchor.lock_or_recover() = (ax, ay);
             }
             // 收起/展开的样式在动画结束后才切换，避免窗口还是大尺寸时先套上蓝色细线导致闪烁
             if let Some(e) = end_edge {
@@ -444,7 +443,7 @@ pub(crate) fn accent_tint(accent: &str) -> (u8, u8, u8, u8) {
 pub(crate) fn apply_widget_prefs(app: &AppHandle, prefs: &WidgetPrefs) {
     {
         let state = app.state::<AppState>();
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock_or_recover();
         s.widget = prefs.clone();
     }
     save_settings_file(app);
@@ -464,8 +463,7 @@ pub(crate) fn handle_widget_menu_event(app: &AppHandle, id: &str) {
     let mut prefs = {
         app.state::<AppState>()
             .settings
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .widget
             .clone()
     };
@@ -502,8 +500,7 @@ pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
     let prefs = {
         app.state::<AppState>()
             .settings
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .widget
             .clone()
     };
@@ -555,7 +552,7 @@ pub(crate) fn toggle_widget(app: AppHandle) -> bool {
         .unwrap_or(false);
     let next = !visible;
     set_widget_visible(&app, next);
-    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+    if let Some(h) = app.state::<AppState>().tray.lock_or_recover().as_ref() {
         let _ = h.widget_toggle.set_checked(next);
     }
     next
@@ -565,7 +562,7 @@ pub(crate) fn toggle_widget(app: AppHandle) -> bool {
 #[tauri::command]
 pub(crate) fn close_widget(app: AppHandle) {
     set_widget_visible(&app, false);
-    if let Some(h) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+    if let Some(h) = app.state::<AppState>().tray.lock_or_recover().as_ref() {
         let _ = h.widget_toggle.set_checked(false);
     }
 }
@@ -576,8 +573,7 @@ pub(crate) fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
     let prefs = {
         app.state::<AppState>()
             .settings
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .widget
             .clone()
     };

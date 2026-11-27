@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, State};
 use tracker_core::fmt::fmt_hms;
 
 use crate::dashboard::build_dashboard;
+use crate::sync::MutexExt;
 use crate::AppState;
 
 #[derive(Serialize, Clone)]
@@ -25,7 +26,7 @@ pub(crate) struct DbMaintenance {
 
 #[tauri::command]
 pub(crate) fn db_maintenance(state: State<AppState>) -> Result<DbMaintenance, String> {
-    let st = state.store.lock().unwrap();
+    let st = state.store.lock_or_recover();
     let integrity: String = st
         .pragma("PRAGMA integrity_check")
         .map_err(|e| e.to_string())?;
@@ -109,10 +110,10 @@ pub(crate) fn get_top_titles(
     limit: i64,
 ) -> Result<Vec<TopTitle>, String> {
     let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
-    let aliases_map = state.settings.lock().unwrap().app_display_names.clone();
+    let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
+    let aliases_map = state.settings.lock_or_recover().app_display_names.clone();
     let rows = {
-        let st = state.store.lock().unwrap();
+        let st = state.store.lock_or_recover();
         st.top_titles(&from, &to, limit.clamp(1, 200))
             .map_err(|e| e.to_string())?
     };
@@ -120,7 +121,7 @@ pub(crate) fn get_top_titles(
     for (app_key, title, seconds) in rows {
         // 行所属应用可能已被排除/删除——标题表同步清理过，直接呈现即可
         let (display, _cat) = {
-            let st = state.store.lock().unwrap();
+            let st = state.store.lock_or_recover();
             match st.query_daily(&from, &to).ok() {
                 Some(rows) => {
                     let hit = rows.iter().find(|r| r.app_key == app_key);
@@ -171,7 +172,7 @@ pub(crate) fn get_top_web(
 ) -> Result<Vec<TopWeb>, String> {
     let state = app.state::<AppState>();
     let rows = {
-        let st = state.store.lock().unwrap();
+        let st = state.store.lock_or_recover();
         st.top_web(&from, &to, limit.clamp(1, 200))
             .map_err(|e| e.to_string())?
     };

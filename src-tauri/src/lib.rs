@@ -11,6 +11,7 @@ mod logging;
 mod monitor;
 mod reports;
 mod settings;
+mod sync;
 mod timeline;
 mod tray;
 mod update;
@@ -32,6 +33,8 @@ use tracker_core::category::CategoryResolver;
 use tracker_core::models::{DailyUsage, WebInterval};
 use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
+
+use crate::sync::MutexExt;
 
 /// 全局应用状态（Tauri managed state）。
 struct AppState {
@@ -75,7 +78,7 @@ pub fn run() {
                     // 每次触发时读当前设置（支持自定义组合）
                     let (main_hk_s, widget_hk_s) = {
                         let st = app.state::<AppState>();
-                        let s = st.settings.lock().unwrap();
+                        let s = st.settings.lock_or_recover();
                         (s.hotkey_main.clone(), s.hotkey_widget.clone())
                     };
                     let main_hk: Shortcut = main_hk_s.parse().expect("valid shortcut");
@@ -89,7 +92,7 @@ pub fn run() {
                             .map(|w| w.is_visible().unwrap_or(false))
                             .unwrap_or(false);
                         settings::set_widget_visible(app, !visible);
-                        let guard = st.tray.lock().unwrap();
+                        let guard = st.tray.lock_or_recover();
                         if let Some(h) = guard.as_ref() {
                             let _ = h.widget_toggle.set_checked(!visible);
                         }
@@ -199,8 +202,7 @@ pub fn run() {
             if handle
                 .state::<AppState>()
                 .settings
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .start_with_windows
             {
                 if let Ok(exe) = std::env::current_exe() {
@@ -226,7 +228,7 @@ pub fn run() {
 
             let show_widget = {
                 let st = handle.state::<AppState>();
-                let v = st.settings.lock().unwrap().show_floating_widget;
+                let v = st.settings.lock_or_recover().show_floating_widget;
                 v
             };
             if show_widget {
@@ -236,8 +238,7 @@ pub fn run() {
                 if handle
                     .state::<AppState>()
                     .settings
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .widget
                     .edge_snap
                 {
@@ -265,9 +266,9 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(secs.max(1)));
                     monitor::flush_state(&h);
                     let st = h.state::<AppState>();
-                    let _ = st.store.lock().unwrap().checkpoint();
+                    let _ = st.store.lock_or_recover().checkpoint();
                     let (total, apps) = {
-                        let agg = st.aggregator.lock().unwrap();
+                        let agg = st.aggregator.lock_or_recover();
                         let today = Local::now().format("%Y-%m-%d").to_string();
                         let rows: Vec<&DailyUsage> = agg
                             .daily
@@ -287,7 +288,7 @@ pub fn run() {
                         "healthy": total > 0.0 && apps > 0,
                     });
                     let dir = {
-                        let s = st.settings.lock().unwrap();
+                        let s = st.settings.lock_or_recover();
                         s.data_directory.clone()
                     };
                     let path = std::path::Path::new(&dir).join("smoke-report.json");
@@ -318,7 +319,7 @@ pub fn run() {
 pub(crate) fn apply_hotkeys(app: &AppHandle) {
     let (enabled, main_hk_s, widget_hk_s) = {
         let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
+        let s = st.settings.lock_or_recover();
         (
             s.hotkeys_enabled,
             s.hotkey_main.clone(),

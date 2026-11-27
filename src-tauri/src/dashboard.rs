@@ -9,6 +9,7 @@ use tracker_core::models::DailyUsage;
 
 use crate::app_meta;
 use crate::settings::display_alias;
+use crate::sync::MutexExt;
 use crate::AppState;
 
 #[derive(Serialize, Clone)]
@@ -65,10 +66,10 @@ pub(crate) fn build_dashboard(
     to: &str,
 ) -> Result<DashboardData, String> {
     let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
+    let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
 
     let store_rows = {
-        let st = state.store.lock().unwrap();
+        let st = state.store.lock_or_recover();
         st.query_daily(from, to).map_err(|e| e.to_string())?
     };
     let mut by_key: HashMap<String, DailyUsage> = store_rows
@@ -77,7 +78,7 @@ pub(crate) fn build_dashboard(
         .collect();
     {
         // 今日内存实时数据覆盖库中同键数据
-        let agg = state.aggregator.lock().unwrap();
+        let agg = state.aggregator.lock_or_recover();
         for (k, v) in &agg.daily {
             if v.usage_date.as_str() >= from && v.usage_date.as_str() <= to {
                 by_key.insert(k.clone(), v.clone());
@@ -92,7 +93,7 @@ pub(crate) fn build_dashboard(
         seconds: f64,
     }
     let nature = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock_or_recover();
         s.category_nature.clone()
     };
     let mut per_app: HashMap<String, AggApp> = HashMap::new();
@@ -145,7 +146,7 @@ pub(crate) fn build_dashboard(
         .map(|(app_key, e)| {
             let category = resolver.resolve(&e.display_name, &e.process_name, &e.exe_path);
             let shown = {
-                let s = state.settings.lock().unwrap();
+                let s = state.settings.lock_or_recover();
                 display_alias(&s, &app_key, &e.display_name)
             };
             let icon_data_url = app_meta::icon_data_url(&e.exe_path);

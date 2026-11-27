@@ -5,6 +5,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::settings::save_settings_file;
+use crate::sync::MutexExt;
 use crate::AppState;
 
 /// 「加载已解压的扩展程序」用的目录（数据目录内）。
@@ -12,7 +13,7 @@ use crate::AppState;
 fn extension_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let data_dir = {
         let state = app.state::<AppState>();
-        let x = state.settings.lock().unwrap().data_directory.clone();
+        let x = state.settings.lock_or_recover().data_directory.clone();
         x
     };
     Ok(std::path::Path::new(&data_dir)
@@ -418,7 +419,7 @@ fn manifest_version(dir: &std::path::Path) -> String {
 fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, String> {
     let data_dir = {
         let state = app.state::<AppState>();
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock_or_recover();
         s.data_directory.clone()
     };
     let base = std::path::Path::new(&data_dir).join("browser-ext");
@@ -532,7 +533,7 @@ fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, 
     if results.iter().any(|r| r.ok) {
         let need = {
             let state = app.state::<AppState>();
-            let mut s = state.settings.lock().unwrap();
+            let mut s = state.settings.lock_or_recover();
             let need = !s.record_web;
             if need {
                 s.record_web = true;
@@ -541,7 +542,7 @@ fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, 
         };
         if need {
             save_settings_file(app);
-            let snapshot = app.state::<AppState>().settings.lock().unwrap().clone();
+            let snapshot = app.state::<AppState>().settings.lock_or_recover().clone();
             let _ = app.emit("app://settings", &snapshot);
         }
     }

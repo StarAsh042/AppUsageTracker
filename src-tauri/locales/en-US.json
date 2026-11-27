@@ -28,5 +28,8 @@
   "已连续活跃使用 %{mins} 分钟，站起来活动一下吧": "Active for %{mins} minutes — time to stretch!",
   "软件使用时间统计": "App Usage Tracker",
   "今日 %{total}": "Today %{total}",
-  "今日 %{total} · %{app}": "Today %{total} · %{app}"
+  "今日 %{total} · %{app}": "Today %{total} · %{app}",
+  "统计数据写入失败": "Failed to save usage data",
+  "数据暂存在内存并会自动重试，请检查磁盘空间与数据目录权限。": "Data is kept in memory and will be retried; check disk space and folder permissions.",
+  "监控遇到异常，已自动恢复": "Tracking hit an error and recovered automatically"
 }
