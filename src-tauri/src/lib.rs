@@ -81,11 +81,9 @@ pub fn run() {
                         let s = st.settings.lock_or_recover();
                         (s.hotkey_main.clone(), s.hotkey_widget.clone())
                     };
-                    let main_hk: Shortcut = main_hk_s.parse().expect("valid shortcut");
-                    let widget_hk: Shortcut = widget_hk_s.parse().expect("valid shortcut");
-                    if shortcut == &main_hk {
+                    if is_hotkey(&main_hk_s, shortcut) {
                         windows::toggle_main(app);
-                    } else if shortcut == &widget_hk {
+                    } else if is_hotkey(&widget_hk_s, shortcut) {
                         let st = app.state::<AppState>();
                         let visible = app
                             .get_webview_window("widget")
@@ -317,6 +315,14 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// 这次按下的快捷键是否就是设置里这个组合。
+///
+/// 设置字符串可能被手工改坏，解析失败就当没配这个热键。以前这里用的是
+/// expect，一次无效配置会让整个热键回调 panic。
+pub(crate) fn is_hotkey(configured: &str, pressed: &Shortcut) -> bool {
+    configured.parse::<Shortcut>().ok().as_ref() == Some(pressed)
+}
+
 /// 全局热键注册（设置开关）。
 pub(crate) fn apply_hotkeys(app: &AppHandle) {
     let (enabled, main_hk_s, widget_hk_s) = {
@@ -333,10 +339,38 @@ pub(crate) fn apply_hotkeys(app: &AppHandle) {
     if !enabled {
         return;
     }
-    if let Ok(hk) = main_hk_s.parse::<Shortcut>() {
-        let _ = gs.register(hk);
+    // 解析与注册失败都在这里报一次：热键无效是用户能感知的配置问题，
+    // 静默跳过会让人以为按了没反应是别的毛病。
+    match main_hk_s.parse::<Shortcut>() {
+        Ok(hk) => {
+            if let Err(e) = gs.register(hk) {
+                log::warn!("主热键注册失败({main_hk_s}): {e}");
+            }
+        }
+        Err(e) => log::warn!("主热键无效({main_hk_s:?})，已跳过: {e}"),
     }
-    if let Ok(hk) = widget_hk_s.parse::<Shortcut>() {
-        let _ = gs.register(hk);
+    match widget_hk_s.parse::<Shortcut>() {
+        Ok(hk) => {
+            if let Err(e) = gs.register(hk) {
+                log::warn!("悬浮窗热键注册失败({widget_hk_s}): {e}");
+            }
+        }
+        Err(e) => log::warn!("悬浮窗热键无效({widget_hk_s:?})，已跳过: {e}"),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 无效热键设置不会命中() {
+        let pressed: Shortcut = "Ctrl+Alt+D".parse().expect("测试用的组合应当可解析");
+        assert!(is_hotkey("Ctrl+Alt+D", &pressed), "相同组合应当命中");
+        assert!(
+            !is_hotkey("", &pressed),
+            "空串是无效配置，不能命中更不能 panic"
+        );
+        assert!(!is_hotkey("Ctrl+Alt+不是键", &pressed), "写坏的值不能命中");
+        assert!(!is_hotkey("Ctrl+Alt+W", &pressed), "另一个热键不能误命中");
     }
 }
