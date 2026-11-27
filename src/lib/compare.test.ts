@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  dateKey,
-  deltaClass,
-  formatDelta,
-  localDateKey,
-  orderedDelta,
-  presetRange,
-} from './compare';
+import { dateKey, deltaClass, formatDelta, localDateKey, orderedDelta, presetRange } from './compare';
 
 // 用本地时间构造，避免时区把日期推前一天
 const at = (y: number, m: number, d: number) => new Date(y, m - 1, d);

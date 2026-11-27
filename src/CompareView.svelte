@@ -32,10 +32,7 @@
   async function load() {
     loading = true;
     try {
-      [aData, bData] = await Promise.all([
-        api.getDashboard(aFrom, aTo),
-        api.getDashboard(bFrom, bTo),
-      ]);
+      [aData, bData] = await Promise.all([api.getDashboard(aFrom, aTo), api.getDashboard(bFrom, bTo)]);
     } finally {
       loading = false;
     }
@@ -90,9 +87,7 @@
         });
       }
     }
-    return [...m.values()]
-      .sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b))
-      .slice(0, 40);
+    return [...m.values()].sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b)).slice(0, 40);
   });
 
   const catRows = $derived.by(() => {
@@ -168,9 +163,7 @@
       </div>
       <div class="card">
         <div class="label">{t('变化')}</div>
-        <div
-          class="value {deltaCls(aData.total_active_seconds, bData.total_active_seconds)}"
-        >
+        <div class="value {deltaCls(aData.total_active_seconds, bData.total_active_seconds)}">
           {orderedDelta(aData.total_active_seconds, bData.total_active_seconds) === null
             ? '—'
             : deltaText(aData.total_active_seconds, bData.total_active_seconds)}
@@ -187,7 +180,6 @@
       </div>
       <div class="rows">
         {#each appRows as r (r.key)}
-          {@const d = orderedDelta(r.a, r.b)}
           <div class="row" title={r.key}>
             <span class="c-name">{r.name}<span class="c-cat">{categoryLabel(r.cat, $lang)}</span></span>
             <span class="c-bars">
@@ -208,7 +200,6 @@
       <div class="panel-title">{t('分类对比')}</div>
       <div class="rows">
         {#each catRows as r (r.key)}
-          {@const d = orderedDelta(r.a, r.b)}
           <div class="row">
             <span class="c-name">
               <span class="sw" style="background:{catColor(r.name)}"></span>{categoryLabel(r.name, $lang)}

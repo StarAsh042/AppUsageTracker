@@ -14,9 +14,7 @@
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
   const WEEK_CN = $derived(
-    $lang === 'en'
-      ? ['M', 'T', 'W', 'T', 'F', 'S', 'S']
-      : ['一', '二', '三', '四', '五', '六', '日'],
+    $lang === 'en' ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['一', '二', '三', '四', '五', '六', '日'],
   );
 
   $effect(() => {
@@ -115,9 +113,10 @@
   const yearMonths = $derived.by(() => {
     const y = yearCursor;
     const months: { name: string; weeks: number }[] = [];
-    const MONTH_NAMES = $lang === 'en'
-      ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      : ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+    const MONTH_NAMES =
+      $lang === 'en'
+        ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        : ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
     // 每月占的周数（近似：该月天数 / 7 向上取整）
     for (let m = 0; m < 12; m++) {
       const days = new Date(y, m + 1, 0).getDate();
@@ -138,8 +137,24 @@
 <div class="cal">
   <div class="toolbar">
     <div class="mode-switch">
-      <button class:on={mode === 'month'} onclick={() => { mode = 'month'; load(); }}>{t('月')}</button>
-      <button class:on={mode === 'year'} onclick={() => { mode = 'year'; load(); }}>{t('年')}</button>
+      <button
+        class:on={mode === 'month'}
+        onclick={() => {
+          mode = 'month';
+          load();
+        }}
+      >
+        {t('月')}
+      </button>
+      <button
+        class:on={mode === 'year'}
+        onclick={() => {
+          mode = 'year';
+          load();
+        }}
+      >
+        {t('年')}
+      </button>
     </div>
     {#if mode === 'month'}
       <button class="nav" onclick={() => shiftMonth(-1)}>◀</button>
@@ -168,7 +183,7 @@
         </div>
         <div class="yh-body">
           <div class="yh-days">
-            {#each ($lang === 'en' ? ['M','','W','','F','','S'] : ['一','','三','','五','','日']) as d, i (i)}
+            {#each $lang === 'en' ? ['M', '', 'W', '', 'F', '', 'S'] : ['一', '', '三', '', '五', '', '日'] as d, i (i)}
               <span class="yh-day" class:visible={i % 2 === 0}>{d}</span>
             {/each}
           </div>
@@ -180,9 +195,13 @@
                     <button
                       class="yh-cell"
                       class:today={cell.date === todayKey}
-                      style="background:{cell.seconds !== undefined ? heat(cell.seconds, yearMax) : 'color-mix(in srgb, var(--border) 30%, transparent)'}"
+                      style="background:{cell.seconds !== undefined
+                        ? heat(cell.seconds, yearMax)
+                        : 'color-mix(in srgb, var(--border) 30%, transparent)'}"
                       onclick={() => pickDate(cell.date)}
-                      title="{cell.date}{cell.seconds !== undefined && cell.seconds > 0 ? ' · ' + fmtDuration(cell.seconds) : ''}"
+                      title="{cell.date}{cell.seconds !== undefined && cell.seconds > 0
+                        ? ' · ' + fmtDuration(cell.seconds)
+                        : ''}"
                     ></button>
                   {:else}
                     <span class="yh-cell empty"></span>

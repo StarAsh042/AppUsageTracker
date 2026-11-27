@@ -40,7 +40,10 @@
   $effect(() => {
     if (showExtInstall) {
       extPathCopied = false;
-      api.getExtensionPath().then((p) => (extPath = p)).catch(() => (extPath = ''));
+      api
+        .getExtensionPath()
+        .then((p) => (extPath = p))
+        .catch(() => (extPath = ''));
     }
   });
 
@@ -239,7 +242,9 @@
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    if (!confirm(`${t('从所选文件恢复')} ${file.name}${t('？')}${t('将清空当前全部数据')}${t('，')}${t('确定继续？')}`)) {
+    if (
+      !confirm(`${t('从所选文件恢复')} ${file.name}${t('？')}${t('将清空当前全部数据')}${t('，')}${t('确定继续？')}`)
+    ) {
       input.value = '';
       return;
     }
@@ -278,23 +283,19 @@
       await api.installUpdate();
     } catch (e) {
       // 已经是最新版本不是故障，别把它显示成「更新失败」。
-      updateStatus =
-        errCode(e) === 'update-latest'
-          ? t('当前已是最新版本')
-          : `${t('更新失败')}: ${errText(e)}`;
+      updateStatus = errCode(e) === 'update-latest' ? t('当前已是最新版本') : `${t('更新失败')}: ${errText(e)}`;
       updateInstalling = false;
     }
-  }
-
-  async function initExtInstall() {
-    extPath = await api.getExtensionPath();
-    showExtInstall = true;
   }
 
   async function installExt(browser: string) {
     await api.openBrowserExtPage(browser);
     extPathCopied = true;
-    try { await navigator.clipboard.writeText(extPath); } catch {}
+    try {
+      await navigator.clipboard.writeText(extPath);
+    } catch {
+      // 剪贴板不可用时静默：路径已经显示在界面上，用户仍可手动选中复制
+    }
   }
 
   async function smartInstall() {
@@ -330,20 +331,12 @@
   }
 
   async function copyExtPath() {
-    try { await navigator.clipboard.writeText(extPath); extPathCopied = true; } catch {}
-  }
-
-  async function openExtensionsPage() {
     try {
-      await api.openPath('chrome://extensions');
+      await navigator.clipboard.writeText(extPath);
+      extPathCopied = true;
     } catch {
-      // chrome:// 协议无法从外部打开时退化
-      window.open('chrome://extensions', '_blank');
+      // 剪贴板不可用时静默：路径已经显示在界面上，用户仍可手动选中复制
     }
-  }
-
-  async function openExtensionFolder() {
-    await api.openPath('extension');
   }
 
   async function clearData() {
@@ -381,8 +374,28 @@
       <section class="panel">
         <h3>{t('界面语言')}</h3>
         <div class="lang-switch">
-          <button class:on={s?.language !== 'en'} onclick={() => { if (s) { s.language = 'zh-CN'; save(); } }}>中文</button>
-          <button class:on={s?.language === 'en'} onclick={() => { if (s) { s.language = 'en'; save(); } }}>English</button>
+          <button
+            class:on={s?.language !== 'en'}
+            onclick={() => {
+              if (s) {
+                s.language = 'zh-CN';
+                save();
+              }
+            }}
+          >
+            中文
+          </button>
+          <button
+            class:on={s?.language === 'en'}
+            onclick={() => {
+              if (s) {
+                s.language = 'en';
+                save();
+              }
+            }}
+          >
+            English
+          </button>
         </div>
         <p class="hint" style="margin-top:6px">{t('语言切换即时生效，托盘菜单重启后应用')}</p>
       </section>
@@ -483,11 +496,7 @@
         {/if}
         {#if s.record_window_titles}
           <p class="hint">{t('排除规则——每行一条子串。')}</p>
-          <textarea
-            rows="4"
-            bind:value={titlePatternsText}
-            spellcheck="false"
-            placeholder={t('排除规则示例')}
+          <textarea rows="4" bind:value={titlePatternsText} spellcheck="false" placeholder={t('排除规则示例')}
           ></textarea>
         {/if}
       </section>
@@ -495,7 +504,9 @@
       <section class="panel">
         <h3>{t('浏览器扩展')}</h3>
         <p class="hint" style="margin-bottom:8px">
-          {t('一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效')}
+          {t(
+            '一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效',
+          )}
         </p>
         <div class="row-actions">
           <button class="primary" disabled={extInstalling} onclick={smartInstall}>
@@ -519,12 +530,7 @@
       <section class="panel">
         <h3>{t('排除应用')}</h3>
         <p class="hint">{t('每行一个。')}</p>
-        <textarea
-          rows="5"
-          bind:value={excludedText}
-          spellcheck="false"
-          aria-label={t('排除应用')}
-        ></textarea>
+        <textarea rows="5" bind:value={excludedText} spellcheck="false" aria-label={t('排除应用')}></textarea>
       </section>
 
       <section class="panel">
@@ -576,20 +582,30 @@
         <h3>{t('扫描应用补分类')}</h3>
         <p class="hint">{t('扫描桌面与开始菜单快捷方式')}</p>
         <div class="row-actions">
-          <button class="ghost" disabled={scanning} onclick={runScan}>{scanning ? t('扫描中') + '…' : t('扫描应用')}</button>
+          <button class="ghost" disabled={scanning} onclick={runScan}>
+            {scanning ? t('扫描中') + '…' : t('扫描应用')}
+          </button>
           {#if scanned}
-            <span class="hint">{t('共')} {scanned.length} {t('个应用')}{t('，')}{t('其中未分类')} {scanned.filter((a) => a.category === UNCATEGORIZED).length}</span>
+            <span class="hint">
+              {t('共')}
+              {scanned.length}
+              {t('个应用')}{t('，')}{t('其中未分类')}
+              {scanned.filter((a) => a.category === UNCATEGORIZED).length}
+            </span>
           {/if}
         </div>
         {#if scanned && scanned.length}
           <div class="scan-list">
             {#each scanned as a (a.app_key)}
               <div class="scan-row" class:uncat={a.category === UNCATEGORIZED}>
-                <span class="scan-name" title={a.app_key}>{a.display_name} <span class="scan-src">{a.source}</span></span>
+                <span class="scan-name" title={a.app_key}>
+                  {a.display_name} <span class="scan-src">{a.source}</span>
+                </span>
                 <span class="cat-chip">{categoryLabel(a.category, $lang)}</span>
                 <select
                   value={a.category === UNCATEGORIZED ? '' : a.category}
-                  onchange={(e) => assignCategory(a.app_key, (e.currentTarget as HTMLSelectElement).value || UNCATEGORIZED)}
+                  onchange={(e) =>
+                    assignCategory(a.app_key, (e.currentTarget as HTMLSelectElement).value || UNCATEGORIZED)}
                 >
                   <option value="">{t('设为分类')}</option>
                   {#each ruleNames() as name (name)}
@@ -660,11 +676,7 @@
             {#each backups as b (b)}
               <div class="backup-item">
                 <button class="backup-restore" onclick={() => restoreBackup(b)}>📄 {b}</button>
-                <button
-                  class="backup-del"
-                  title={t('删除备份')}
-                  onclick={() => deleteBackup(b)}
-                >✕</button>
+                <button class="backup-del" title={t('删除备份')} onclick={() => deleteBackup(b)}>✕</button>
               </div>
             {/each}
           </div>
@@ -683,8 +695,11 @@
         </div>
         {#if maint}
           <p class="hint">
-            {t('完整性检查')}{t('：')}{maint.integrity} · {t('体积')} {formatBytes(maint.db_bytes)} ·
-            {t('页数')} {maint.page_count} · {t('空闲页')} {maint.freelist}
+            {t('完整性检查')}{t('：')}{maint.integrity} · {t('体积')}
+            {formatBytes(maint.db_bytes)} ·
+            {t('页数')}
+            {maint.page_count} · {t('空闲页')}
+            {maint.freelist}
           </p>
           <p class="hint">
             {maint.vacuum_ok ? t('压缩完成') : t('压缩失败')} ·
@@ -695,7 +710,6 @@
           <p class="hint error-text">{maintError}</p>
         {/if}
       </section>
-
     </div>
 
     {#if showExtInstall}

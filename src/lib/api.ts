@@ -158,14 +158,12 @@ export const api = {
   getLiveStatus: () => invoke<LiveStatus>('get_live_status'),
   getDashboard: (from: string, to: string) => invoke<DashboardData>('get_dashboard', { from, to }),
   getTimeline: (date: string) => invoke<TimelineData>('get_timeline', { date }),
-  getAppDetail: (appKey: string, from: string, to: string) =>
-    invoke<AppDetail>('get_app_detail', { appKey, from, to }),
+  getAppDetail: (appKey: string, from: string, to: string) => invoke<AppDetail>('get_app_detail', { appKey, from, to }),
   scanInstalledApps: () => invoke<ScannedApp[]>('scan_installed_apps'),
   getSettings: () => invoke<TrackerSettings>('get_settings'),
   saveSettings: (settings: TrackerSettings) => invoke<void>('save_settings', { settings }),
   setPaused: (paused: boolean) => invoke<void>('set_paused', { paused }),
-  setAppCategory: (appKey: string, category: string) =>
-    invoke<void>('set_app_category', { appKey, category }),
+  setAppCategory: (appKey: string, category: string) => invoke<void>('set_app_category', { appKey, category }),
   saveCategoryRules: (rules: CategoryRule[]) => invoke<void>('save_category_rules', { rules }),
   exportCsv: (from: string, to: string) => invoke<string>('export_csv', { from, to }),
   exportWeeklyReport: () => invoke<string>('export_weekly_report'),
@@ -183,12 +181,9 @@ export const api = {
   closeWidget: () => invoke<void>('close_widget'),
   smartInstallExtension: () => invoke<ExtInstallResult[]>('smart_install_extension'),
   excludeApp: (appKey: string) => invoke<void>('exclude_app', { appKey }),
-  setAppDisplayName: (appKey: string, name: string) =>
-    invoke<void>('set_app_display_name', { appKey, name }),
-  getTopTitles: (from: string, to: string, limit: number) =>
-    invoke<TopTitle[]>('get_top_titles', { from, to, limit }),
-  getTopWeb: (from: string, to: string, limit: number) =>
-    invoke<TopWeb[]>('get_top_web', { from, to, limit }),
+  setAppDisplayName: (appKey: string, name: string) => invoke<void>('set_app_display_name', { appKey, name }),
+  getTopTitles: (from: string, to: string, limit: number) => invoke<TopTitle[]>('get_top_titles', { from, to, limit }),
+  getTopWeb: (from: string, to: string, limit: number) => invoke<TopWeb[]>('get_top_web', { from, to, limit }),
   checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
   installUpdate: () => invoke<void>('install_update'),
   updateWidgetSettings: (widget: WidgetPrefs) => invoke<void>('update_widget_settings', { widget }),

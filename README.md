@@ -99,31 +99,31 @@ npm run tauri build                         # 生产构建（NSIS 安装包 + �
 
 键名为 `settings.json` 中的 snake_case 字段，默认值来自 `crates/tracker-core/src/settings.rs` 的 `TrackerSettings::default()`。
 
-| 键 | 默认值 | 说明 | 敏感 |
-| --- | --- | --- | --- |
-| `idle_threshold_seconds` | `180` | 空闲判定阈值（秒），超过即暂停计时 | 否 |
-| `foreground_poll_ms` | `1000` | 前台窗口轮询间隔（毫秒） | 否 |
-| `start_with_windows` | `false` | 开机自启（写入 HKCU Run） | 否 |
-| `excluded_app_keys` | `["c:\\windows\\explorer.exe"]` | 不统计的应用列表 | 否 |
-| `data_directory` | `%LocalAppData%\AppUsageTracker` | 数据目录，更改后迁移历史数据 | 否 |
-| `theme` | `auto` | 界面主题 | 否 |
-| `rest_reminder_minutes` | `60` | 休息提醒间隔（分钟，`0` 关闭） | 否 |
-| `retention_days` | `365` | 统计数据保留天数 | 否 |
-| `show_floating_widget` | `true` | 是否显示桌面悬浮窗 | 否 |
-| `daily_goal_minutes` | `0` | 每日活跃目标（分钟，`0` 关闭） | 否 |
-| `hotkeys_enabled` | `true` | 是否启用全局热键 | 否 |
-| `hotkey_main` / `hotkey_widget` | `Ctrl+Alt+D` / `Ctrl+Alt+W` | 主界面 / 悬浮窗热键，保存时校验冲突 | 否 |
-| `api_enabled` | `true` | 本地 HTTP API 开关 | 否 |
-| `api_port` | `59598` | API 端口，仅回环地址 | 否 |
-| `record_window_titles` | `false` | 是否记录前台窗口标题 | 是 |
-| `title_exclude_patterns` | `[]` | 标题排除规则，子串匹配、不区分大小写 | 是 |
-| `record_web` | `false` | 是否启用网页浏览统计（需安装扩展） | 是 |
-| `web_heartbeat_interval_secs` | `10` | 网页心跳间隔（秒），MV3 定时器下限 30 秒 | 否 |
-| `language` | `system` | 界面语言：`system`（中文）/ `en` | 否 |
-| `update_channel` | `auto` | 更新通道：`auto` / `official` / `mirror` | 否 |
-| `update_use_proxy` | `false` | 检查与下载更新时是否走系统代理 | 否 |
-| `schema_version` | `1` | 设置结构版本，迁移链使用，不建议手改 | 否 |
-| `widget` | 见 `WidgetPrefs` | 悬浮窗偏好：置顶、锁定、贴边收起、紧凑模式、透明度 | 否 |
+| 键                              | 默认值                           | 说明                                               | 敏感 |
+| ------------------------------- | -------------------------------- | -------------------------------------------------- | ---- |
+| `idle_threshold_seconds`        | `180`                            | 空闲判定阈值（秒），超过即暂停计时                 | 否   |
+| `foreground_poll_ms`            | `1000`                           | 前台窗口轮询间隔（毫秒）                           | 否   |
+| `start_with_windows`            | `false`                          | 开机自启（写入 HKCU Run）                          | 否   |
+| `excluded_app_keys`             | `["c:\\windows\\explorer.exe"]`  | 不统计的应用列表                                   | 否   |
+| `data_directory`                | `%LocalAppData%\AppUsageTracker` | 数据目录，更改后迁移历史数据                       | 否   |
+| `theme`                         | `auto`                           | 界面主题                                           | 否   |
+| `rest_reminder_minutes`         | `60`                             | 休息提醒间隔（分钟，`0` 关闭）                     | 否   |
+| `retention_days`                | `365`                            | 统计数据保留天数                                   | 否   |
+| `show_floating_widget`          | `true`                           | 是否显示桌面悬浮窗                                 | 否   |
+| `daily_goal_minutes`            | `0`                              | 每日活跃目标（分钟，`0` 关闭）                     | 否   |
+| `hotkeys_enabled`               | `true`                           | 是否启用全局热键                                   | 否   |
+| `hotkey_main` / `hotkey_widget` | `Ctrl+Alt+D` / `Ctrl+Alt+W`      | 主界面 / 悬浮窗热键，保存时校验冲突                | 否   |
+| `api_enabled`                   | `true`                           | 本地 HTTP API 开关                                 | 否   |
+| `api_port`                      | `59598`                          | API 端口，仅回环地址                               | 否   |
+| `record_window_titles`          | `false`                          | 是否记录前台窗口标题                               | 是   |
+| `title_exclude_patterns`        | `[]`                             | 标题排除规则，子串匹配、不区分大小写               | 是   |
+| `record_web`                    | `false`                          | 是否启用网页浏览统计（需安装扩展）                 | 是   |
+| `web_heartbeat_interval_secs`   | `10`                             | 网页心跳间隔（秒），MV3 定时器下限 30 秒           | 否   |
+| `language`                      | `system`                         | 界面语言：`system`（中文）/ `en`                   | 否   |
+| `update_channel`                | `auto`                           | 更新通道：`auto` / `official` / `mirror`           | 否   |
+| `update_use_proxy`              | `false`                          | 检查与下载更新时是否走系统代理                     | 否   |
+| `schema_version`                | `1`                              | 设置结构版本，迁移链使用，不建议手改               | 否   |
+| `widget`                        | 见 `WidgetPrefs`                 | 悬浮窗偏好：置顶、锁定、贴边收起、紧凑模式、透明度 | 否   |
 
 改变 `data_directory` 会触发历史数据迁移，操作前请先做 JSON 备份。
 
@@ -181,13 +181,13 @@ curl -s "http://127.0.0.1:59598/api/dashboard?from=2026-11-01&to=2026-11-07"
 
 ## 兼容性
 
-| 项目 | 状态 |
-| --- | --- |
-| 支持操作系统 | Windows 10 / 11，x86_64（v0.6.6 发布包由 Windows 构建任务产出） |
-| 安装包格式 | NSIS `.exe` 安装包；另提供独立 exe `app-usage-tracker.exe` |
-| 系统要求 | WebView2 Runtime；Windows 11 与装有 Edge 的 Windows 10 通常已具备 |
-| 签名 | 更新包使用 minisign / ed25519 校验（`latest.json` 含 `.sig`）；安装包未做 Authenticode 签名 |
-| 自动更新 | 内置 tauri-plugin-updater，行为见「自动更新」 |
+| 项目          | 状态                                                                                                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 支持操作系统  | Windows 10 / 11，x86_64（v0.6.6 发布包由 Windows 构建任务产出）                                                                                |
+| 安装包格式    | NSIS `.exe` 安装包；另提供独立 exe `app-usage-tracker.exe`                                                                                     |
+| 系统要求      | WebView2 Runtime；Windows 11 与装有 Edge 的 Windows 10 通常已具备                                                                              |
+| 签名          | 更新包使用 minisign / ed25519 校验（`latest.json` 含 `.sig`）；安装包未做 Authenticode 签名                                                    |
+| 自动更新      | 内置 tauri-plugin-updater，行为见「自动更新」                                                                                                  |
 | Linux / macOS | 无发布包，也未做平台验收（【未验证】）。CI 的 `cross-check` 只在 Windows 上做 `cargo check`，Linux 任务执行 `npm run tauri build` 验证构建链路 |
 
 CI 编译通过不等于平台验收。
