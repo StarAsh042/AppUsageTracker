@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # 前端工具链一起升，避免 Vite / Svelte / 插件互相等版本。
+      frontend-toolchain:
+        patterns:
+          - '@sveltejs/*'
+          - 'svelte*'
+          - 'vite*'
+          - 'vitest*'
+          - 'eslint*'
+          - 'prettier*'
+          - 'typescript*'
+          - '@testing-library/*'
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Tauri 全家桶必须同版本，分开升会编译不过。
+      tauri:
+        patterns:
+          - 'tauri*'
+      rust-deps:
+        patterns:
+          - '*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
