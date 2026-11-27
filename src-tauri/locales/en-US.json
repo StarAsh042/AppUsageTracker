@@ -31,5 +31,10 @@
   "今日 %{total} · %{app}": "Today %{total} · %{app}",
   "统计数据写入失败": "Failed to save usage data",
   "数据暂存在内存并会自动重试，请检查磁盘空间与数据目录权限。": "Data is kept in memory and will be retried; check disk space and folder permissions.",
-  "监控遇到异常，已自动恢复": "Tracking hit an error and recovered automatically"
+  "监控遇到异常，已自动恢复": "Tracking hit an error and recovered automatically",
+  "设置文件损坏": "Settings File Damaged",
+  "已从备份恢复，最近的改动可能丢失，损坏的文件保留为 settings.json.corrupt。": "Recovered from the backup. Recent changes may be lost; the damaged file is kept as settings.json.corrupt.",
+  "已重置为默认设置，损坏的文件保留为 settings.json.corrupt。": "Reset to default settings. The damaged file is kept as settings.json.corrupt.",
+  "设置保存失败": "Failed to Save Settings",
+  "改动未能写入磁盘，请检查数据目录权限与磁盘空间。": "Changes could not be written to disk; check folder permissions and free space."
 }
