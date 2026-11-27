@@ -4,13 +4,14 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::error::AppError;
 use crate::settings::save_settings_file;
 use crate::sync::MutexExt;
 use crate::AppState;
 
 /// 「加载已解压的扩展程序」用的目录（数据目录内）。
 /// 绝不去探测 exe 的相对路径：安装版会命中用户家目录下无关的 extension/ 目录。
-fn extension_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn extension_dir(app: &AppHandle) -> Result<std::path::PathBuf, AppError> {
     let data_dir = {
         let state = app.state::<AppState>();
         let x = state.settings.lock_or_recover().data_directory.clone();
@@ -23,7 +24,7 @@ fn extension_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 /// 把内置扩展写到数据目录，返回可供浏览器手动加载的目录。
 #[tauri::command]
-pub(crate) fn get_extension_path(app: AppHandle) -> Result<String, String> {
+pub(crate) fn get_extension_path(app: AppHandle) -> Result<String, AppError> {
     let dir = extension_dir(&app)?;
     materialize_extension(&dir)?;
     Ok(dir.to_string_lossy().to_string())
@@ -221,7 +222,7 @@ fn pack_extension(
     exe: &std::path::Path,
     unpacked: &std::path::Path,
     shared_pem: &std::path::Path,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<std::path::PathBuf, AppError> {
     let crx = unpacked.with_extension("crx");
     let _ = std::fs::remove_file(&crx);
     // 上次失败可能留下 <name>.pem，Edge 会报「指定扩展的私钥已存在」；有共享密钥时不需要它
@@ -242,12 +243,14 @@ fn pack_extension(
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    let out = cmd.output().map_err(|e| format!("启动浏览器失败: {e}"))?;
+    let out = cmd
+        .output()
+        .map_err(|e| AppError::new("pack", format!("启动浏览器失败: {e}")))?;
     let _ = std::fs::remove_dir_all(&profile);
     if !crx.is_file() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let brief: String = stderr.chars().take(300).collect();
-        return Err(format!("打包失败: {}", brief.trim()));
+        return Err(AppError::new("pack", format!("打包失败: {}", brief.trim())));
     }
     // 首次打包时浏览器会在扩展目录旁生成 <name>.pem，保存为共享密钥
     if !shared_pem.is_file() {
@@ -386,27 +389,31 @@ const EMBEDDED_BACKGROUND: &str = include_str!("../../extension/background.js");
 
 /// 准备一份可打包的扩展目录：始终使用编译期内置副本。
 /// 不从磁盘上的 extension/ 目录复制，避免把用户机器里其它扩展误打包进来。
-fn materialize_extension(dst: &std::path::Path) -> Result<(), String> {
+fn materialize_extension(dst: &std::path::Path) -> Result<(), AppError> {
     if dst.exists() {
         let _ = std::fs::remove_dir_all(dst);
     }
-    std::fs::create_dir_all(dst).map_err(|e| format!("创建扩展目录失败: {e}"))?;
+    std::fs::create_dir_all(dst)
+        .map_err(|e| AppError::new("ext-write", format!("创建扩展目录失败: {e}")))?;
     std::fs::write(dst.join("manifest.json"), EMBEDDED_MANIFEST)
-        .map_err(|e| format!("写出 manifest 失败: {e}"))?;
+        .map_err(|e| AppError::new("ext-write", format!("写出 manifest 失败: {e}")))?;
     std::fs::write(dst.join("background.js"), EMBEDDED_BACKGROUND)
-        .map_err(|e| format!("写出 background 失败: {e}"))?;
+        .map_err(|e| AppError::new("ext-write", format!("写出 background 失败: {e}")))?;
     Ok(())
 }
 
 /// 打包前兜底校验：manifest 必须是本项目的扩展，否则宁可失败也不注册。
-fn validate_extension_manifest(dir: &std::path::Path) -> Result<(), String> {
+fn validate_extension_manifest(dir: &std::path::Path) -> Result<(), AppError> {
     let name = std::fs::read(dir.join("manifest.json"))
         .ok()
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
         .and_then(|v| v.get("name").and_then(|x| x.as_str()).map(str::to_string))
         .unwrap_or_default();
     if !name.contains("AppUsageTracker") {
-        return Err(format!("扩展目录内容异常（name={name}），已中止安装"));
+        return Err(AppError::new(
+            "ext-content",
+            format!("扩展目录内容异常（name={name}），已中止安装"),
+        ));
     }
     Ok(())
 }
@@ -416,14 +423,15 @@ fn manifest_version(dir: &std::path::Path) -> String {
     tracker_core::ext::manifest_version(dir)
 }
 
-fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, String> {
+fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, AppError> {
     let data_dir = {
         let state = app.state::<AppState>();
         let s = state.settings.lock_or_recover();
         s.data_directory.clone()
     };
     let base = std::path::Path::new(&data_dir).join("browser-ext");
-    std::fs::create_dir_all(&base).map_err(|e| format!("创建目录失败: {e}"))?;
+    std::fs::create_dir_all(&base)
+        .map_err(|e| AppError::new("ext-write", format!("创建目录失败: {e}")))?;
     // 旧版残留：按浏览器分目录的 CRX / pem 已不再使用
     cleanup_legacy_dirs(&base);
 
@@ -553,20 +561,20 @@ fn install_extension_blocking(app: &AppHandle) -> Result<Vec<ExtInstallResult>, 
 #[tauri::command]
 pub(crate) async fn smart_install_extension(
     app: AppHandle,
-) -> Result<Vec<ExtInstallResult>, String> {
+) -> Result<Vec<ExtInstallResult>, AppError> {
     tauri::async_runtime::spawn_blocking(move || install_extension_blocking(&app))
         .await
-        .map_err(|e| format!("安装任务失败: {e}"))?
+        .map_err(|e| AppError::new("ext-task", format!("安装任务失败: {e}")))?
 }
 
 /// 打开浏览器扩展管理页。
 #[tauri::command]
-pub(crate) fn open_browser_ext_page(browser: String) -> Result<(), String> {
+pub(crate) fn open_browser_ext_page(browser: String) -> Result<(), AppError> {
     let url = browser_specs()
         .iter()
         .find(|s| s.key == browser)
         .map(|s| s.ext_page)
-        .ok_or("未知浏览器")?;
+        .ok_or_else(|| AppError::new("ext-browser", "未知浏览器"))?;
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -574,8 +582,7 @@ pub(crate) fn open_browser_ext_page(browser: String) -> Result<(), String> {
         std::process::Command::new("cmd")
             .args(["/C", "start", "", url])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .spawn()
-            .map_err(|e| e.to_string())?;
+            .spawn()?;
     }
     #[cfg(not(windows))]
     {

@@ -2,6 +2,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { api, fmtDuration, categoryLabel, localDateKey, CATEGORY_PALETTE, type AppDetail, type DashboardApp, type DashboardData, type LiveStatus, type TrackerSettings } from './lib/api';
   import { lang, en } from './lib/i18n';
+  import { errText } from './lib/errors';
   import Modal from './lib/Modal.svelte';
 
   let {
@@ -228,7 +229,7 @@
       }
       if (seq === loadSeq) loadError = null;
     } catch (e) {
-      if (seq === loadSeq) loadError = String(e);
+      if (seq === loadSeq) loadError = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }

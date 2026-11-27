@@ -5,6 +5,7 @@ mod autostart;
 mod backup;
 mod commands;
 mod dashboard;
+mod error;
 mod ext_install;
 mod live;
 mod logging;
@@ -34,6 +35,7 @@ use tracker_core::models::{DailyUsage, WebInterval};
 use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
 
+use crate::error::AppError;
 use crate::sync::MutexExt;
 
 /// 全局应用状态（Tauri managed state）。
@@ -147,9 +149,9 @@ pub fn run() {
                 env!("CARGO_PKG_VERSION"),
                 settings.data_directory
             );
-            std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&settings.data_directory)?;
             let store = SqliteStore::open(&settings::db_path(&settings.data_directory))
-                .map_err(|e| format!("打开数据库失败: {e}"))?;
+                .map_err(|e| AppError::new("db", format!("打开数据库失败: {e}")))?;
 
             // 排除名单 = 用户配置 + 自身（始终排除）
             let mut excluded: HashSet<String> =
@@ -163,7 +165,7 @@ pub fn run() {
             let mut agg = UsageAggregator::new(settings.idle_threshold_seconds as f64, excluded);
             let rows = store
                 .query_daily(&today, &today)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| AppError::new("db", e.to_string()))?;
             for r in rows {
                 // 剔除修复前误记的自身历史行（内存 + 库）
                 if r.process_name.to_lowercase() == *monitor::self_stem() {

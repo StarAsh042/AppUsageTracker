@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 use tracker_core::models::DailyUsage;
 
 use crate::app_meta;
+use crate::error::AppError;
 use crate::settings::display_alias;
 use crate::sync::MutexExt;
 use crate::AppState;
@@ -56,7 +57,7 @@ pub(crate) fn get_dashboard(
     app: AppHandle,
     from: String,
     to: String,
-) -> Result<DashboardData, String> {
+) -> Result<DashboardData, AppError> {
     build_dashboard(&app, &from, &to)
 }
 
@@ -64,13 +65,14 @@ pub(crate) fn build_dashboard(
     app: &AppHandle,
     from: &str,
     to: &str,
-) -> Result<DashboardData, String> {
+) -> Result<DashboardData, AppError> {
     let state = app.state::<AppState>();
     let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
 
     let store_rows = {
         let st = state.store.lock_or_recover();
-        st.query_daily(from, to).map_err(|e| e.to_string())?
+        st.query_daily(from, to)
+            .map_err(|e| AppError::new("db", e.to_string()))?
     };
     let mut by_key: HashMap<String, DailyUsage> = store_rows
         .into_iter()

@@ -16,6 +16,7 @@ use tracker_core::category::{CategoryResolver, UNCATEGORIZED};
 use tracker_core::settings::{CategoryRuleDef, TrackerSettings};
 use tracker_core::store::SqliteStore;
 
+use crate::error::AppError;
 use crate::monitor::foreground_identity;
 use crate::sync::MutexExt;
 use crate::{api_server, apply_hotkeys, autostart, logging, windows, AppState};
@@ -250,19 +251,26 @@ pub(crate) fn save_settings(
     app: AppHandle,
     state: State<AppState>,
     settings: TrackerSettings,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // 热键组合合法性校验（解析失败或重复即拒绝）
     if settings.hotkeys_enabled {
-        let main_hk: Shortcut = settings
-            .hotkey_main
-            .parse()
-            .map_err(|_| format!("主界面热键无效: {}", settings.hotkey_main))?;
-        let widget_hk: Shortcut = settings
-            .hotkey_widget
-            .parse()
-            .map_err(|_| format!("悬浮窗热键无效: {}", settings.hotkey_widget))?;
+        let main_hk: Shortcut = settings.hotkey_main.parse().map_err(|_| {
+            AppError::new(
+                "hotkey-invalid",
+                format!("主界面热键无效: {}", settings.hotkey_main),
+            )
+        })?;
+        let widget_hk: Shortcut = settings.hotkey_widget.parse().map_err(|_| {
+            AppError::new(
+                "hotkey-invalid",
+                format!("悬浮窗热键无效: {}", settings.hotkey_widget),
+            )
+        })?;
         if main_hk == widget_hk {
-            return Err("主界面与悬浮窗热键不能相同".into());
+            return Err(AppError::new(
+                "hotkey-duplicate",
+                "主界面与悬浮窗热键不能相同",
+            ));
         }
     }
     let old_dir = state.settings.lock_or_recover().data_directory.clone();
@@ -270,34 +278,32 @@ pub(crate) fn save_settings(
 
     autostart::set(
         settings.start_with_windows,
-        &std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .to_string_lossy(),
+        &std::env::current_exe()?.to_string_lossy(),
     )?;
 
     if dir_changed {
-        std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&settings.data_directory)?;
         let (daily, intervals) = {
             let st = state.store.lock_or_recover();
             let daily = st
                 .query_daily("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| AppError::new("db", e.to_string()))?;
             let intervals = st
                 .query_intervals("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| AppError::new("db", e.to_string()))?;
             // 换库前把旧库的 WAL 落盘并截断，免得用户切回旧目录时看到一份
             // 落后若干个 30 秒周期的数据。
             let _ = st.checkpoint();
             (daily, intervals)
         };
-        let new_store =
-            SqliteStore::open(&db_path(&settings.data_directory)).map_err(|e| e.to_string())?;
+        let new_store = SqliteStore::open(&db_path(&settings.data_directory))
+            .map_err(|e| AppError::new("db", e.to_string()))?;
         new_store
             .save_daily_replace(&daily)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::new("db", e.to_string()))?;
         new_store
             .save_intervals(&intervals)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::new("db", e.to_string()))?;
         *state.store.lock_or_recover() = new_store;
         logging::set_dir(&settings.data_directory);
     }
@@ -371,7 +377,7 @@ pub(crate) fn exclude_app(
     app: AppHandle,
     state: State<AppState>,
     app_key: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     {
         let mut s = state.settings.lock_or_recover();
         if !s.excluded_app_keys.contains(&app_key) {
@@ -398,7 +404,7 @@ pub(crate) fn exclude_app(
         .store
         .lock_or_recover()
         .delete_app_rows(&app_key)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AppError::new("db", e.to_string()))?;
     Ok(())
 }
 
@@ -439,13 +445,13 @@ pub(crate) fn save_category_rules(
     app: AppHandle,
     state: State<AppState>,
     rules: Vec<CategoryRuleDef>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if rules.is_empty() {
-        return Err("至少保留一条分类规则".into());
+        return Err(AppError::new("rules-empty", "至少保留一条分类规则"));
     }
     for r in &rules {
         if r.name.trim().is_empty() || r.keywords.is_empty() {
-            return Err("分类名与关键词不能为空".into());
+            return Err(AppError::new("rules-empty", "分类名与关键词不能为空"));
         }
     }
     {

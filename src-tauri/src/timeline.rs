@@ -4,6 +4,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
+use crate::error::AppError;
 use crate::settings::display_alias;
 use crate::sync::MutexExt;
 use crate::AppState;
@@ -34,11 +35,11 @@ pub(crate) struct TimelineData {
 }
 
 #[tauri::command]
-pub(crate) fn get_timeline(app: AppHandle, date: String) -> Result<TimelineData, String> {
+pub(crate) fn get_timeline(app: AppHandle, date: String) -> Result<TimelineData, AppError> {
     timeline_data(&app, &date)
 }
 
-pub(crate) fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, String> {
+pub(crate) fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData, AppError> {
     let app = app.clone();
     let date = date.to_string();
     let state = app.state::<AppState>();
@@ -47,9 +48,9 @@ pub(crate) fn timeline_data(app: &AppHandle, date: &str) -> Result<TimelineData,
         let st = state.store.lock_or_recover();
         (
             st.query_intervals(&date, &date)
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
             st.query_state_intervals(&date, &date)
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
         )
     };
     let segments = intervals
