@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, fmtDuration, localDateKey, type DashboardData } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
 
   let { onPick = () => {} }: { onPick?: (date: string) => void } = $props();
 
@@ -11,7 +11,7 @@
   let total = $state(0);
   let loading = $state(false);
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
 
   const WEEK_CN = $derived(
     $lang === 'en' ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['一', '二', '三', '四', '五', '六', '日'],

@@ -12,7 +12,7 @@
     type LiveStatus,
     type TrackerSettings,
   } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
   import { errText } from './lib/errors';
   import Modal from './lib/Modal.svelte';
 
@@ -41,7 +41,7 @@
   let catColors = $state<Map<string, string>>(new Map());
   let trendMode = $state<'duration' | 'score'>('duration');
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
   let aliases = $state<Map<string, string>>(new Map());
 
   function aliasName(key: string, fallback: string): string {
@@ -346,7 +346,7 @@
     if (!menu) return;
     const key = menu.appKey;
     const name = data?.apps.find((a) => a.app_key === key)?.display_name ?? key;
-    if (!confirm(`${t('「')}${name}${t('」')} — ${t('将停止统计并清除其全部记录')}`)) return;
+    if (!confirm(t('「{name}」 — 将停止统计并清除其全部记录', { name }))) return;
     menu = null;
     await api.excludeApp(key);
     await load();
@@ -400,7 +400,9 @@
         <div class="label">{t('总活跃时长')}</div>
         <div class="value">{fmtDuration(data.total_active_seconds)}</div>
         {#if isMultiDay}
-          <div class="delta">{t('日均')} {fmtDuration(dailyAvg)}{t('（')}{dayCount} {t('天')}{t('）')}</div>
+          <div class="delta">
+            {t('日均 {total}（{days} 天）', { total: fmtDuration(dailyAvg), days: dayCount })}
+          </div>
         {/if}
         {#if deltaPct !== null}
           <div class="delta" class:up={deltaPct >= 0} class:down={deltaPct < 0}>

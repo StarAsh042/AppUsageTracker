@@ -10,7 +10,7 @@
     type ExtInstallResult,
     type DbMaintenance,
   } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
   import { errCode, errText } from './lib/errors';
   import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
   import Modal from './lib/Modal.svelte';
@@ -47,7 +47,7 @@
     }
   });
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
   let scanned = $state<ScannedApp[] | null>(null);
   let scanning = $state(false);
 
@@ -145,9 +145,9 @@
           .filter(Boolean);
         if (!name && !keywords.length) continue; // 空行跳过
         if (!name) throw new Error(t('分类名不能为空'));
-        if (seen.has(name)) throw new Error(`${t('分类')}${t('「')}${name}${t('」')}${t('重复')}`);
+        if (seen.has(name)) throw new Error(t('分类「{name}」重复', { name }));
         seen.add(name);
-        if (!keywords.length) throw new Error(`${t('分类')}${t('「')}${name}${t('」')}${t('至少需要一个关键词')}`);
+        if (!keywords.length) throw new Error(t('分类「{name}」至少需要一个关键词', { name }));
         out.push({ name, keywords });
       }
       if (!out.length) throw new Error(t('至少保留一条分类规则'));
@@ -171,7 +171,7 @@
   }
 
   async function deleteBackup(name: string) {
-    if (!confirm(`${t('删除备份')} ${name}${t('？')}`)) return;
+    if (!confirm(t('删除备份 {name}？', { name }))) return;
     try {
       await api.deleteBackup(name);
       backups = await api.listBackups();
@@ -225,7 +225,7 @@
   }
 
   async function restoreBackup(name: string) {
-    if (!confirm(`${t('恢复备份')} ${name}${t('？')}${t('将清空当前全部数据')}${t('，')}${t('确定继续？')}`)) return;
+    if (!confirm(t('恢复备份 {name}？将清空当前全部数据，确定继续？', { name }))) return;
     status = '';
     try {
       status = await api.restoreBackupNamed(name);
@@ -242,9 +242,7 @@
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    if (
-      !confirm(`${t('从所选文件恢复')} ${file.name}${t('？')}${t('将清空当前全部数据')}${t('，')}${t('确定继续？')}`)
-    ) {
+    if (!confirm(t('从所选文件恢复 {name}？将清空当前全部数据，确定继续？', { name: file.name }))) {
       input.value = '';
       return;
     }
@@ -320,11 +318,11 @@
       case 'not_found':
         return t('未检测到该浏览器');
       case 'pack_failed':
-        return `${t('打包失败')}${t('：')}${r.message}`;
+        return t('打包失败：{message}', { message: r.message });
       case 'bad_crx':
         return t('打包产物无效，请改用手动安装');
       case 'registry_failed':
-        return `${t('写入注册表失败')}${t('：')}${r.message}`;
+        return t('写入注册表失败：{message}', { message: r.message });
       default:
         return r.message;
     }
@@ -412,7 +410,7 @@
             <input type="number" min="250" max="10000" step="250" bind:value={s.foreground_poll_ms} />
           </label>
           <label>
-            <span>{t('休息提醒')}{t('（')}{t('分钟')}{t('，')}0 = {t('关闭')}{t('）')}</span>
+            <span>{t('休息提醒（分钟，0 = 关闭）')}</span>
             <input type="number" min="0" max="240" bind:value={s.rest_reminder_minutes} />
           </label>
           <label>
@@ -452,7 +450,7 @@
           {/if}
           <label class="check-row">
             <input type="checkbox" bind:checked={s.api_enabled} />
-            <span>{t('本地')}:{s.api_port}{t('，')}{t('供第三方工具读取统计')}</span>
+            <span>{t('本地：{port}，供第三方工具读取统计', { port: s.api_port })}</span>
           </label>
         </div>
         {#if s.api_enabled}
@@ -477,14 +475,14 @@
       </section>
 
       <section class="panel">
-        <h3>{t('隐私')}{t('：')}{t('窗口标题记录')}</h3>
+        <h3>{t('隐私：窗口标题记录')}</h3>
         <label class="check-row" style="margin-bottom:10px">
           <input type="checkbox" bind:checked={s.record_window_titles} />
           <span>{t('记录前台窗口标题')}</span>
         </label>
         <label class="check-row">
           <input type="checkbox" bind:checked={s.record_web} />
-          <span>{t('网页浏览统计')}{t('（')}{t('需安装浏览器扩展')}{t('）')}</span>
+          <span>{t('网页浏览统计（需安装浏览器扩展）')}</span>
         </label>
         {#if s.record_web}
           <div class="grid2" style="margin-top:8px">
@@ -534,7 +532,7 @@
       </section>
 
       <section class="panel">
-        <h3>{t('分类每日限额')}{t('（')}{t('分钟')}{t('，')}0 = {t('不限')}{t('）')}</h3>
+        <h3>{t('分类每日限额（分钟，0 = 不限）')}</h3>
         <div class="limits">
           {#each ruleNames() as name (name)}
             <label class="limit-row">
@@ -587,10 +585,10 @@
           </button>
           {#if scanned}
             <span class="hint">
-              {t('共')}
-              {scanned.length}
-              {t('个应用')}{t('，')}{t('其中未分类')}
-              {scanned.filter((a) => a.category === UNCATEGORIZED).length}
+              {t('共 {n} 个应用，其中未分类 {m}', {
+                n: scanned.length,
+                m: scanned.filter((a) => a.category === UNCATEGORIZED).length,
+              })}
             </span>
           {/if}
         </div>
@@ -632,7 +630,7 @@
         </div>
         <label class="check-row" style="margin-bottom:12px">
           <input type="checkbox" bind:checked={s.update_use_proxy} onchange={save} />
-          <span>{t('更新时使用系统代理')}{t('（')}{t('默认关闭：强制直连、跳过代理')}{t('）')}</span>
+          <span>{t('更新时使用系统代理（默认关闭：强制直连、跳过代理）')}</span>
         </label>
         <div class="row-actions">
           <button class="ghost" disabled={updateChecking} onclick={checkUpdateNow}>
@@ -654,7 +652,7 @@
       </section>
 
       <section class="panel">
-        <h3>{t('备份与恢复')}{t('（')}JSON{t('）')}</h3>
+        <h3>{t('备份与恢复（JSON）')}</h3>
         <p class="hint">{t('备份保存在数据目录')}</p>
         <div class="row-actions">
           <button class="ghost" onclick={exportBackup}>{t('导出全部数据')}</button>
@@ -695,11 +693,12 @@
         </div>
         {#if maint}
           <p class="hint">
-            {t('完整性检查')}{t('：')}{maint.integrity} · {t('体积')}
-            {formatBytes(maint.db_bytes)} ·
-            {t('页数')}
-            {maint.page_count} · {t('空闲页')}
-            {maint.freelist}
+            {t('完整性检查：{integrity} · 体积 {size} · 页数 {pages} · 空闲页 {free}', {
+              integrity: maint.integrity,
+              size: formatBytes(maint.db_bytes),
+              pages: maint.page_count,
+              free: maint.freelist,
+            })}
           </p>
           <p class="hint">
             {maint.vacuum_ok ? t('压缩完成') : t('压缩失败')} ·
