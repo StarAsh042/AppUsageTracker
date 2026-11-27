@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager};
 use tracker_core::category::UNCATEGORIZED;
 
 use crate::dashboard::DashboardTrendPoint;
+use crate::error::AppError;
 use crate::settings::display_alias;
 use crate::sync::MutexExt;
 use crate::AppState;
@@ -32,13 +33,14 @@ pub(crate) fn get_app_detail(
     app_key: String,
     from: String,
     to: String,
-) -> Result<AppDetail, String> {
+) -> Result<AppDetail, AppError> {
     let state = app.state::<AppState>();
     let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
 
     let store_rows = {
         let st = state.store.lock_or_recover();
-        st.query_daily(&from, &to).map_err(|e| e.to_string())?
+        st.query_daily(&from, &to)
+            .map_err(|e| AppError::new("db", e.to_string()))?
     };
     let mut daily: HashMap<String, f64> = HashMap::new();
     let mut display_name = String::new();
@@ -109,7 +111,7 @@ pub(crate) struct ScannedApp {
 }
 
 #[tauri::command]
-pub(crate) fn scan_installed_apps(app: AppHandle) -> Result<Vec<ScannedApp>, String> {
+pub(crate) fn scan_installed_apps(app: AppHandle) -> Result<Vec<ScannedApp>, AppError> {
     #[cfg(windows)]
     {
         let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();

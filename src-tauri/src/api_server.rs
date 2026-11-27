@@ -433,7 +433,7 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
             let to = qs("to").unwrap_or(today);
             match build_dashboard(app, &from, &to) {
                 Ok(d) => api_serialized(&mut stream, allow, &d),
-                Err(e) => api_json(&mut stream, 400, error_body(&e), allow),
+                Err(e) => api_json(&mut stream, 400, error_body(&e.message), allow),
             }
         }
         "/api/timeline" => {
@@ -442,7 +442,7 @@ fn handle_api(app: &AppHandle, mut stream: std::net::TcpStream) {
             };
             match timeline_data(app, &date) {
                 Ok(d) => api_serialized(&mut stream, allow, &d),
-                Err(e) => api_json(&mut stream, 400, error_body(&e), allow),
+                Err(e) => api_json(&mut stream, 400, error_body(&e.message), allow),
             }
         }
         "/api/settings" => {

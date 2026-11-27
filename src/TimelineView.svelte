@@ -11,6 +11,7 @@
     type TopWeb,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
+  import { errText } from './lib/errors';
 
   const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
 
@@ -64,7 +65,7 @@
       titles = ti;
       web = wb;
     } catch (e) {
-      if (seq === loadSeq) loadError = String(e);
+      if (seq === loadSeq) loadError = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }

@@ -9,6 +9,7 @@ use tracker_core::models::{
 };
 
 use crate::commands::open_path;
+use crate::error::AppError;
 use crate::sync::MutexExt;
 use crate::AppState;
 
@@ -37,26 +38,26 @@ fn backups_dir(data_dir: &str) -> std::path::PathBuf {
 }
 
 #[tauri::command]
-pub(crate) fn export_backup_json(app: AppHandle) -> Result<String, String> {
+pub(crate) fn export_backup_json(app: AppHandle) -> Result<String, AppError> {
     let state = app.state::<AppState>();
     let data_dir = state.settings.lock_or_recover().data_directory.clone();
     let (daily, intervals, states, titles, web) = {
         let st = state.store.lock_or_recover();
         (
             st.query_daily("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
             st.query_intervals("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
             st.query_state_intervals("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
             st.query_title_intervals("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
             st.query_web_intervals("0000-01-01", "9999-12-31")
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| AppError::new("db", e.to_string()))?,
         )
     };
     let dir = backups_dir(&data_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!(
         "backup_{}.json",
         Local::now().format("%Y%m%d_%H%M%S")
@@ -70,16 +71,12 @@ pub(crate) fn export_backup_json(app: AppHandle) -> Result<String, String> {
         titles,
         web,
     };
-    std::fs::write(
-        &path,
-        serde_json::to_string(&file).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    std::fs::write(&path, serde_json::to_string(&file)?)?;
     Ok(path.to_string_lossy().to_string())
 }
 
 /// 解析备份名到 backups 目录内的 .json 文件，拒绝路径逃逸与非法文件名。
-fn backup_path(data_dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
+fn backup_path(data_dir: &str, name: &str) -> Result<std::path::PathBuf, AppError> {
     if name.is_empty()
         || name.contains("..")
         || name.contains('/')
@@ -87,33 +84,41 @@ fn backup_path(data_dir: &str, name: &str) -> Result<std::path::PathBuf, String>
         || name.contains(':')
         || !name.to_lowercase().ends_with(".json")
     {
-        return Err("非法备份名".into());
+        return Err(AppError::new("backup-name", "非法备份名"));
     }
     let dir = backups_dir(data_dir);
     let path = dir.join(name);
     if path.parent() != Some(dir.as_path()) {
-        return Err("非法备份名".into());
+        return Err(AppError::new("backup-name", "非法备份名"));
     }
     Ok(path)
 }
 
 /// 删除指定备份文件（防路径逃逸：仅允许 backups 目录内的 json）。
 #[tauri::command]
-pub(crate) fn delete_backup(app: AppHandle, name: String) -> Result<(), String> {
+pub(crate) fn delete_backup(app: AppHandle, name: String) -> Result<(), AppError> {
     let state = app.state::<AppState>();
     let data_dir = state.settings.lock_or_recover().data_directory.clone();
     let path = backup_path(&data_dir, &name)?;
-    std::fs::remove_file(&path).map_err(|e| e.to_string())
+    std::fs::remove_file(&path)?;
+    Ok(())
 }
 
 /// 共用恢复逻辑：清空当前库与内存态 → 写入备份 → 通知所有视图重新拉数据。
-fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, String> {
-    let backup: BackupFile =
-        serde_json::from_str(text).map_err(|e| format!("备份文件不是有效的应用备份（{e}）"))?;
+fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, AppError> {
+    let backup: BackupFile = serde_json::from_str(text).map_err(|e| {
+        AppError::new(
+            "backup-format",
+            format!("备份文件不是有效的应用备份（{e}）"),
+        )
+    })?;
     if backup.version > BACKUP_VERSION {
-        return Err(format!(
-            "备份文件版本 {} 高于当前支持的版本 {}，请升级应用后再恢复",
-            backup.version, BACKUP_VERSION
+        return Err(AppError::new(
+            "backup-version",
+            format!(
+                "备份文件版本 {} 高于当前支持的版本 {}，请升级应用后再恢复",
+                backup.version, BACKUP_VERSION
+            ),
         ));
     }
     let state = app.state::<AppState>();
@@ -141,7 +146,7 @@ fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, Stri
             &backup.titles,
             &backup.web,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AppError::new("db", e.to_string()))?;
     }
     let _ = app.emit("app://data", ());
     Ok(format!(
@@ -154,7 +159,7 @@ fn apply_backup(app: &AppHandle, text: &str, label: &str) -> Result<String, Stri
 
 /// 打开备份目录（不存在则先创建）。
 #[tauri::command]
-pub(crate) fn open_backup_dir(app: AppHandle) -> Result<(), String> {
+pub(crate) fn open_backup_dir(app: AppHandle) -> Result<(), AppError> {
     let data_dir = app
         .state::<AppState>()
         .settings
@@ -162,13 +167,13 @@ pub(crate) fn open_backup_dir(app: AppHandle) -> Result<(), String> {
         .data_directory
         .clone();
     let dir = backups_dir(&data_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir)?;
     open_path(dir.to_string_lossy().to_string())
 }
 
 /// 恢复数据目录 backups/ 里指定的备份。
 #[tauri::command]
-pub(crate) fn restore_backup_named(app: AppHandle, name: String) -> Result<String, String> {
+pub(crate) fn restore_backup_named(app: AppHandle, name: String) -> Result<String, AppError> {
     let data_dir = app
         .state::<AppState>()
         .settings
@@ -176,18 +181,18 @@ pub(crate) fn restore_backup_named(app: AppHandle, name: String) -> Result<Strin
         .data_directory
         .clone();
     let path = backup_path(&data_dir, &name)?;
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let text = std::fs::read_to_string(&path)?;
     apply_backup(&app, &text, &name)
 }
 
 /// 恢复从任意位置选择的备份 JSON（前端读取文件内容后传入）。
 #[tauri::command]
-pub(crate) fn restore_backup_content(app: AppHandle, content: String) -> Result<String, String> {
+pub(crate) fn restore_backup_content(app: AppHandle, content: String) -> Result<String, AppError> {
     apply_backup(&app, &content, "所选文件")
 }
 
 #[tauri::command]
-pub(crate) fn import_backup_json(app: AppHandle) -> Result<String, String> {
+pub(crate) fn import_backup_json(app: AppHandle) -> Result<String, AppError> {
     let data_dir = app
         .state::<AppState>()
         .settings
@@ -196,13 +201,15 @@ pub(crate) fn import_backup_json(app: AppHandle) -> Result<String, String> {
         .clone();
     let dir = backups_dir(&data_dir);
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
-        .map_err(|e| format!("没有可导入的备份: {e}"))?
+        .map_err(|e| AppError::new("backup-missing", format!("没有可导入的备份: {e}")))?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
         .collect();
     files.sort();
-    let path = files.pop().ok_or("没有可导入的备份")?;
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let path = files
+        .pop()
+        .ok_or_else(|| AppError::new("backup-missing", "没有可导入的备份"))?;
+    let text = std::fs::read_to_string(&path)?;
     let label = path
         .file_name()
         .map(|s| s.to_string_lossy().to_string())

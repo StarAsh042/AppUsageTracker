@@ -10,6 +10,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 use tracker_core::settings::WidgetPrefs;
 
+use crate::error::AppError;
 use crate::settings::{save_settings_file, set_widget_visible};
 use crate::sync::MutexExt;
 use crate::AppState;
@@ -494,9 +495,11 @@ pub(crate) fn handle_widget_menu_event(app: &AppHandle, id: &str) {
 
 /// 悬浮窗右键 → 弹出原生上下文菜单（带 ✓ 与子菜单，Win11 玻璃样式）。
 #[tauri::command]
-pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
+pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), AppError> {
     // 用稳定的 get_webview_window + popup_menu，避免为这一个调用点开启 tauri 的 unstable feature。
-    let window = app.get_webview_window("widget").ok_or("悬浮窗未创建")?;
+    let window = app
+        .get_webview_window("widget")
+        .ok_or_else(|| AppError::new("widget-missing", "悬浮窗未创建"))?;
     let prefs = {
         app.state::<AppState>()
             .settings
@@ -506,15 +509,15 @@ pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
     };
     let check = |id: &str, label: &str, checked: bool| {
         CheckMenuItem::with_id(&app, id, label, true, checked, None::<&str>)
-            .map_err(|e| e.to_string())
+            .map_err(|e| AppError::new("menu", e.to_string()))
     };
     let top_i = check("w.top", &t!("置顶显示"), prefs.always_on_top)?;
     let lock_i = check("w.lock", &t!("锁定位置"), prefs.locked)?;
     let snap_i = check("w.snap", &t!("贴边收起"), prefs.edge_snap)?;
     let compact_i = check("w.compact", &t!("缩略模式"), prefs.compact)?;
 
-    let op_menu =
-        Submenu::with_id(&app, "w.opacity", &t!("透明度"), true).map_err(|e| e.to_string())?;
+    let op_menu = Submenu::with_id(&app, "w.opacity", &t!("透明度"), true)
+        .map_err(|e| AppError::new("menu", e.to_string()))?;
     for (v, label) in [
         (85u8, &t!("高 85%")),
         (70, &t!("中 70%")),
@@ -522,11 +525,14 @@ pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
         (40, &t!("低 40%")),
     ] {
         let item = check(&format!("w.op.{v}"), label, prefs.opacity == v)?;
-        op_menu.append(&item).map_err(|e| e.to_string())?;
+        op_menu
+            .append(&item)
+            .map_err(|e| AppError::new("menu", e.to_string()))?;
     }
     let settings_i = MenuItem::with_id(&app, "w.settings", &t!("设置…"), true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+        .map_err(|e| AppError::new("menu", e.to_string()))?;
+    let sep =
+        PredefinedMenuItem::separator(&app).map_err(|e| AppError::new("menu", e.to_string()))?;
     let menu = Menu::with_items(
         &app,
         &[
@@ -539,8 +545,10 @@ pub(crate) fn show_widget_menu(app: AppHandle) -> Result<(), String> {
             &settings_i,
         ],
     )
-    .map_err(|e| e.to_string())?;
-    window.popup_menu(&menu).map_err(|e| e.to_string())
+    .map_err(|e| AppError::new("menu", e.to_string()))?;
+    window
+        .popup_menu(&menu)
+        .map_err(|e| AppError::new("menu", e.to_string()))
 }
 
 /// 主界面顶栏按钮：切换悬浮窗显示，返回切换后的可见状态。
@@ -588,7 +596,7 @@ pub(crate) fn set_widget_collapsed(app: AppHandle, collapsed: bool) {
 
 /// 前端直接更新悬浮窗偏好（预留）。
 #[tauri::command]
-pub(crate) fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), String> {
+pub(crate) fn update_widget_settings(app: AppHandle, widget: WidgetPrefs) -> Result<(), AppError> {
     apply_widget_prefs(&app, &widget);
     Ok(())
 }

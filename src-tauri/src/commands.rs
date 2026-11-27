@@ -5,14 +5,16 @@
 use tauri::{AppHandle, Emitter, State};
 use tracker_core::fmt::{csv_escape, fmt_hms};
 
+use crate::error::AppError;
 use crate::sync::MutexExt;
 use crate::AppState;
 
 #[tauri::command]
-pub(crate) fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+pub(crate) fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(), AppError> {
     {
         let st = state.store.lock_or_recover();
-        st.clear_all().map_err(|e| e.to_string())?;
+        st.clear_all()
+            .map_err(|e| AppError::new("db", e.to_string()))?;
     }
     {
         let mut agg = state.aggregator.lock_or_recover();
@@ -31,7 +33,7 @@ pub(crate) fn clear_all_data(app: AppHandle, state: State<AppState>) -> Result<(
 }
 
 #[tauri::command]
-pub(crate) fn export_csv(app: AppHandle, from: String, to: String) -> Result<String, String> {
+pub(crate) fn export_csv(app: AppHandle, from: String, to: String) -> Result<String, AppError> {
     let data = crate::dashboard::build_dashboard(&app, &from, &to)?;
     let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
     let file = dir.join(format!("使用时长_{from}_至_{to}.csv"));
@@ -47,13 +49,13 @@ pub(crate) fn export_csv(app: AppHandle, from: String, to: String) -> Result<Str
             a.active_seconds
         ));
     }
-    std::fs::write(&file, out).map_err(|e| e.to_string())?;
+    std::fs::write(&file, out)?;
     Ok(file.to_string_lossy().to_string())
 }
 
 /// 在资源管理器里打开目录，或定位到某个文件（Windows 下走 `explorer /select,`）。
 #[tauri::command]
-pub(crate) fn open_path(path: String) -> Result<(), String> {
+pub(crate) fn open_path(path: String) -> Result<(), AppError> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -67,8 +69,7 @@ pub(crate) fn open_path(path: String) -> Result<(), String> {
         };
         std::process::Command::new("explorer")
             .raw_arg(arg)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+            .spawn()?;
     }
     #[cfg(not(windows))]
     let _ = path;

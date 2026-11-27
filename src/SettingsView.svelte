@@ -11,6 +11,7 @@
     type DbMaintenance,
   } from './lib/api';
   import { lang, en } from './lib/i18n';
+  import { errCode, errText } from './lib/errors';
   import { limitOf as limitOfSetting, setDailyLimit } from './lib/limits';
   import Modal from './lib/Modal.svelte';
 
@@ -71,7 +72,7 @@
     try {
       scanned = await api.scanInstalledApps();
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     } finally {
       scanning = false;
     }
@@ -114,7 +115,7 @@
       await api.saveSettings(snapshot);
       status = t('已保存，设置即时生效');
     } catch (e) {
-      status = `${t('保存失败')}: ${e}`;
+      status = `${t('保存失败')}: ${errText(e)}`;
     } finally {
       saving = false;
     }
@@ -151,7 +152,7 @@
       if (s) s.category_rules = out;
       status = t('分类规则已保存');
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     }
   }
 
@@ -162,7 +163,7 @@
       backups = await api.listBackups();
       status = `${t('已导出')}: ${path}`;
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     }
   }
 
@@ -173,7 +174,7 @@
       backups = await api.listBackups();
       status = t('备份已删除');
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     }
   }
 
@@ -183,7 +184,7 @@
     try {
       status = await api.importBackupJson();
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     }
   }
 
@@ -205,7 +206,7 @@
     try {
       maint = await api.dbMaintenance();
     } catch (e) {
-      maintError = String(e);
+      maintError = errText(e);
       maint = null;
     } finally {
       maintBusy = false;
@@ -216,7 +217,7 @@
     try {
       await api.openBackupDir();
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     }
   }
 
@@ -226,7 +227,7 @@
     try {
       status = await api.restoreBackupNamed(name);
     } catch (e) {
-      status = String(e);
+      status = errText(e);
     }
   }
 
@@ -247,7 +248,7 @@
       const content = await file.text();
       status = await api.restoreBackupContent(content);
     } catch (err) {
-      status = String(err);
+      status = errText(err);
     } finally {
       input.value = '';
     }
@@ -265,7 +266,7 @@
         updateStatus = t('当前已是最新版本');
       }
     } catch (e) {
-      updateStatus = `${t('检查失败')}: ${e}`;
+      updateStatus = `${t('检查失败')}: ${errText(e)}`;
     } finally {
       updateChecking = false;
     }
@@ -276,7 +277,11 @@
     try {
       await api.installUpdate();
     } catch (e) {
-      updateStatus = `${t('更新失败')}: ${e}`;
+      // 已经是最新版本不是故障，别把它显示成「更新失败」。
+      updateStatus =
+        errCode(e) === 'update-latest'
+          ? t('当前已是最新版本')
+          : `${t('更新失败')}: ${errText(e)}`;
       updateInstalling = false;
     }
   }
@@ -301,7 +306,7 @@
       status = okCount ? t('扩展已注册，重启浏览器后生效') : t('未能自动安装，请改用手动安装');
       if (okCount && s) s.record_web = true;
     } catch (e) {
-      status = `${t('安装失败')}: ${e}`;
+      status = `${t('安装失败')}: ${errText(e)}`;
     } finally {
       extInstalling = false;
     }
