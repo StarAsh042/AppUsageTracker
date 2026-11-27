@@ -83,7 +83,9 @@ npm run tauri dev
 
 ```bash
 npm run check                               # svelte-check 类型检查
-npm test                                    # vitest 前端单元测试（33 个用例）
+npm run lint                                # eslint 静态检查
+npm run format:check                        # prettier 格式检查
+npm test                                    # vitest：33 个纯逻辑用例 + 14 个组件用例
 npm run build                               # 仅构建前端产物到 dist/
 cargo test -p tracker-core                  # 聚合状态机单元测试
 cargo fmt --all --check                     # 与 CI 一致的格式检查
@@ -175,7 +177,8 @@ curl -s "http://127.0.0.1:59598/api/dashboard?from=2026-11-01&to=2026-11-07"
 
 - 默认数据目录 `%LocalAppData%\AppUsageTracker\`，可在设置中更改并自动迁移。
 - `usage.db`：SQLite（WAL 模式）。`ForegroundIntervals` 保存前台明细片段，`DailyAppUsage` 保存按天聚合；开启隐私开关后另有窗口标题区间与网页浏览区间。
-- `settings.json`：全部设置，含分类规则与排除列表。
+- `settings.json`：全部设置，含分类规则与排除列表。写入先落 `settings.json.tmp` 再原子替换，并保留一份 `settings.json.bak`；两份都读不出来时回到默认值，损坏的原文件会改名成 `settings.json.corrupt` 留档。
+- `logs/app-YYYY-MM-DD.log`：按天滚动的运行日志，保留最近 7 天。程序出了异常先看这里，界面上看到的告警都会在日志里留下细节。
 
 设置 → 数据库维护 → 「完整性检查 + VACUUM」可检查完整性、压缩文件并查看页数。设置 → 常规 → 「清空全部数据」不可撤销，执行前请先做 JSON 备份。
 
@@ -200,7 +203,7 @@ CI 编译通过不等于平台验收。
 - **网络访问仅用于更新**：清单 `latest.json` 来自 `https://github.com/StarAsh042/AppUsageTracker/releases/latest/download/latest.json`，`mirror` / `auto` 通道经 `https://gh-proxy.com/` 下载；更新请求默认绕过系统代理，仅在打开「更新时使用系统代理」后走代理。扩展只访问 `127.0.0.1:59598`（【静态推断】：依据 `tauri.conf.json` 的 updater endpoints、`extension/manifest.json` 的 `host_permissions` 与 `src-tauri/src/lib.rs` 中的代理判断，未做抓包验证）。
 - 不记录键盘输入、屏幕截图或文件内容（【静态推断】：代码中未发现相关采集路径）。
 - 权限面：`src-tauri/capabilities/default.json` 的 identifier 为 `default`，作用于 `main` 与 `widget`，权限为 `core:default` 加 9 条 `core:window:allow-*`，未使用 `allow-all`；`tauri.conf.json` 的 `app.security.csp` 为限制性策略（`default-src 'self'`，仅放行 `style-src 'unsafe-inline'`）。实际使用的系统资源为 Win32 前台窗口 / 空闲 / 锁屏检测、HKCU Run 项、本地 SQLite、`127.0.0.1:59598` 回环监听。
-- 安全问题暂无 `SECURITY.md`，请通过 [GitHub Issues](https://github.com/StarAsh042/AppUsageTracker/issues) 反馈，避免公开可复现的敏感细节。
+- 安全问题请按 [SECURITY.md](SECURITY.md) 的流程私下报告，别先开公开 Issue：可复现的细节一旦公开，受影响的是所有还在用旧版的用户。
 
 ## 自动更新
 
@@ -250,6 +253,9 @@ CI 编译通过不等于平台验收。
 │       ├── autostart.rs        # 开机自启注册表
 │       ├── settings.rs         # 设置读写
 │       ├── version_info.rs     # exe FileDescription 提取
+│       ├── logging.rs          # 日志落盘（按天滚动，保留 7 天）
+│       ├── error.rs            # IPC 命令的统一错误类型
+│       ├── sync.rs             # 取锁的统一入口，锁中毒时取回数据
 │       └── commands.rs         # IPC 命令实现
 ├── src/                        # Svelte 5 前端，多页构建
 │   ├── App.svelte              # 主窗口骨架与导航
@@ -259,7 +265,7 @@ CI 编译通过不等于平台验收。
 │   ├── CompareView.svelte      # 对比视图
 │   ├── SettingsView.svelte     # 设置
 │   ├── Widget.svelte           # 悬浮窗（widget.html 入口）
-│   └── lib/                    # api.ts / compare.ts / limits.ts / i18n.ts / Modal.svelte 与测试
+│   └── lib/                    # api / i18n / limits 等纯逻辑，TrendChart 等子组件，与各层测试
 ├── extension/                  # 可选 MV3 浏览器扩展
 ├── docs/assets/                # README 截图
 └── .github/workflows/          # CI 与 Release 流水线

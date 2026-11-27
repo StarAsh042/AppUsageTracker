@@ -12,7 +12,7 @@
   --danger: #ff5f5f;
 }
 
-/* 浅色主题（设置 → 外观 → 浅色） */
+/* 浅色主题（settings.json 的 theme 为 light 时由 App.svelte 挂上这个类） */
 /* 玻璃质感：卡片半透明 */
 :root {
   --glass-card: rgba(30, 32, 39, 0.72);
