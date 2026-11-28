@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Verify tag matches tauri.conf.json version
@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -93,7 +93,7 @@ jobs:
           cd "staging/$STAGE"
           sha256sum * > SHA256SUMS
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: bundle-${{ matrix.os }}-${{ github.ref_name }}
           path: staging/
@@ -109,8 +109,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v7
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: staging
           merge-multiple: true
