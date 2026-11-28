@@ -93,7 +93,7 @@ jobs:
           cd "staging/$STAGE"
           sha256sum * > SHA256SUMS
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: bundle-${{ matrix.os }}-${{ github.ref_name }}
           path: staging/
