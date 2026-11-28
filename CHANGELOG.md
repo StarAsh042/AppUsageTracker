@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+（暂无未发布变更）
+
+## [0.7.0] - 2026-11-28
+
 ### Added
 
 - **日志：** 运行日志写到数据目录下的 `logs/app-YYYY-MM-DD.log`，按天滚动、保留 7 天；设置页新增「打开日志目录」。
@@ -262,7 +266,8 @@
 - **settings:** 首次实现设置窗口、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.6...v0.7.0
 [0.6.6]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...v0.6.4

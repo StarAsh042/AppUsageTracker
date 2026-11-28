@@ -4,7 +4,7 @@
 
 Windows 桌面端的软件使用时间统计工具。按前台激活时长记录应用与分类的使用情况，提供仪表盘、时间线、日历热力图、对比视图与周报导出。核心统计在 `crates/tracker-core`（Rust），桌面壳为 Tauri 2，界面为 Svelte 5，数据只落在本机 SQLite 文件，不依赖账号或云端。
 
-当前版本 `v0.6.6`（2026-11-22）。它不是员工监控、上网行为审计或键盘记录工具，也没有 macOS / Linux 发布包。
+当前版本 `v0.7.0`（2026-11-28）。它不是员工监控、上网行为审计或键盘记录工具，也没有 macOS / Linux 发布包。
 
 [功能](#功能) · [截图](#截图) · [安装](#安装) · [快速开始](#快速开始) · [配置](#配置) · [浏览器扩展](#浏览器扩展可选) · [本地 HTTP API](#本地-http-api) · [数据存储与维护](#数据存储与维护) · [兼容性](#兼容性) · [隐私说明](#隐私说明) · [自动更新](#自动更新) · [项目结构](#项目结构) · [贡献与许可](#贡献与许可) · [已知限制](#已知限制)
 
@@ -40,7 +40,7 @@ Windows 桌面端的软件使用时间统计工具。按前台激活时长记录
 
 ## 截图
 
-截图取自 v0.6.6 运行中的真实窗口，通过窗口句柄直接抓取，非效果图。主窗口各页取 2026-11-15，这是历史上应用、标题与网页条目最完整的一天；悬浮窗与对比视图为实时状态。
+截图取自 v0.6.6 运行中的真实窗口，通过窗口句柄直接抓取，非效果图。主窗口各页取 2026-11-15，这是历史上应用、标题与网页条目最完整的一天；悬浮窗与对比视图为实时状态。v0.7.0 未重拍截图，界面结构与外观与这组图一致，仅词条与组件组织有变化。
 
 <img src="docs/assets/dashboard.png" width="430" alt="仪表盘：汇总卡、应用排行、分类占比与每日趋势">
 <img src="docs/assets/timeline.png" width="430" alt="时间线：24 小时色带、状态区间与 Top 网页">
@@ -53,7 +53,7 @@ Windows 桌面端的软件使用时间统计工具。按前台激活时长记录
 
 ## 安装
 
-1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.6.6` 中下载 `AppUsageTracker_0.6.6_x64-setup.exe`（NSIS 安装包）。
+1. 打开 [GitHub Releases](https://github.com/StarAsh042/AppUsageTracker/releases)，在 `v0.7.0` 中下载 `AppUsageTracker_0.7.0_x64-setup.exe`（NSIS 安装包）。
 2. 运行安装向导，完成后从开始菜单启动。
 
 环境要求为 Windows 10 / 11 x86_64 与 WebView2 Runtime（Windows 11 及装有 Edge 的 Windows 10 通常已具备）。
@@ -66,7 +66,7 @@ Windows 桌面端的软件使用时间统计工具。按前台激活时长记录
 curl -s http://127.0.0.1:59598/api/version
 ```
 
-预期返回包含 `0.6.6` 的 JSON。安装包未做 Windows Authenticode 签名，发布流水线只生成 Tauri 更新器使用的 `.sig` 签名，首次运行可能触发 SmartScreen 提示（【推测】，未在真机验证）。
+预期返回包含 `0.7.0` 的 JSON。安装包未做 Windows Authenticode 签名，发布流水线只生成 Tauri 更新器使用的 `.sig` 签名，首次运行可能触发 SmartScreen 提示（【推测】，未在真机验证）。
 
 ## 快速开始
 
@@ -93,7 +93,7 @@ cargo clippy --all-targets -- -D warnings   # 与 CI 一致的 lint
 npm run tauri build                         # 生产构建（NSIS 安装包 + 独立 exe）
 ```
 
-构建产物为 `target/release/app-usage-tracker.exe` 与 `target/release/bundle/nsis/*_0.6.6_x64-setup.exe`。
+构建产物为 `target/release/app-usage-tracker.exe` 与 `target/release/bundle/nsis/*_0.7.0_x64-setup.exe`。
 
 ## 配置
 
@@ -186,7 +186,7 @@ curl -s "http://127.0.0.1:59598/api/dashboard?from=2026-11-01&to=2026-11-07"
 
 | 项目          | 状态                                                                                                                                           |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 支持操作系统  | Windows 10 / 11，x86_64（v0.6.6 发布包由 Windows 构建任务产出）                                                                                |
+| 支持操作系统  | Windows 10 / 11，x86_64（v0.7.0 发布包由 Windows 构建任务产出）                                                                                |
 | 安装包格式    | NSIS `.exe` 安装包；另提供独立 exe `app-usage-tracker.exe`                                                                                     |
 | 系统要求      | WebView2 Runtime；Windows 11 与装有 Edge 的 Windows 10 通常已具备                                                                              |
 | 签名          | 更新包使用 minisign / ed25519 校验（`latest.json` 含 `.sig`）；安装包未做 Authenticode 签名                                                    |
@@ -286,7 +286,7 @@ CI 编译通过不等于平台验收。
 
 ## 已知限制
 
-- 单人维护。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，均为 `0.6.6`。
+- 单人维护。版本事实源为 `src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml` 与 `crates/tracker-core/Cargo.toml`，均为 `0.7.0`。
 - 与 `0.3.0` 的破坏性重写不提供旧 C# 版数据迁移；[CHANGELOG.md](CHANGELOG.md) 的 `0.1.0` / `0.2.0` 属于旧版历史，没有 Git tag 与 Release，因此没有 compare 链接。
 - 扩展「智能安装」写的是浏览器外部扩展注册表项，需要重启浏览器才加载，且仅在 Windows 上有效；其他平台返回「当前平台不支持自动注册扩展」。
 - 扩展上报间隔、更新回滚与未签名安装包的 SmartScreen 表现仍为【未验证】或【推测】。
