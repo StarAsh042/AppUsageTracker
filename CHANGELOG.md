@@ -27,6 +27,12 @@
 - **不丢数据：** 落库失败时采样批次保留在内存并按间隔重试，写成功才出队；连续失败 3 次发系统通知。整批写入放进一个事务，重试不会写出重复明细。
 - **不跟着 panic：** 取锁统一走可恢复路径，持锁线程 panic 后统计与界面继续工作；监控线程单轮 panic 不再终止整个统计。
 - **热键：** `hotkey_main` / `hotkey_widget` 填了非法串时保存被拒绝，启动后按热键也不会崩溃，只记一条告警。
+- **本地 HTTP API：** 从 0.6.4 起服务启动后立刻退出，端口从未进入监听，外部工具一直连不上，日志里也没有任何痕迹。代际判断的停止谓词写反了，线程一启动就被判定为「该停」，现已改正并补上用例。
+
+### Internal
+
+- **测试：** 前端接上 `@testing-library/svelte` 与 jsdom，仪表盘、时间线、设置三个视图补 14 个组件用例（前端合计 47 个）；`src-tauri` 抽出备份解析、设置版本迁移、贴边收起三处纯函数并补用例（合计 44 个）。
+- **仓库卫生：** 接 Prettier 与 ESLint（CI 跑 `npm run lint` 与 `npm run format:check`），加 `.gitattributes` 固定换行符，Dependabot 管 npm / cargo / Actions 三类依赖，CI 增加 `cargo audit` 与 `npm audit`，补 `SECURITY.md`。
 
 ## [0.6.6] - 2026-11-22
 
