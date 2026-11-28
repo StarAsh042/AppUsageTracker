@@ -257,9 +257,14 @@ fn pack_extension(
         let generated = unpacked.with_extension("pem");
         if generated.is_file() {
             if let Some(parent) = shared_pem.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    log::warn!("建扩展密钥目录 {} 失败: {e}", parent.display());
+                }
             }
-            let _ = std::fs::copy(&generated, shared_pem);
+            // 没有 pem 就只能重新打包，浏览器里已装的扩展会换 ID 并失去数据。
+            if let Err(e) = std::fs::copy(&generated, shared_pem) {
+                log::warn!("保存扩展密钥 {} 失败: {e}", shared_pem.display());
+            }
         }
     }
     Ok(crx)

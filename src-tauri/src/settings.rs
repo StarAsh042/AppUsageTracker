@@ -71,30 +71,55 @@ pub(crate) enum LoadEvent {
     ResetToDefault,
 }
 
-pub(crate) fn load_settings() -> (TrackerSettings, LoadEvent) {
+/// 读设置。第二项是给人看的结论，第三项是读盘过程中值得留痕的失败。
+///
+/// 日志写入器要等数据目录确定之后才能初始化，所以这里不能直接 `log::warn!`；
+/// 先把失败攒起来，由调用方在 `logging::init` 之后写进日志。
+pub(crate) fn load_settings() -> Loaded {
     let dir = std::path::PathBuf::from(TrackerSettings::default().data_directory);
     load_settings_from(&dir)
 }
 
+pub(crate) type Loaded = (TrackerSettings, LoadEvent, Vec<String>);
+
 /// 从指定目录读设置。单元测试走这里，不碰真实数据目录。
-pub(crate) fn load_settings_from(dir: &std::path::Path) -> (TrackerSettings, LoadEvent) {
+pub(crate) fn load_settings_from(dir: &std::path::Path) -> Loaded {
+    let mut issues: Vec<String> = Vec::new();
     let path = dir.join(SETTINGS_FILE);
     if let Some(s) = read_settings_file(&path) {
-        return (s, LoadEvent::Ok);
+        return (s, LoadEvent::Ok, issues);
     }
     if !path.exists() {
         // 首次运行：没有文件是正常状态，不是损坏。
-        return (TrackerSettings::default(), LoadEvent::Ok);
+        return (TrackerSettings::default(), LoadEvent::Ok, issues);
     }
     // 主文件损坏：先挪开留证，再试备份。
-    let _ = std::fs::rename(&path, dir.join(SETTINGS_CORRUPT));
-    if let Some(s) = read_settings_file(&dir.join(SETTINGS_BACKUP)) {
-        if let Ok(json) = serde_json::to_string_pretty(&s) {
-            let _ = write_settings_file(dir, &json);
-        }
-        return (s, LoadEvent::RecoveredFromBackup);
+    let corrupt = dir.join(SETTINGS_CORRUPT);
+    if let Err(e) = std::fs::rename(&path, &corrupt) {
+        // 挪不动会让下一次启动继续读到这份坏文件，必须留下线索。
+        issues.push(format!(
+            "{} 读不出来，改名到 {} 也失败: {e}",
+            path.display(),
+            corrupt.display()
+        ));
     }
-    (TrackerSettings::default(), LoadEvent::ResetToDefault)
+    if let Some(s) = read_settings_file(&dir.join(SETTINGS_BACKUP)) {
+        match serde_json::to_string_pretty(&s) {
+            Ok(json) => {
+                if let Err(e) = write_settings_file(dir, &json) {
+                    // 回退成功后主文件没重写，下次启动会再走一遍损坏流程。
+                    issues.push(format!("从备份恢复后重写 {} 失败: {e}", path.display()));
+                }
+            }
+            Err(e) => issues.push(format!("从备份恢复的设置无法序列化: {e}")),
+        }
+        return (s, LoadEvent::RecoveredFromBackup, issues);
+    }
+    (
+        TrackerSettings::default(),
+        LoadEvent::ResetToDefault,
+        issues,
+    )
 }
 
 fn read_settings_file(path: &std::path::Path) -> Option<TrackerSettings> {
@@ -133,7 +158,11 @@ pub(crate) fn write_settings_file(dir: &std::path::Path, json: &str) -> std::io:
     // 备份只在旧文件仍可解析时更新，保证 .bak 里永远躺着一份能用的设置。
     if let Ok(old) = std::fs::read_to_string(&path) {
         if serde_json::from_str::<TrackerSettings>(&old).is_ok() {
-            let _ = std::fs::copy(&path, dir.join(SETTINGS_BACKUP));
+            let backup = dir.join(SETTINGS_BACKUP);
+            // 复制失败等于备份停在旧版本，主文件下次坏了就只能回到更早的设置。
+            if let Err(e) = std::fs::copy(&path, &backup) {
+                log::warn!("备份设置到 {} 失败: {e}", backup.display());
+            }
         }
     }
     std::fs::rename(&tmp, &path)
@@ -292,8 +321,10 @@ pub(crate) fn save_settings(
                 .query_intervals("0000-01-01", "9999-12-31")
                 .map_err(|e| AppError::new("db", e.to_string()))?;
             // 换库前把旧库的 WAL 落盘并截断，免得用户切回旧目录时看到一份
-            // 落后若干个 30 秒周期的数据。
-            let _ = st.checkpoint();
+            // 落后若干个 30 秒周期的数据。失败不阻止换库，但要留痕。
+            if let Err(e) = st.checkpoint() {
+                log::warn!("换数据目录前 checkpoint 旧库失败: {e}");
+            }
             (daily, intervals)
         };
         let new_store = SqliteStore::open(&db_path(&settings.data_directory))
@@ -512,8 +543,9 @@ mod tests {
         let json = serde_json::to_string_pretty(&s).expect("设置应能序列化");
         write_settings_file(&dir, &json).expect("写入应成功");
 
-        let (loaded, event) = load_settings_from(&dir);
+        let (loaded, event, issues) = load_settings_from(&dir);
         assert_eq!(event, LoadEvent::Ok, "正常文件不该报损坏");
+        assert!(issues.is_empty(), "正常文件不该攒下失败记录");
         assert_eq!(loaded.api_port, 60123, "端口应原样读回");
         assert_eq!(loaded.hotkey_main, "Ctrl+Shift+F9", "热键应原样读回");
         assert_eq!(loaded.retention_days, 30, "保留天数应原样读回");
@@ -543,8 +575,9 @@ mod tests {
         // 模拟写到一半断电：主文件只剩半截 JSON。
         std::fs::write(dir.join(SETTINGS_FILE), "{\"api_port\": 60").expect("制造截断");
 
-        let (loaded, event) = load_settings_from(&dir);
+        let (loaded, event, issues) = load_settings_from(&dir);
         assert_eq!(event, LoadEvent::RecoveredFromBackup, "应走备份恢复");
+        assert!(issues.is_empty(), "能挪走损坏文件时不该报失败");
         assert_eq!(loaded.api_port, 60111, "应读回上一份完整设置");
         assert!(
             dir.join(SETTINGS_CORRUPT).exists(),
@@ -559,14 +592,38 @@ mod tests {
     }
 
     #[test]
+    fn 主文件坏且挪不动时仍然从备份恢复() {
+        let dir = temp_dir("corrupt-locked");
+        save(&dir, 60111);
+        save(&dir, 60222);
+        std::fs::write(dir.join(SETTINGS_FILE), "{\"api_port\": 60").expect("制造截断");
+        // 占位成一个目录，rename 到它会失败，模拟损坏文件挪不走的情况。
+        std::fs::create_dir_all(dir.join(SETTINGS_CORRUPT)).expect("占位");
+
+        let (loaded, event, issues) = load_settings_from(&dir);
+        assert_eq!(
+            event,
+            LoadEvent::RecoveredFromBackup,
+            "挪不走也要走备份恢复"
+        );
+        assert!(
+            issues.iter().any(|m| m.contains("改名到")),
+            "挪不走的损坏文件要留下失败记录，实际: {issues:?}"
+        );
+        assert_eq!(loaded.api_port, 60111, "应读回上一份完整设置");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn 主文件与备份都损坏时回到默认() {
         let dir = temp_dir("reset");
         std::fs::create_dir_all(&dir).expect("建目录");
         std::fs::write(dir.join(SETTINGS_FILE), "not json").expect("写坏主文件");
         std::fs::write(dir.join(SETTINGS_BACKUP), "still not json").expect("写坏备份");
 
-        let (loaded, event) = load_settings_from(&dir);
+        let (loaded, event, issues) = load_settings_from(&dir);
         assert_eq!(event, LoadEvent::ResetToDefault, "两份都坏时应回到默认");
+        assert!(issues.is_empty(), "两份都坏时损坏文件仍应被挪走");
         assert_eq!(
             loaded.api_port,
             TrackerSettings::default().api_port,
@@ -610,8 +667,9 @@ mod tests {
         )
         .expect("写旧文件");
 
-        let (loaded, event) = load_settings_from(&dir);
+        let (loaded, event, issues) = load_settings_from(&dir);
         assert_eq!(event, LoadEvent::Ok, "旧文件不算损坏");
+        assert!(issues.is_empty(), "旧文件不该攒下失败记录");
         assert_eq!(loaded.api_port, 60333, "旧字段应原样保留");
         assert_eq!(loaded.schema_version, 1, "读入后应补上当前版本号");
         let _ = std::fs::remove_dir_all(&dir);

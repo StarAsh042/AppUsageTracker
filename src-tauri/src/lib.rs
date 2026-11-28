@@ -142,8 +142,12 @@ pub fn run() {
             backup::restore_backup_content,
         ])
         .setup(|app| {
-            let (settings, load_event) = settings::load_settings();
+            let (settings, load_event, load_issues) = settings::load_settings();
             logging::init(&settings.data_directory);
+            // 读盘失败发生在日志就绪之前，攒到这里一起写，否则这些线索会消失。
+            for issue in &load_issues {
+                log::warn!("{issue}");
+            }
             log::info!(
                 "启动 v{}，数据目录 {}",
                 env!("CARGO_PKG_VERSION"),
