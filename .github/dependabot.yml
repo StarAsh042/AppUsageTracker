@@ -1,7 +1,12 @@
 version: 2
+
+# Dependabot 一律开向 dev：dev 是集成分支，main 只在发版时由 dev 合并过去。
+# 历史上没写 target-branch，PR 全落到 main 上，导致 main 只在文档与依赖上单向前进，
+# 发版时要先做一次 main → dev 的回流合并（见 PR #67）。别再删掉这三行。
 updates:
   - package-ecosystem: npm
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -20,6 +25,7 @@ updates:
 
   - package-ecosystem: cargo
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -34,6 +40,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
