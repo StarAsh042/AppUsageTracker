@@ -11,7 +11,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
-rust-i18n = "3"
+rust-i18n = "4"
 url = "2"
 tauri-plugin-global-shortcut = "2"
 lnk = "0.6"
@@ -23,7 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 tracker-core = { path = "../crates/tracker-core" }
-window-vibrancy = "0.5"
+window-vibrancy = "0.8"
 dirs.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -35,7 +35,7 @@ windows = { workspace = true, features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
-winreg = "0.52"
+winreg = "0.56"
 
 [lib]
 name = "app_usage_tracker_lib"

@@ -5,11 +5,11 @@ members = ["crates/tracker-core", "src-tauri"]
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
-dirs = "5"
-windows = "0.58"
+dirs = "7"
+windows = "0.62"
 
 [profile.release]
 lto = true
