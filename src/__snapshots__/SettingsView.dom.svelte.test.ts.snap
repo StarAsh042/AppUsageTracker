@@ -1,0 +1,350 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SettingsView 结构契约 > 十一个面板的顺序、标签与控件保持不变 1`] = `
+[
+  {
+    "buttons": [
+      "中文",
+      "English",
+    ],
+    "controls": [],
+    "heading": "界面语言",
+    "hints": [
+      "语言切换即时生效，托盘菜单重启后应用",
+    ],
+    "labels": [],
+    "options": [],
+  },
+  {
+    "buttons": [
+      "打开数据目录",
+      "打开日志目录",
+      "清空全部数据",
+    ],
+    "controls": [
+      {
+        "max": "3600",
+        "min": "30",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "max": "10000",
+        "min": "250",
+        "step": "250",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "max": "240",
+        "min": "0",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "max": "3650",
+        "min": "30",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "max": "1440",
+        "min": "0",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "checked": false,
+        "tag": "input",
+        "type": "checkbox",
+      },
+      {
+        "checked": false,
+        "tag": "input",
+        "type": "checkbox",
+      },
+      {
+        "checked": true,
+        "tag": "input",
+        "type": "checkbox",
+      },
+      {
+        "spellcheck": "false",
+        "tag": "input",
+        "type": "text",
+      },
+      {
+        "spellcheck": "false",
+        "tag": "input",
+        "type": "text",
+      },
+      {
+        "checked": true,
+        "tag": "input",
+        "type": "checkbox",
+      },
+      {
+        "max": "65535",
+        "min": "1024",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "tag": "input",
+        "type": "text",
+      },
+    ],
+    "heading": "常规",
+    "hints": [
+      "组合写法如 Ctrl+Alt+D / Ctrl+Shift+P，保存时校验有效性。",
+    ],
+    "labels": [
+      "空闲阈值",
+      "轮询间隔",
+      "休息提醒（分钟，0 = 关闭）",
+      "数据保留",
+      "每日活跃目标",
+      "开机自动启动",
+      "显示悬浮窗",
+      "启用全局热键",
+      "主界面热键",
+      "悬浮窗热键",
+      "本地：59598，供第三方工具读取统计",
+      "API 端口",
+      "数据目录",
+    ],
+    "options": [],
+  },
+  {
+    "buttons": [],
+    "controls": [
+      {
+        "checked": true,
+        "tag": "input",
+        "type": "checkbox",
+      },
+      {
+        "checked": true,
+        "tag": "input",
+        "type": "checkbox",
+      },
+      {
+        "max": "3600",
+        "min": "30",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "placeholder": "排除规则示例",
+        "rows": "4",
+        "spellcheck": "false",
+        "tag": "textarea",
+      },
+    ],
+    "heading": "隐私：窗口标题记录",
+    "hints": [
+      "排除规则——每行一条子串。",
+    ],
+    "labels": [
+      "记录前台窗口标题",
+      "网页浏览统计（需安装浏览器扩展）",
+      "网页心跳间隔（秒，MV3 下限 30）",
+    ],
+    "options": [],
+  },
+  {
+    "buttons": [
+      "智能安装扩展（推荐）",
+      "手动安装",
+    ],
+    "controls": [],
+    "heading": "浏览器扩展",
+    "hints": [
+      "一键安装：自动识别已安装的 Chromium 内核浏览器（Chrome / Edge / Cent / Brave / Vivaldi 等），打包并注册扩展，重启浏览器后生效",
+    ],
+    "labels": [],
+    "options": [],
+  },
+  {
+    "buttons": [],
+    "controls": [
+      {
+        "aria-label": "排除应用",
+        "rows": "5",
+        "spellcheck": "false",
+        "tag": "textarea",
+      },
+    ],
+    "heading": "排除应用",
+    "hints": [
+      "每行一个。",
+    ],
+    "labels": [],
+    "options": [],
+  },
+  {
+    "buttons": [],
+    "controls": [
+      {
+        "max": "1440",
+        "min": "0",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "options": [
+          "产出",
+          "中性",
+          "分心",
+        ],
+        "tag": "select",
+      },
+      {
+        "max": "1440",
+        "min": "0",
+        "tag": "input",
+        "type": "number",
+      },
+      {
+        "options": [
+          "产出",
+          "中性",
+          "分心",
+        ],
+        "tag": "select",
+      },
+    ],
+    "heading": "分类每日限额（分钟，0 = 不限）",
+    "hints": [
+      "产出 / 中性 / 分心 → 效率趋势。",
+    ],
+    "labels": [
+      "开发",
+      "浏览器",
+    ],
+    "options": [
+      [
+        "产出",
+        "中性",
+        "分心",
+      ],
+      [
+        "产出",
+        "中性",
+        "分心",
+      ],
+    ],
+  },
+  {
+    "buttons": [
+      "✕",
+      "✕",
+      "+ 新增分类",
+      "保存分类规则",
+    ],
+    "controls": [
+      {
+        "placeholder": "分类名",
+        "spellcheck": "false",
+        "tag": "input",
+      },
+      {
+        "placeholder": "关键词1",
+        "spellcheck": "false",
+        "tag": "input",
+      },
+      {
+        "placeholder": "分类名",
+        "spellcheck": "false",
+        "tag": "input",
+      },
+      {
+        "placeholder": "关键词1",
+        "spellcheck": "false",
+        "tag": "input",
+      },
+    ],
+    "heading": "分类规则",
+    "hints": [
+      "关键词以 | 分隔，可写「父—子」层级。",
+    ],
+    "labels": [],
+    "options": [],
+  },
+  {
+    "buttons": [
+      "扫描应用",
+    ],
+    "controls": [],
+    "heading": "扫描应用补分类",
+    "hints": [
+      "扫描桌面与开始菜单快捷方式",
+    ],
+    "labels": [],
+    "options": [],
+  },
+  {
+    "buttons": [
+      "检查更新",
+    ],
+    "controls": [
+      {
+        "options": [
+          "自动（官方→镜像回退）",
+          "仅官方",
+          "仅镜像",
+        ],
+        "tag": "select",
+      },
+      {
+        "checked": false,
+        "tag": "input",
+        "type": "checkbox",
+      },
+    ],
+    "heading": "更新",
+    "hints": [
+      "当前版本 v0.6.6. 更新包经数字签名校验",
+    ],
+    "labels": [
+      "下载通道",
+      "更新时使用系统代理（默认关闭：强制直连、跳过代理）",
+    ],
+    "options": [
+      [
+        "自动（官方→镜像回退）",
+        "仅官方",
+        "仅镜像",
+      ],
+    ],
+  },
+  {
+    "buttons": [
+      "导出全部数据",
+      "打开备份目录",
+      "从最新备份恢复",
+      "选择备份文件恢复",
+    ],
+    "controls": [],
+    "heading": "备份与恢复（JSON）",
+    "hints": [
+      "备份保存在数据目录",
+      "—",
+    ],
+    "labels": [],
+    "options": [],
+  },
+  {
+    "buttons": [
+      "完整性检查 + 压缩 (VACUUM)",
+    ],
+    "controls": [],
+    "heading": "数据库维护",
+    "hints": [
+      "压缩数据库并截断 WAL 日志文件",
+    ],
+    "labels": [],
+    "options": [],
+  },
+]
+`;
