@@ -95,7 +95,7 @@ where
 /// 单独成函数是为了能测。「刚启动时代际就等于自己」这个前提一旦写反，
 /// 线程会立刻退出，端口从头到尾没监听，而且一行日志都不留。
 fn should_stop(gen: u64) -> bool {
-    API_GEN.load(Ordering::SeqCst) == gen
+    API_GEN.load(Ordering::SeqCst) != gen
 }
 
 /// 接受连接并投递给处理池；队列满时直接回 503 然后断开。
