@@ -122,8 +122,6 @@ jobs:
     name: audit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # 先跑一周收集告警，输出干净了再删掉这一行，并把 audit 加进 ci 的 needs。
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
@@ -143,7 +141,7 @@ jobs:
     name: ci
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [frontend, rust, tauri-build, cross-check]
+    needs: [frontend, rust, tauri-build, cross-check, audit]
     steps:
       - name: Aggregate result
         run: echo "All CI jobs passed"
