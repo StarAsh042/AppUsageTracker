@@ -1,0 +1,354 @@
+/* 设置页样式层。Svelte 的 <style> 是组件作用域，拆出的子面板元素带不上父组件哈希，
+   所以样式收在这一个全局文件里，且每条选择器都挂在 .settings 下，避免影响其他视图
+   （.panel 这个类名在 CalendarView / CompareView / Dashboard 也在用）。 */
+
+.settings {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px;
+  gap: 12px;
+  overflow: hidden;
+}
+.settings .sections {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+.settings .panel {
+  background: var(--glass-card, var(--card));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.settings h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.settings .hint {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.settings .grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.settings input[type='number'],
+.settings input[type='text'] {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.settings input:focus,
+.settings textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings .checks {
+  display: flex;
+  gap: 24px;
+  margin: 12px 0;
+}
+.settings .check-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.settings .check-row input {
+  accent-color: var(--accent);
+}
+.settings textarea {
+  width: 100%;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  font-family: Consolas, 'Microsoft YaHei', monospace;
+  line-height: 1.6;
+  resize: vertical;
+}
+.settings .rules-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.settings .rule-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 34px;
+  gap: 8px;
+  align-items: center;
+}
+.settings .rule-name,
+.settings .rule-kw {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.settings .rule-del {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--danger);
+  border-radius: 7px;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 12px;
+}
+.settings .rule-del:hover {
+  background: rgba(255, 95, 95, 0.12);
+}
+.settings .backup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.settings .backup-item {
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings .ext-results {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings .ext-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 12px;
+}
+.settings .ext-result.ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.settings .ext-badge {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  font-weight: 700;
+}
+.settings .ext-result.ok .ext-badge {
+  color: var(--ok);
+}
+.settings .ext-name {
+  flex: none;
+  font-weight: 600;
+}
+.settings .ext-msg {
+  color: var(--text-dim);
+  word-break: break-all;
+}
+.settings .backup-file-input {
+  display: none;
+}
+.settings .backup-restore {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  padding: 2px 4px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings .backup-restore:hover {
+  color: var(--accent);
+}
+.settings .backup-del {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.settings .backup-del:hover {
+  background: rgba(255, 95, 95, 0.12);
+}
+.settings .lang-switch {
+  display: inline-flex;
+  gap: 4px;
+}
+.settings .lang-switch button {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 7px;
+  padding: 8px 22px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.settings .lang-switch button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.settings select {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+.settings .limits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 16px;
+}
+.settings .limit-row select {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+.settings .scan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+.settings .scan-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 130px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--card2);
+  font-size: 13px;
+}
+.settings .scan-row.uncat {
+  outline: 1px solid rgba(245, 166, 35, 0.45);
+}
+.settings .scan-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings .scan-src {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.settings .scan-row select {
+  background: var(--glass-card, var(--card));
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.settings .limit-row span {
+  font-size: 13px;
+}
+.settings .row-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.settings .row-actions button[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+.settings .error-text {
+  color: var(--danger);
+}
+.settings .ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 7px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.settings .ghost:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.settings .danger {
+  background: rgba(255, 95, 95, 0.12);
+  border: 1px solid rgba(255, 95, 95, 0.4);
+  color: var(--danger);
+  border-radius: 7px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.settings .danger:hover {
+  background: rgba(255, 95, 95, 0.2);
+}
+.settings .save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.settings .status {
+  color: var(--ok);
+  font-size: 13px;
+}
+.settings .primary {
+  background: var(--accent);
+  border: 0;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 22px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings .primary:disabled {
+  opacity: 0.6;
+}
+.settings .loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
