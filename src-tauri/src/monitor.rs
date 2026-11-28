@@ -17,7 +17,13 @@ use tracker_core::models::{
 use tracker_core::fmt::fmt_hms;
 
 use crate::live::live_status;
+use crate::sync::MutexExt;
 use crate::{version_info, AppState};
+
+/// 连续落库失败次数。归零时说明上一轮已经写过一次成功的。
+static FLUSH_FAILURES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// 连续失败到这个次数才弹一次通知：偶发的一次写失败不值得打扰。
+const FLUSH_NOTIFY_AFTER: u32 = 3;
 
 /// 自身进程名（小写，不含扩展名），用于排除统计程序自己（含旧数据清理）。
 pub(crate) fn self_stem() -> &'static str {
@@ -72,7 +78,7 @@ pub(crate) fn spawn_monitor(app: AppHandle) {
         loop {
             let poll_ms = {
                 let st = app.state::<AppState>();
-                let v = st.settings.lock().unwrap().foreground_poll_ms;
+                let v = st.settings.lock_or_recover().foreground_poll_ms;
                 v.clamp(250, 10_000)
             };
             std::thread::sleep(std::time::Duration::from_millis(poll_ms));
@@ -82,127 +88,140 @@ pub(crate) fn spawn_monitor(app: AppHandle) {
             let wall_delta = (now - last_wall).num_milliseconds();
             let tick_delta = (tick - last_tick) as i64;
 
-            let state = app.state::<AppState>();
-            {
-                let mut agg = state.aggregator.lock().unwrap();
-                if wall_delta - tick_delta > 3000 {
-                    // 系统睡眠过：把睡眠起点之前记为活动，其余丢弃
-                    let suspend_at = last_wall + chrono::Duration::milliseconds(tick_delta.max(0));
-                    agg.on_suspend(suspend_at);
-                    agg.on_resume(foreground_identity(&mut display_cache), now);
-                } else if !tracker_core::win32::is_input_desktop_available() {
-                    agg.on_locked(now);
-                } else if agg.state == TrackingState::Locked {
-                    agg.on_unlocked(foreground_identity(&mut display_cache), now);
-                } else {
-                    let idle = tracker_core::win32::get_idle_seconds();
-                    agg.on_tick(foreground_identity(&mut display_cache), idle, now);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let state = app.state::<AppState>();
+                {
+                    let mut agg = state.aggregator.lock_or_recover();
+                    if wall_delta - tick_delta > 3000 {
+                        // 系统睡眠过：把睡眠起点之前记为活动，其余丢弃
+                        let suspend_at =
+                            last_wall + chrono::Duration::milliseconds(tick_delta.max(0));
+                        agg.on_suspend(suspend_at);
+                        agg.on_resume(foreground_identity(&mut display_cache), now);
+                    } else if !tracker_core::win32::is_input_desktop_available() {
+                        agg.on_locked(now);
+                    } else if agg.state == TrackingState::Locked {
+                        agg.on_unlocked(foreground_identity(&mut display_cache), now);
+                    } else {
+                        let idle = tracker_core::win32::get_idle_seconds();
+                        agg.on_tick(foreground_identity(&mut display_cache), idle, now);
+                    }
+                    if state.user_paused.load(Ordering::Relaxed)
+                        && agg.state != TrackingState::Paused
+                    {
+                        agg.pause(now);
+                    }
                 }
-                if state.user_paused.load(Ordering::Relaxed) && agg.state != TrackingState::Paused {
-                    agg.pause(now);
-                }
-            }
 
-            // 窗口标题记录（隐私开关；仅在活跃态记录，排除模式命中即丢弃）
-            {
-                let (record, patterns) = {
-                    let s = state.settings.lock().unwrap();
-                    (s.record_window_titles, s.title_exclude_patterns.clone())
-                };
-                if record {
-                    let (app_key, title) = {
-                        let agg = state.aggregator.lock().unwrap();
-                        let key = agg.current_app().map(|c| c.app_key.clone());
-                        (key, tracker_core::win32::get_foreground_title())
+                // 窗口标题记录（隐私开关；仅在活跃态记录，排除模式命中即丢弃）
+                {
+                    let (record, patterns) = {
+                        let s = state.settings.lock_or_recover();
+                        (s.record_window_titles, s.title_exclude_patterns.clone())
                     };
-                    let excluded = title.as_deref().map(|t| {
-                        let tl = t.to_lowercase();
-                        patterns
-                            .iter()
-                            .any(|p| !p.is_empty() && tl.contains(&p.to_lowercase()))
-                    });
-                    let feed = match (&app_key, &title) {
-                        (Some(k), Some(t)) if !excluded.unwrap_or(false) => {
-                            Some((k.as_str(), t.as_str()))
-                        }
-                        _ => None,
+                    if record {
+                        let (app_key, title) = {
+                            let agg = state.aggregator.lock_or_recover();
+                            let key = agg.current_app().map(|c| c.app_key.clone());
+                            (key, tracker_core::win32::get_foreground_title())
+                        };
+                        let excluded = title.as_deref().map(|t| {
+                            let tl = t.to_lowercase();
+                            patterns
+                                .iter()
+                                .any(|p| !p.is_empty() && tl.contains(&p.to_lowercase()))
+                        });
+                        let feed = match (&app_key, &title) {
+                            (Some(k), Some(t)) if !excluded.unwrap_or(false) => {
+                                Some((k.as_str(), t.as_str()))
+                            }
+                            _ => None,
+                        };
+                        let mut agg = state.aggregator.lock_or_recover();
+                        agg.on_title_tick(feed, now);
+                    }
+                }
+
+                // 休息提醒：连续活跃累计，空闲即视为已休息
+                let rest_minutes = state.settings.lock_or_recover().rest_reminder_minutes;
+                {
+                    let agg = state.aggregator.lock_or_recover();
+                    match agg.state {
+                        TrackingState::Active => rest_acc += wall_delta.max(0) as f64 / 1000.0,
+                        TrackingState::Idle => rest_acc = 0.0,
+                        _ => {}
+                    }
+                }
+                if rest_minutes > 0 && rest_acc >= rest_minutes as f64 * 60.0 {
+                    rest_acc = 0.0;
+                    let _ = app.emit("ui://rest", ());
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title(t!("休息提醒"))
+                        .body(t!(
+                            "已连续活跃使用 %{mins} 分钟，站起来活动一下吧",
+                            mins = rest_minutes
+                        ))
+                        .show();
+                }
+
+                // 跨天：flush + 清限额提醒标记 + 保留策略清理
+                let today = now.format("%Y-%m-%d").to_string();
+                if today != cur_day {
+                    cur_day = today;
+                    flush_state(&app);
+                    state.notified_limits.lock_or_recover().clear();
+                    rest_acc = 0.0;
+                    purge_expired(&app);
+                }
+
+                if last_flush.elapsed() >= std::time::Duration::from_secs(30) {
+                    flush_state(&app);
+                    last_flush = std::time::Instant::now();
+                }
+
+                // 每 5 分钟补一次显式 checkpoint：自动 checkpoint 只是把 WAL 页
+                // 复用置零，长事务或长时间只读期间可能一直不触发，-wal 于是越滚
+                // 越大；这里配合 journal_size_limit 把文件真正截断。
+                if last_checkpoint.elapsed() >= std::time::Duration::from_secs(300) {
+                    last_checkpoint = std::time::Instant::now();
+                    if let Err(e) = state.store.lock_or_recover().checkpoint() {
+                        log::error!("periodic checkpoint failed: {e}");
+                    }
+                }
+                check_limits(&app);
+
+                let status = live_status(&app);
+                let _ = app.emit("usage://tick", &status);
+                // 托盘 tooltip 实时显示今日活跃与当前应用
+                let tray_icon = state.tray_icon.lock_or_recover();
+                if let Some(tray) = tray_icon.as_ref() {
+                    let tip = match &status.current_app {
+                        Some(a) => format!(
+                            "{}\n{}",
+                            t!("软件使用时间统计"),
+                            t!(
+                                "今日 %{total} · %{app}",
+                                total = fmt_hms(status.today_total_seconds),
+                                app = a.display_name
+                            )
+                        ),
+                        None => format!(
+                            "{}\n{}",
+                            t!("软件使用时间统计"),
+                            t!("今日 %{total}", total = fmt_hms(status.today_total_seconds))
+                        ),
                     };
-                    let mut agg = state.aggregator.lock().unwrap();
-                    agg.on_title_tick(feed, now);
+                    let _ = tray.set_tooltip(Some(tip));
                 }
-            }
-
-            // 休息提醒：连续活跃累计，空闲即视为已休息
-            let rest_minutes = state.settings.lock().unwrap().rest_reminder_minutes;
-            {
-                let agg = state.aggregator.lock().unwrap();
-                match agg.state {
-                    TrackingState::Active => rest_acc += wall_delta.max(0) as f64 / 1000.0,
-                    TrackingState::Idle => rest_acc = 0.0,
-                    _ => {}
-                }
-            }
-            if rest_minutes > 0 && rest_acc >= rest_minutes as f64 * 60.0 {
-                rest_acc = 0.0;
-                let _ = app.emit("ui://rest", ());
-                let _ = app
-                    .notification()
-                    .builder()
-                    .title(t!("休息提醒"))
-                    .body(t!(
-                        "已连续活跃使用 %{mins} 分钟，站起来活动一下吧",
-                        mins = rest_minutes
-                    ))
-                    .show();
-            }
-
-            // 跨天：flush + 清限额提醒标记 + 保留策略清理
-            let today = now.format("%Y-%m-%d").to_string();
-            if today != cur_day {
-                cur_day = today;
-                flush_state(&app);
-                state.notified_limits.lock().unwrap().clear();
-                rest_acc = 0.0;
-                purge_expired(&app);
-            }
-
-            if last_flush.elapsed() >= std::time::Duration::from_secs(30) {
-                flush_state(&app);
-                last_flush = std::time::Instant::now();
-            }
-
-            // 每 5 分钟补一次显式 checkpoint：自动 checkpoint 只是把 WAL 页
-            // 复用置零，长事务或长时间只读期间可能一直不触发，-wal 于是越滚
-            // 越大；这里配合 journal_size_limit 把文件真正截断。
-            if last_checkpoint.elapsed() >= std::time::Duration::from_secs(300) {
-                last_checkpoint = std::time::Instant::now();
-                if let Err(e) = state.store.lock().unwrap().checkpoint() {
-                    eprintln!("periodic checkpoint failed: {e}");
-                }
-            }
-            check_limits(&app);
-
-            let status = live_status(&app);
-            let _ = app.emit("usage://tick", &status);
-            // 托盘 tooltip 实时显示今日活跃与当前应用
-            if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
-                let tip = match &status.current_app {
-                    Some(a) => format!(
-                        "{}\n{}",
-                        t!("软件使用时间统计"),
-                        t!(
-                            "今日 %{total} · %{app}",
-                            total = fmt_hms(status.today_total_seconds),
-                            app = a.display_name
-                        )
-                    ),
-                    None => format!(
-                        "{}\n{}",
-                        t!("软件使用时间统计"),
-                        t!("今日 %{total}", total = fmt_hms(status.today_total_seconds))
-                    ),
-                };
-                let _ = tray.set_tooltip(Some(tip));
+            }));
+            if outcome.is_err() {
+                // 单轮采样 panic 不该终结统计：捕获、告知界面、睡一拍再继续。
+                // 线程一旦退出就再没人采样，界面数字会停在原地而用户看不出来。
+                log::error!("监控线程本轮采样 panic，已捕获并继续");
+                let _ = app.emit("monitor://panicked", ());
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
             last_wall = now;
@@ -214,109 +233,144 @@ pub(crate) fn spawn_monitor(app: AppHandle) {
 pub(crate) fn flush_state(app: &AppHandle) {
     let state = app.state::<AppState>();
     let daily: Vec<DailyUsage> = {
-        let agg = state.aggregator.lock().unwrap();
+        let agg = state.aggregator.lock_or_recover();
         agg.daily.values().cloned().collect()
     };
+    // 只拍快照、不出队：队列本身就是重试缓冲区。写成功之后才把写过的前缀
+    // 摘掉；写失败则原样留着，下一轮整批重试。之前的写法是先 take 再写，
+    // 一旦磁盘满或库被锁，这批数据就只剩日志里的一行了。
     let (intervals, state_intervals, title_intervals, web_intervals): (
         Vec<ForegroundInterval>,
         Vec<StateInterval>,
         Vec<TitleInterval>,
         Vec<WebInterval>,
     ) = {
-        let mut agg = state.aggregator.lock().unwrap();
+        let agg = state.aggregator.lock_or_recover();
+        let intervals = agg.pending_intervals.clone();
+        let state_intervals = agg.pending_state_intervals.clone();
+        let title_intervals = agg.pending_title_intervals.clone();
+        // 网页心跳：闭合打开段（同键续记）后追加到待写队列
+        let now2 = Local::now();
+        let mut web_open = state.web_open.lock_or_recover();
+        let mut web_pending = state.web_pending.lock_or_recover();
+        if let Some((d, t, start)) = web_open.take() {
+            let dur = (now2 - start).num_milliseconds() as f64 / 1000.0;
+            if dur >= 1.0 {
+                web_pending.push(WebInterval {
+                    domain: d.clone(),
+                    title: t.clone(),
+                    start_time: start.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    end_time: now2.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    duration_seconds: dur,
+                });
+            }
+            *web_open = Some((d, t, now2));
+        }
         (
-            std::mem::take(&mut agg.pending_intervals),
-            std::mem::take(&mut agg.pending_state_intervals),
-            std::mem::take(&mut agg.pending_title_intervals),
-            {
-                // 网页心跳：闭合打开段（同键续记）+ 取待写明细
-                let now2 = Local::now();
-                let mut web_open = state.web_open.lock().unwrap();
-                let mut web_pending = state.web_pending.lock().unwrap();
-                if let Some((d, t, start)) = web_open.take() {
-                    let dur = (now2 - start).num_milliseconds() as f64 / 1000.0;
-                    if dur >= 1.0 {
-                        web_pending.push(WebInterval {
-                            domain: d.clone(),
-                            title: t.clone(),
-                            start_time: start.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            end_time: now2.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            duration_seconds: dur,
-                        });
-                    }
-                    *web_open = Some((d, t, now2));
-                }
-                std::mem::take(&mut web_pending)
-            },
+            intervals,
+            state_intervals,
+            title_intervals,
+            web_pending.clone(),
         )
     };
-    let store = state.store.lock().unwrap();
-    if let Err(e) = store.save_daily_replace(&daily) {
-        eprintln!("save_daily failed: {e}");
+
+    if daily.is_empty()
+        && intervals.is_empty()
+        && state_intervals.is_empty()
+        && title_intervals.is_empty()
+        && web_intervals.is_empty()
+    {
+        return;
     }
-    if !intervals.is_empty() {
-        if let Err(e) = store.save_intervals(&intervals) {
-            eprintln!("save_intervals failed: {e}");
+    let written = state.store.lock_or_recover().save_flush(
+        &daily,
+        &intervals,
+        &state_intervals,
+        &title_intervals,
+        &web_intervals,
+    );
+    match written {
+        Ok(()) => {
+            {
+                let mut agg = state.aggregator.lock_or_recover();
+                drop_front(&mut agg.pending_intervals, intervals.len());
+                drop_front(&mut agg.pending_state_intervals, state_intervals.len());
+                drop_front(&mut agg.pending_title_intervals, title_intervals.len());
+            }
+            drop_front(
+                &mut state.web_pending.lock_or_recover(),
+                web_intervals.len(),
+            );
+            if FLUSH_FAILURES.swap(0, Ordering::Relaxed) > 0 {
+                log::info!("落库恢复正常");
+            }
+        }
+        Err(e) => {
+            let fails = FLUSH_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+            log::error!("save_flush failed (第 {fails} 次连续失败): {e}");
+            if fails == FLUSH_NOTIFY_AFTER {
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(t!("统计数据写入失败"))
+                    .body(t!(
+                        "数据暂存在内存并会自动重试，请检查磁盘空间与数据目录权限。"
+                    ))
+                    .show();
+            }
         }
     }
-    if !state_intervals.is_empty() {
-        if let Err(e) = store.save_state_intervals(&state_intervals) {
-            eprintln!("save_state_intervals failed: {e}");
-        }
-    }
-    if !title_intervals.is_empty() {
-        if let Err(e) = store.save_title_intervals(&title_intervals) {
-            eprintln!("save_title_intervals failed: {e}");
-        }
-    }
-    if !web_intervals.is_empty() {
-        if let Err(e) = store.save_web_intervals(&web_intervals) {
-            eprintln!("save_web_intervals failed: {e}");
-        }
+}
+
+/// 把队列前缀 n 条摘掉；只有确认写进库了才调用。
+fn drop_front<T>(queue: &mut Vec<T>, n: usize) {
+    if n > 0 {
+        let take = n.min(queue.len());
+        queue.drain(..take);
     }
 }
 
 /// 保留策略：清理 N 天前的明细与聚合（0 = 永久保留）。
 pub(crate) fn purge_expired(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let retention = state.settings.lock().unwrap().retention_days;
+    let retention = state.settings.lock_or_recover().retention_days;
     if retention == 0 {
         return;
     }
     let cutoff = (Local::now() - chrono::Duration::days(retention as i64))
         .format("%Y-%m-%d")
         .to_string();
-    let result = state.store.lock().unwrap().purge_before(&cutoff);
+    let result = state.store.lock_or_recover().purge_before(&cutoff);
     if let Err(e) = result {
-        eprintln!("purge_before failed: {e}");
+        log::error!("purge_before failed: {e}");
     }
 }
 
 pub(crate) fn check_limits(app: &AppHandle) {
     let state = app.state::<AppState>();
     let limits = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock_or_recover();
         s.category_daily_limit_minutes.clone()
     };
     if limits.is_empty() {
         return;
     }
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
+    let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
     let mut per_cat: HashMap<String, f64> = HashMap::new();
     {
-        let agg = state.aggregator.lock().unwrap();
+        let agg = state.aggregator.lock_or_recover();
         for d in agg.daily.values().filter(|d| d.usage_date == today) {
             let cat = resolver.resolve(&d.display_name, &d.process_name, &d.exe_path);
             *per_cat.entry(cat).or_insert(0.0) += d.active_seconds;
         }
     }
     let to_notify = {
-        let notified = state.notified_limits.lock().unwrap();
+        let notified = state.notified_limits.lock_or_recover();
         categories_to_notify(&per_cat, &limits, &notified)
     };
     for cat in to_notify {
-        state.notified_limits.lock().unwrap().insert(cat.clone());
+        state.notified_limits.lock_or_recover().insert(cat.clone());
         let _ = app.emit("usage://limit-reached", &cat);
         let _ = app
             .notification()
@@ -324,5 +378,21 @@ pub(crate) fn check_limits(app: &AppHandle) {
             .title(t!("分类限额提醒"))
             .body(t!("「%{cat}」今日使用时长已超过设定限额", cat = cat))
             .show();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drop_front;
+
+    #[test]
+    fn 只摘掉写成功的前缀() {
+        let mut q = vec![1, 2, 3, 4];
+        drop_front(&mut q, 2);
+        assert_eq!(q, vec![3, 4], "应只摘掉已写库的前两条");
+        drop_front(&mut q, 0);
+        assert_eq!(q, vec![3, 4], "0 条不该动队列");
+        drop_front(&mut q, 9);
+        assert!(q.is_empty(), "超过长度时清空，不越界 panic");
     }
 }

@@ -5,14 +5,14 @@
     categoryLabel,
     localDateKey,
     stateLabel,
-    CATEGORY_PALETTE,
     type TimelineData,
     type TopTitle,
     type TopWeb,
   } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
+  import { errText } from './lib/errors';
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
 
   let { initialDate = localDateKey() }: { initialDate?: string } = $props();
 
@@ -35,7 +35,6 @@
   // 加载失败要显式显示，避免空数组让 Top 标题/Top 网页整块静默消失。
   let loadError = $state<string | null>(null);
   let loadSeq = 0;
-  let hover = $state<{ name: string; detail: string; x: number } | null>(null);
   // 可视窗口（秒 0-86400），滚轮缩放、拖动平移
   let view = $state<[number, number]>([0, 86400]);
   let dragFrom: number | null = null;
@@ -64,7 +63,7 @@
       titles = ti;
       web = wb;
     } catch (e) {
-      if (seq === loadSeq) loadError = String(e);
+      if (seq === loadSeq) loadError = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -174,17 +173,12 @@
     Paused: '#565d6e',
   };
 
-
   function stateTotals(data: TimelineData): { state: string; seconds: number }[] {
     const m = new Map<string, number>();
     for (const s of data.states) {
       m.set(s.state, (m.get(s.state) ?? 0) + s.duration_seconds);
     }
     return [...m.entries()].map(([state, seconds]) => ({ state, seconds })).sort((a, b) => b.seconds - a.seconds);
-  }
-
-  function onMouse(e: MouseEvent, name: string, detail: string) {
-    hover = { name, detail, x: e.clientX };
   }
 
   const hourTicks = $derived.by(() => {
@@ -226,7 +220,12 @@
           <div
             class="seg"
             style="{segStyle(seg.start_time, seg.end_time)};background:{appColor(data.segments, seg.app_key)}"
-            title="{seg.display_name} {seg.start_time.slice(11, 16)}–{seg.end_time.slice(11, 16)}{t('（')}{fmtDuration(seg.duration_seconds)}{t('）')}"
+            title={t('{app} {start}–{end}（{dur}）', {
+              app: seg.display_name,
+              start: seg.start_time.slice(11, 16),
+              end: seg.end_time.slice(11, 16),
+              dur: fmtDuration(seg.duration_seconds),
+            })}
           ></div>
         {/each}
         {#each hourTicks as t (t)}
@@ -244,7 +243,12 @@
           <div
             class="seg"
             style="{segStyle(st.start_time, st.end_time)};background:{STATE_COLORS[st.state] ?? '#565d6e'}"
-            title="{stateLabel(st.state, $lang)} {st.start_time.slice(11, 16)}–{st.end_time.slice(11, 16)}{t('（')}{fmtDuration(st.duration_seconds)}{t('）')}"
+            title={t('{state} {start}–{end}（{dur}）', {
+              state: stateLabel(st.state, $lang),
+              start: st.start_time.slice(11, 16),
+              end: st.end_time.slice(11, 16),
+              dur: fmtDuration(st.duration_seconds),
+            })}
           ></div>
         {/each}
         {#each hourTicks as t (t)}
@@ -256,7 +260,8 @@
         {#each stateTotals(data) as s (s.state)}
           <span class="state-item">
             <span class="sw" style="background:{STATE_COLORS[s.state] ?? '#565d6e'}"></span>
-            {stateLabel(s.state, $lang)} {fmtDuration(s.seconds)}
+            {stateLabel(s.state, $lang)}
+            {fmtDuration(s.seconds)}
           </span>
         {:else}
           <span class="empty">{t('该日暂无状态记录')}</span>
@@ -293,7 +298,7 @@
     <div class="panel legend">
       <div class="band-title">{t('图例（按时长）')}</div>
       <div class="legend-list">
-        {#each [...new Map(data.segments.map((s) => [s.app_key, s])).values()] as seg, i (seg.app_key)}
+        {#each [...new Map(data.segments.map((s) => [s.app_key, s])).values()] as seg (seg.app_key)}
           <span class="legend-item">
             <span class="sw" style="background:{appColor(data.segments, seg.app_key)}"></span>
             {seg.display_name}
@@ -350,10 +355,6 @@
         {t('暂无数据')}
       {/if}
     </div>
-  {/if}
-
-  {#if hover}
-    <div class="tooltip" style="left:{hover.x}px">{hover.name} · {hover.detail}</div>
   {/if}
 </div>
 
@@ -625,19 +626,5 @@
     text-align: right;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-  }
-
-  .tooltip {
-    position: fixed;
-    top: 8px;
-    transform: translateX(-50%);
-    background: var(--card2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 5px 10px;
-    font-size: 12px;
-    z-index: 50;
-    pointer-events: none;
-    white-space: nowrap;
   }
 </style>

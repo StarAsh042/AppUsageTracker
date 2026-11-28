@@ -1,0 +1,27 @@
+# 统一换行符：仓库里一律 LF，检出时按平台自动转换。
+* text=auto eol=lf
+
+# 源码与文档显式标成文本，避免被当成二进制跳过处理。
+*.rs        text
+*.ts        text
+*.js        text
+*.svelte    text
+*.json      text
+*.md        text
+*.yml       text
+*.toml      text
+*.css       text
+*.html      text
+
+# 二进制：不做换行符转换，也不做文本 diff。
+*.png       binary
+*.ico       binary
+*.exe       binary
+*.dll       binary
+*.db        binary
+*.woff      binary
+*.woff2     binary
+
+# GitHub 把这两个文件当作文本处理，避免 diff 里显示为二进制。
+package-lock.json linguist-generated=true
+src-tauri/Cargo.lock linguist-generated=true

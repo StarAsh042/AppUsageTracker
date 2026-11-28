@@ -8,7 +8,7 @@
     presetRange,
     type ComparePreset,
   } from './lib/compare';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
 
   // 默认对比「今天」vs「昨天」：A = 昨天，B = 今天（A 仍是较早的一侧，变化率方向不变）
   let aFrom = $state(localDateKey(-1));
@@ -20,7 +20,7 @@
   let loading = $state(false);
   let aliases = $state<Map<string, string>>(new Map());
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
 
   $effect(() => {
     api.getSettings().then((s) => {
@@ -32,10 +32,7 @@
   async function load() {
     loading = true;
     try {
-      [aData, bData] = await Promise.all([
-        api.getDashboard(aFrom, aTo),
-        api.getDashboard(bFrom, bTo),
-      ]);
+      [aData, bData] = await Promise.all([api.getDashboard(aFrom, aTo), api.getDashboard(bFrom, bTo)]);
     } finally {
       loading = false;
     }
@@ -90,9 +87,7 @@
         });
       }
     }
-    return [...m.values()]
-      .sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b))
-      .slice(0, 40);
+    return [...m.values()].sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b)).slice(0, 40);
   });
 
   const catRows = $derived.by(() => {
@@ -168,9 +163,7 @@
       </div>
       <div class="card">
         <div class="label">{t('变化')}</div>
-        <div
-          class="value {deltaCls(aData.total_active_seconds, bData.total_active_seconds)}"
-        >
+        <div class="value {deltaCls(aData.total_active_seconds, bData.total_active_seconds)}">
           {orderedDelta(aData.total_active_seconds, bData.total_active_seconds) === null
             ? '—'
             : deltaText(aData.total_active_seconds, bData.total_active_seconds)}
@@ -183,11 +176,10 @@
       <div class="panel-title">{t('应用对比')}</div>
       <div class="head">
         <span class="c-name">{t('应用')}</span>
-        <span class="c-bars">A vs B{t('（')}{t('时长')}{t('）')}</span>
+        <span class="c-bars">{t('A vs B（时长）')}</span>
       </div>
       <div class="rows">
         {#each appRows as r (r.key)}
-          {@const d = orderedDelta(r.a, r.b)}
           <div class="row" title={r.key}>
             <span class="c-name">{r.name}<span class="c-cat">{categoryLabel(r.cat, $lang)}</span></span>
             <span class="c-bars">
@@ -208,7 +200,6 @@
       <div class="panel-title">{t('分类对比')}</div>
       <div class="rows">
         {#each catRows as r (r.key)}
-          {@const d = orderedDelta(r.a, r.b)}
           <div class="row">
             <span class="c-name">
               <span class="sw" style="background:{catColor(r.name)}"></span>{categoryLabel(r.name, $lang)}

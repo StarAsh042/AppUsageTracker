@@ -8,6 +8,8 @@ use tauri::{AppHandle, Manager, State};
 use tracker_core::fmt::fmt_hms;
 
 use crate::dashboard::build_dashboard;
+use crate::error::AppError;
+use crate::sync::MutexExt;
 use crate::AppState;
 
 #[derive(Serialize, Clone)]
@@ -24,16 +26,18 @@ pub(crate) struct DbMaintenance {
 }
 
 #[tauri::command]
-pub(crate) fn db_maintenance(state: State<AppState>) -> Result<DbMaintenance, String> {
-    let st = state.store.lock().unwrap();
+pub(crate) fn db_maintenance(state: State<AppState>) -> Result<DbMaintenance, AppError> {
+    let st = state.store.lock_or_recover();
     let integrity: String = st
         .pragma("PRAGMA integrity_check")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AppError::new("db", e.to_string()))?;
     let vacuum_ok = st.vacuum().is_ok();
     // VACUUM 会把 WAL 里残留的页一并回写，紧接着做一次 truncate 模式的
     // checkpoint 才能真正把 -wal 收回 1 MiB 以内（journal_size_limit 见 store::open）。
     let checkpoint_ok = st.checkpoint().is_ok();
-    let (page_size, page_count, freelist) = st.db_stats().map_err(|e| e.to_string())?;
+    let (page_size, page_count, freelist) = st
+        .db_stats()
+        .map_err(|e| AppError::new("db", e.to_string()))?;
     Ok(DbMaintenance {
         integrity,
         vacuum_ok,
@@ -46,7 +50,7 @@ pub(crate) fn db_maintenance(state: State<AppState>) -> Result<DbMaintenance, St
 }
 
 #[tauri::command]
-pub(crate) fn export_weekly_report(app: AppHandle) -> Result<String, String> {
+pub(crate) fn export_weekly_report(app: AppHandle) -> Result<String, AppError> {
     let to = Local::now().format("%Y-%m-%d").to_string();
     let from = (Local::now() - chrono::Duration::days(6))
         .format("%Y-%m-%d")
@@ -88,7 +92,7 @@ pub(crate) fn export_weekly_report(app: AppHandle) -> Result<String, String> {
 
     let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
     let file = dir.join(format!("使用周报_{from}_{to}.md"));
-    std::fs::write(&file, md).map_err(|e| e.to_string())?;
+    std::fs::write(&file, md)?;
     Ok(file.to_string_lossy().to_string())
 }
 
@@ -107,20 +111,20 @@ pub(crate) fn get_top_titles(
     from: String,
     to: String,
     limit: i64,
-) -> Result<Vec<TopTitle>, String> {
+) -> Result<Vec<TopTitle>, AppError> {
     let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
-    let aliases_map = state.settings.lock().unwrap().app_display_names.clone();
+    let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
+    let aliases_map = state.settings.lock_or_recover().app_display_names.clone();
     let rows = {
-        let st = state.store.lock().unwrap();
+        let st = state.store.lock_or_recover();
         st.top_titles(&from, &to, limit.clamp(1, 200))
-            .map_err(|e| e.to_string())?
+            .map_err(|e| AppError::new("db", e.to_string()))?
     };
     let mut out: Vec<TopTitle> = Vec::new();
     for (app_key, title, seconds) in rows {
         // 行所属应用可能已被排除/删除——标题表同步清理过，直接呈现即可
         let (display, _cat) = {
-            let st = state.store.lock().unwrap();
+            let st = state.store.lock_or_recover();
             match st.query_daily(&from, &to).ok() {
                 Some(rows) => {
                     let hit = rows.iter().find(|r| r.app_key == app_key);
@@ -168,12 +172,12 @@ pub(crate) fn get_top_web(
     from: String,
     to: String,
     limit: i64,
-) -> Result<Vec<TopWeb>, String> {
+) -> Result<Vec<TopWeb>, AppError> {
     let state = app.state::<AppState>();
     let rows = {
-        let st = state.store.lock().unwrap();
+        let st = state.store.lock_or_recover();
         st.top_web(&from, &to, limit.clamp(1, 200))
-            .map_err(|e| e.to_string())?
+            .map_err(|e| AppError::new("db", e.to_string()))?
     };
     Ok(rows
         .into_iter()

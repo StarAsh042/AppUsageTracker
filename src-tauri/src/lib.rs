@@ -5,11 +5,14 @@ mod autostart;
 mod backup;
 mod commands;
 mod dashboard;
+mod error;
 mod ext_install;
 mod live;
+mod logging;
 mod monitor;
 mod reports;
 mod settings;
+mod sync;
 mod timeline;
 mod tray;
 mod update;
@@ -31,6 +34,9 @@ use tracker_core::category::CategoryResolver;
 use tracker_core::models::{DailyUsage, WebInterval};
 use tracker_core::settings::TrackerSettings;
 use tracker_core::store::SqliteStore;
+
+use crate::error::AppError;
+use crate::sync::MutexExt;
 
 /// 全局应用状态（Tauri managed state）。
 struct AppState {
@@ -74,21 +80,19 @@ pub fn run() {
                     // 每次触发时读当前设置（支持自定义组合）
                     let (main_hk_s, widget_hk_s) = {
                         let st = app.state::<AppState>();
-                        let s = st.settings.lock().unwrap();
+                        let s = st.settings.lock_or_recover();
                         (s.hotkey_main.clone(), s.hotkey_widget.clone())
                     };
-                    let main_hk: Shortcut = main_hk_s.parse().expect("valid shortcut");
-                    let widget_hk: Shortcut = widget_hk_s.parse().expect("valid shortcut");
-                    if shortcut == &main_hk {
+                    if is_hotkey(&main_hk_s, shortcut) {
                         windows::toggle_main(app);
-                    } else if shortcut == &widget_hk {
+                    } else if is_hotkey(&widget_hk_s, shortcut) {
                         let st = app.state::<AppState>();
                         let visible = app
                             .get_webview_window("widget")
                             .map(|w| w.is_visible().unwrap_or(false))
                             .unwrap_or(false);
                         settings::set_widget_visible(app, !visible);
-                        let guard = st.tray.lock().unwrap();
+                        let guard = st.tray.lock_or_recover();
                         if let Some(h) = guard.as_ref() {
                             let _ = h.widget_toggle.set_checked(!visible);
                         }
@@ -138,10 +142,16 @@ pub fn run() {
             backup::restore_backup_content,
         ])
         .setup(|app| {
-            let settings = settings::load_settings();
-            std::fs::create_dir_all(&settings.data_directory).map_err(|e| e.to_string())?;
+            let (settings, load_event) = settings::load_settings();
+            logging::init(&settings.data_directory);
+            log::info!(
+                "启动 v{}，数据目录 {}",
+                env!("CARGO_PKG_VERSION"),
+                settings.data_directory
+            );
+            std::fs::create_dir_all(&settings.data_directory)?;
             let store = SqliteStore::open(&settings::db_path(&settings.data_directory))
-                .map_err(|e| format!("打开数据库失败: {e}"))?;
+                .map_err(|e| AppError::new("db", format!("打开数据库失败: {e}")))?;
 
             // 排除名单 = 用户配置 + 自身（始终排除）
             let mut excluded: HashSet<String> =
@@ -155,7 +165,7 @@ pub fn run() {
             let mut agg = UsageAggregator::new(settings.idle_threshold_seconds as f64, excluded);
             let rows = store
                 .query_daily(&today, &today)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| AppError::new("db", e.to_string()))?;
             for r in rows {
                 // 剔除修复前误记的自身历史行（内存 + 库）
                 if r.process_name.to_lowercase() == *monitor::self_stem() {
@@ -187,13 +197,14 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
+            // 配置读取出过问题的话，到这里才有通知通道可用。
+            settings::report_load_event(&handle, load_event);
             // 老版本写进 HKCU Run 的是裸 exe 路径（无引号、无标记）。这里按当前
             // 设置再写一次，把历史值就地规范化成 "exe" --autostart 的形式。
             if handle
                 .state::<AppState>()
                 .settings
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .start_with_windows
             {
                 if let Ok(exe) = std::env::current_exe() {
@@ -219,7 +230,7 @@ pub fn run() {
 
             let show_widget = {
                 let st = handle.state::<AppState>();
-                let v = st.settings.lock().unwrap().show_floating_widget;
+                let v = st.settings.lock_or_recover().show_floating_widget;
                 v
             };
             if show_widget {
@@ -229,8 +240,7 @@ pub fn run() {
                 if handle
                     .state::<AppState>()
                     .settings
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .widget
                     .edge_snap
                 {
@@ -258,9 +268,9 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(secs.max(1)));
                     monitor::flush_state(&h);
                     let st = h.state::<AppState>();
-                    let _ = st.store.lock().unwrap().checkpoint();
+                    let _ = st.store.lock_or_recover().checkpoint();
                     let (total, apps) = {
-                        let agg = st.aggregator.lock().unwrap();
+                        let agg = st.aggregator.lock_or_recover();
                         let today = Local::now().format("%Y-%m-%d").to_string();
                         let rows: Vec<&DailyUsage> = agg
                             .daily
@@ -280,11 +290,18 @@ pub fn run() {
                         "healthy": total > 0.0 && apps > 0,
                     });
                     let dir = {
-                        let s = st.settings.lock().unwrap();
+                        let s = st.settings.lock_or_recover();
                         s.data_directory.clone()
                     };
                     let path = std::path::Path::new(&dir).join("smoke-report.json");
-                    let _ = std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap());
+                    match serde_json::to_string_pretty(&report) {
+                        Ok(json) => {
+                            if let Err(e) = std::fs::write(&path, json) {
+                                log::error!("smoke report write failed: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("smoke report serialize failed: {e}"),
+                    }
                     println!("smoke-report: {}", path.display());
                     if report["healthy"].as_bool().unwrap_or(false) {
                         h.exit(0);
@@ -300,11 +317,19 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// 这次按下的快捷键是否就是设置里这个组合。
+///
+/// 设置字符串可能被手工改坏，解析失败就当没配这个热键。以前这里用的是
+/// expect，一次无效配置会让整个热键回调 panic。
+pub(crate) fn is_hotkey(configured: &str, pressed: &Shortcut) -> bool {
+    configured.parse::<Shortcut>().ok().as_ref() == Some(pressed)
+}
+
 /// 全局热键注册（设置开关）。
 pub(crate) fn apply_hotkeys(app: &AppHandle) {
     let (enabled, main_hk_s, widget_hk_s) = {
         let st = app.state::<AppState>();
-        let s = st.settings.lock().unwrap();
+        let s = st.settings.lock_or_recover();
         (
             s.hotkeys_enabled,
             s.hotkey_main.clone(),
@@ -316,10 +341,38 @@ pub(crate) fn apply_hotkeys(app: &AppHandle) {
     if !enabled {
         return;
     }
-    if let Ok(hk) = main_hk_s.parse::<Shortcut>() {
-        let _ = gs.register(hk);
+    // 解析与注册失败都在这里报一次：热键无效是用户能感知的配置问题，
+    // 静默跳过会让人以为按了没反应是别的毛病。
+    match main_hk_s.parse::<Shortcut>() {
+        Ok(hk) => {
+            if let Err(e) = gs.register(hk) {
+                log::warn!("主热键注册失败({main_hk_s}): {e}");
+            }
+        }
+        Err(e) => log::warn!("主热键无效({main_hk_s:?})，已跳过: {e}"),
     }
-    if let Ok(hk) = widget_hk_s.parse::<Shortcut>() {
-        let _ = gs.register(hk);
+    match widget_hk_s.parse::<Shortcut>() {
+        Ok(hk) => {
+            if let Err(e) = gs.register(hk) {
+                log::warn!("悬浮窗热键注册失败({widget_hk_s}): {e}");
+            }
+        }
+        Err(e) => log::warn!("悬浮窗热键无效({widget_hk_s:?})，已跳过: {e}"),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 无效热键设置不会命中() {
+        let pressed: Shortcut = "Ctrl+Alt+D".parse().expect("测试用的组合应当可解析");
+        assert!(is_hotkey("Ctrl+Alt+D", &pressed), "相同组合应当命中");
+        assert!(
+            !is_hotkey("", &pressed),
+            "空串是无效配置，不能命中更不能 panic"
+        );
+        assert!(!is_hotkey("Ctrl+Alt+不是键", &pressed), "写坏的值不能命中");
+        assert!(!is_hotkey("Ctrl+Alt+W", &pressed), "另一个热键不能误命中");
     }
 }

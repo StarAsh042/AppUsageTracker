@@ -6,7 +6,7 @@
   import CompareView from './CompareView.svelte';
   import SettingsView from './SettingsView.svelte';
   import { api, fmtDuration, stateLabel, type LiveStatus } from './lib/api';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
 
   let view = $state<'dashboard' | 'timeline' | 'calendar' | 'compare' | 'settings'>('dashboard');
   let live = $state<LiveStatus | null>(null);
@@ -16,10 +16,12 @@
   let focusDate = $state<string | null>(null);
   let restTip = $state(false);
   let restTimer: ReturnType<typeof setTimeout> | undefined;
+  // 监控线程单轮采样崩溃：后端已捕获并继续，这里只让用户知道发生过
+  let monitorTip = $state(false);
   // 备份恢复 / 清空数据后自增，重挂载数据视图以重新拉数据
   let dataEpoch = $state(0);
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
 
   $effect(() => {
     api.getVersion().then((v) => (version = v));
@@ -53,6 +55,9 @@
     const un6 = listen('app://data', () => {
       dataEpoch += 1;
     });
+    const un7 = listen('monitor://panicked', () => {
+      monitorTip = true;
+    });
     // 禁用 WebView 默认右键菜单（排行右键分类等自定义菜单不受影响）
     const prevent = (e: Event) => e.preventDefault();
     window.addEventListener('contextmenu', prevent);
@@ -63,6 +68,7 @@
       un4.then((f) => f());
       un5.then((f) => f());
       un6.then((f) => f());
+      un7.then((f) => f());
       window.removeEventListener('contextmenu', prevent);
     };
   });
@@ -119,8 +125,15 @@
 
   {#if restTip}
     <div class="rest-banner">
-      ⏸ {t('已连续使用较久')}{t('，')}{t('建议起身休息一下')}
+      ⏸ {t('已连续使用较久，建议起身休息一下')}
       <button onclick={() => (restTip = false)}>{t('知道了')}</button>
+    </div>
+  {/if}
+
+  {#if monitorTip}
+    <div class="rest-banner">
+      ⚠ {t('监控遇到异常，已自动恢复')}
+      <button onclick={() => (monitorTip = false)}>{t('知道了')}</button>
     </div>
   {/if}
 

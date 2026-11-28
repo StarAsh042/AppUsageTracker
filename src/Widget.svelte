@@ -1,7 +1,7 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { lang, en } from './lib/i18n';
+  import { lang, translate } from './lib/i18n';
   import {
     api,
     fmtDuration,
@@ -21,7 +21,7 @@
   let collapsedUi = $state(false);
   let edge = $state<'none' | 'left' | 'right' | 'top' | 'bottom'>('none');
 
-  const t = $derived((s: string) => ($lang === 'en' ? (en[s] ?? s) : s));
+  const t = $derived((s: string, params?: Record<string, string | number>) => translate($lang, s, params));
   let catColors = $state<Map<string, string>>(new Map());
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
   // 未贴边就想收起时，Rust 发 widget://hint = "edge_required"
@@ -175,15 +175,21 @@
         <span class="lock" title={t('位置已锁定')}>🔒</span>
       {/if}
       <span class="today">
-        {t('今日')} {live ? fmtDuration(live.today_total_seconds) : '--'}{goalPct !== null ? ` · 🎯${goalPct}%` : ''}
+        {t('今日')}
+        {live ? fmtDuration(live.today_total_seconds) : '--'}{goalPct !== null ? ` · 🎯${goalPct}%` : ''}
       </span>
       {#if hovering}
         <button
           class="close-btn"
           title={t('关闭悬浮窗')}
           onmousedown={(e) => e.stopPropagation()}
-          onclick={(e) => { e.stopPropagation(); api.closeWidget(); }}
-        >✕</button>
+          onclick={(e) => {
+            e.stopPropagation();
+            api.closeWidget();
+          }}
+        >
+          ✕
+        </button>
       {/if}
     </div>
 
@@ -191,7 +197,8 @@
       {#if live?.current_app}
         <div class="app-name">{live.current_app.display_name}</div>
         <div class="app-meta">
-          {categoryLabel(live.current_category ?? '', $lang)} · {t('本轮')} {fmtDuration(live.current_seconds)}
+          {categoryLabel(live.current_category ?? '', $lang)} · {t('本轮')}
+          {fmtDuration(live.current_seconds)}
         </div>
       {:else}
         <div class="app-name muted">{t('当前无前台应用')}</div>
@@ -389,7 +396,6 @@
     font-variant-numeric: tabular-nums;
     font-size: 11px;
   }
-
 
   /* 锁徽标跟在状态文字后面（原来绝对定位压住「今日」） */
   .lock {

@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::monitor::flush_state;
 use crate::settings::{set_paused_internal, set_widget_visible};
+use crate::sync::MutexExt;
 use crate::windows::show_main;
 use crate::AppState;
 
@@ -57,8 +58,7 @@ pub(crate) fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 set_widget_visible(app, !visible);
                 let _ = st
                     .tray
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .as_ref()
                     .map(|h| h.widget_toggle.set_checked(!visible));
             }
@@ -68,8 +68,7 @@ pub(crate) fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 set_paused_internal(app, paused);
                 let _ = st
                     .tray
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .as_ref()
                     .map(|h| h.pause_toggle.set_checked(paused));
             }
@@ -83,9 +82,9 @@ pub(crate) fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 // 失败也不阻止退出，最多是 -wal 留到下次启动。
                 {
                     let st = app.state::<AppState>();
-                    let store = st.store.lock().unwrap();
+                    let store = st.store.lock_or_recover();
                     if let Err(e) = store.checkpoint() {
-                        eprintln!("checkpoint on quit failed: {e}");
+                        log::error!("checkpoint on quit failed: {e}");
                     }
                 }
                 app.exit(0);
@@ -106,8 +105,8 @@ pub(crate) fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let tray = tray_icon;
 
     let state = app.state::<AppState>();
-    *state.tray_icon.lock().unwrap() = Some(tray);
-    *state.tray.lock().unwrap() = Some(TrayHandles {
+    *state.tray_icon.lock_or_recover() = Some(tray);
+    *state.tray.lock_or_recover() = Some(TrayHandles {
         widget_toggle: widget_handle,
         pause_toggle: pause_handle,
     });

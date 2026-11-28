@@ -10,6 +10,34 @@
 
 （暂无未发布变更）
 
+## [0.7.0] - 2026-11-28
+
+### Added
+
+- **日志：** 运行日志写到数据目录下的 `logs/app-YYYY-MM-DD.log`，按天滚动、保留 7 天；设置页新增「打开日志目录」。
+- **错误提示：** 写入失败、设置文件损坏、监控线程异常、热键无效都改成界面上的明确提示，不再只留一条控制台输出。
+- **设置：** 新增「排除应用」输入框的无障碍标签，键盘与读屏都能定位到。
+
+### Changed
+
+- **保存设置：** `settings.json` 改为先写临时文件再原子替换，并保留一份 `.bak`；主文件损坏时自动从备份恢复，两份都读不出来时回到默认值，损坏的原文件改名为 `settings.json.corrupt` 留档。
+- **本地 HTTP API：** 只对扩展与本地客户端放行，网页来源一律拒绝；并发连接改为固定线程池（4 个工作线程、8 个排队），超出返回 503；错误响应统一为合法 JSON 并补齐 400 / 403 / 404 / 500 / 503。
+- **前端文案：** 中英文案改放在 `src-tauri/locales/` 与后端共用一份，不再分两处维护；带插值的句子（如「日均 X（Y 天）」）整句成条，不再拼接标点。
+- **界面结构：** 仪表盘的排行、分类占比、趋势图与设置页的扩展安装弹窗拆成独立组件，行为不变。
+- **依赖：** `rusqlite` 升到 0.41（内置 SQLite 3.54.1）、`url` 升到 2.5.9、`cookie` 升到 0.18.3，修掉三个已公开的 RUSTSEC 条目。
+
+### Fixed
+
+- **不丢数据：** 落库失败时采样批次保留在内存并按间隔重试，写成功才出队；连续失败 3 次发系统通知。整批写入放进一个事务，重试不会写出重复明细。
+- **不跟着 panic：** 取锁统一走可恢复路径，持锁线程 panic 后统计与界面继续工作；监控线程单轮 panic 不再终止整个统计。
+- **热键：** `hotkey_main` / `hotkey_widget` 填了非法串时保存被拒绝，启动后按热键也不会崩溃，只记一条告警。
+- **本地 HTTP API：** 从 0.6.4 起服务启动后立刻退出，端口从未进入监听，外部工具一直连不上，日志里也没有任何痕迹。代际判断的停止谓词写反了，线程一启动就被判定为「该停」，现已改正并补上用例。
+
+### Internal
+
+- **测试：** 前端接上 `@testing-library/svelte` 与 jsdom，仪表盘、时间线、设置三个视图补 14 个组件用例（前端合计 47 个）；`src-tauri` 抽出备份解析、设置版本迁移、贴边收起三处纯函数并补用例（合计 44 个）。
+- **仓库卫生：** 接 Prettier 与 ESLint（CI 跑 `npm run lint` 与 `npm run format:check`），加 `.gitattributes` 固定换行符，Dependabot 管 npm / cargo / Actions 三类依赖，CI 增加 `cargo audit` 与 `npm audit`，补 `SECURITY.md`。
+
 ## [0.6.6] - 2026-11-22
 
 ### Added
@@ -238,7 +266,8 @@
 - **settings:** 首次实现设置窗口、开机自启与久坐提醒。
 - **packaging:** 以 MIT 许可证开源发布首个版本。
 
-[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.6...v0.7.0
 [0.6.6]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/StarAsh042/AppUsageTracker/compare/v0.6.3...v0.6.4

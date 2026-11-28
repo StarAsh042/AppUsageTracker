@@ -12,7 +12,9 @@ use tauri::{AppHandle, Manager};
 use tracker_core::category::UNCATEGORIZED;
 
 use crate::dashboard::DashboardTrendPoint;
+use crate::error::AppError;
 use crate::settings::display_alias;
+use crate::sync::MutexExt;
 use crate::AppState;
 
 #[derive(Serialize, Clone)]
@@ -31,13 +33,14 @@ pub(crate) fn get_app_detail(
     app_key: String,
     from: String,
     to: String,
-) -> Result<AppDetail, String> {
+) -> Result<AppDetail, AppError> {
     let state = app.state::<AppState>();
-    let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
+    let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
 
     let store_rows = {
-        let st = state.store.lock().unwrap();
-        st.query_daily(&from, &to).map_err(|e| e.to_string())?
+        let st = state.store.lock_or_recover();
+        st.query_daily(&from, &to)
+            .map_err(|e| AppError::new("db", e.to_string()))?
     };
     let mut daily: HashMap<String, f64> = HashMap::new();
     let mut display_name = String::new();
@@ -51,7 +54,7 @@ pub(crate) fn get_app_detail(
     }
     {
         // 今日内存实时数据
-        let agg = state.aggregator.lock().unwrap();
+        let agg = state.aggregator.lock_or_recover();
         for v in agg.daily.values().filter(|v| {
             v.app_key == app_key
                 && v.usage_date.as_str() >= from.as_str()
@@ -74,7 +77,7 @@ pub(crate) fn get_app_detail(
     }
     let category = resolver.resolve(&display_name, &display_name, &exe_path);
     display_name = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock_or_recover();
         display_alias(&s, &app_key, &display_name)
     };
     let mut points: Vec<DashboardTrendPoint> = daily
@@ -108,10 +111,10 @@ pub(crate) struct ScannedApp {
 }
 
 #[tauri::command]
-pub(crate) fn scan_installed_apps(app: AppHandle) -> Result<Vec<ScannedApp>, String> {
+pub(crate) fn scan_installed_apps(app: AppHandle) -> Result<Vec<ScannedApp>, AppError> {
     #[cfg(windows)]
     {
-        let resolver = app.state::<AppState>().resolver.lock().unwrap().clone();
+        let resolver = app.state::<AppState>().resolver.lock_or_recover().clone();
 
         let mut dirs: Vec<(std::path::PathBuf, &str)> = Vec::new();
         if let Ok(profile) = std::env::var("USERPROFILE") {

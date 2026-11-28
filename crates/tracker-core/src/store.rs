@@ -391,12 +391,27 @@ impl SqliteStore {
         )
     }
 
-    /// 恢复备份：清空并写回五张表，全过程包在同一个事务里。
+    /// 把一组写入包进同一个事务：全成提交，任一失败整批回滚。
     ///
-    /// 逐条 execute 会各自隐式提交（WAL 下每条一次 fsync），上万条明细时把
-    /// store 锁占住数十秒，监控线程的 flush_state 与前端查询全部排队，表现
-    /// 就是恢复时界面卡死。合进一个事务后耗时降到毫秒级，失败还能整体回滚，
-    /// 不会留下半套数据。
+    /// 逐条 execute 会各自隐式提交（WAL 下每条一次 fsync），上万条明细时
+    /// store 锁一占就是数十秒，监控线程的 flush 与前端查询全部排队；更麻烦
+    /// 的是中途失败会留下半套数据。事务化后耗时降到毫秒级，失败也能安全地
+    /// 整批重试。
+    fn in_transaction(
+        &self,
+        f: impl FnOnce() -> Result<(), rusqlite::Error>,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute_batch("BEGIN IMMEDIATE;")?;
+        match f() {
+            Ok(()) => self.conn.execute_batch("COMMIT;"),
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK;");
+                Err(e)
+            }
+        }
+    }
+
+    /// 恢复备份：清空并写回五张表，全过程包在同一个事务里，失败整体回滚。
     pub fn restore_replace(
         &self,
         daily: &[DailyUsage],
@@ -405,22 +420,36 @@ impl SqliteStore {
         titles: &[TitleInterval],
         web: &[WebInterval],
     ) -> Result<(), rusqlite::Error> {
-        self.conn.execute_batch("BEGIN IMMEDIATE;")?;
-        let applied = (|| -> Result<(), rusqlite::Error> {
+        self.in_transaction(|| {
             self.clear_all()?;
             self.save_daily_replace(daily)?;
             self.save_intervals(intervals)?;
             self.save_state_intervals(states)?;
             self.save_title_intervals(titles)?;
             self.save_web_intervals(web)
-        })();
-        match applied {
-            Ok(()) => self.conn.execute_batch("COMMIT;"),
-            Err(e) => {
-                let _ = self.conn.execute_batch("ROLLBACK;");
-                Err(e)
-            }
-        }
+        })
+    }
+
+    /// 监控线程一次 flush 的落库入口：五批数据一个事务，全成或全败。
+    ///
+    /// 调用方在失败时把整批行放回队列重试，所以这里必须全败 ——
+    /// save_intervals 是纯 INSERT（没有去重键），只写进去一半再重试就会写出
+    /// 重复明细。
+    pub fn save_flush(
+        &self,
+        daily: &[DailyUsage],
+        intervals: &[ForegroundInterval],
+        states: &[StateInterval],
+        titles: &[TitleInterval],
+        web: &[WebInterval],
+    ) -> Result<(), rusqlite::Error> {
+        self.in_transaction(|| {
+            self.save_daily_replace(daily)?;
+            self.save_intervals(intervals)?;
+            self.save_state_intervals(states)?;
+            self.save_title_intervals(titles)?;
+            self.save_web_intervals(web)
+        })
     }
 }
 
@@ -660,5 +689,43 @@ mod tests {
         assert_eq!(page_size, 4096, "建库默认页大小");
         assert!(page_count > 0);
         assert!(freelist >= 0 && freelist <= page_count);
+    }
+
+    #[test]
+    fn 落库失败整批回滚且重试不重复() {
+        let store = temp_db();
+        let intervals = vec![ForegroundInterval {
+            app_key: "a".into(),
+            process_name: "a".into(),
+            display_name: "A".into(),
+            exe_path: "a.exe".into(),
+            start_time: "2026-11-15 09:00:00.000".into(),
+            end_time: "2026-11-15 09:02:00.000".into(),
+            duration_seconds: 120.0,
+        }];
+        // 只读连接模拟磁盘写满 / 库被外部占用：这一批必须整体失败
+        store.conn.execute_batch("PRAGMA query_only = ON;").unwrap();
+        assert!(store.save_flush(&[], &intervals, &[], &[], &[]).is_err());
+        store
+            .conn
+            .execute_batch("PRAGMA query_only = OFF;")
+            .unwrap();
+        assert!(
+            store
+                .query_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .is_empty(),
+            "失败的事务不能留下半套数据"
+        );
+        // 同一批行重试成功，且只写进去一次（save_intervals 没有去重键）
+        store.save_flush(&[], &intervals, &[], &[], &[]).unwrap();
+        assert_eq!(
+            store
+                .query_intervals("0000-01-01", "9999-12-31")
+                .unwrap()
+                .len(),
+            1,
+            "重试不能写出重复明细"
+        );
     }
 }
