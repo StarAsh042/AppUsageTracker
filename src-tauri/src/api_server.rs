@@ -58,7 +58,7 @@ pub(crate) fn spawn_api_server(app: &AppHandle) {
         let tx = spawn_workers(API_WORKERS, API_QUEUE, move |stream| {
             handle_api(&worker_app, stream)
         });
-        accept_loop(listener, tx, move || API_GEN.load(Ordering::SeqCst) == gen);
+        accept_loop(listener, tx, move || should_stop(gen));
     });
 }
 
@@ -88,6 +88,14 @@ where
         });
     }
     tx
+}
+
+/// accept_loop 的停止条件：只认「自己的代际已经不是当前代际」。
+///
+/// 单独成函数是为了能测。「刚启动时代际就等于自己」这个前提一旦写反，
+/// 线程会立刻退出，端口从头到尾没监听，而且一行日志都不留。
+fn should_stop(gen: u64) -> bool {
+    API_GEN.load(Ordering::SeqCst) == gen
 }
 
 /// 接受连接并投递给处理池；队列满时直接回 503 然后断开。
@@ -617,5 +625,17 @@ mod tests {
         drop(first);
         drop(rx);
         handle.join().expect("accept loop 应当退出");
+    }
+
+    #[test]
+    fn 刚启动的代际继续监听被顶掉之后才退出() {
+        let gen = API_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(
+            !should_stop(gen),
+            "刚把自己记成当前代际，这时端口必须继续监听"
+        );
+
+        API_GEN.fetch_add(1, Ordering::SeqCst);
+        assert!(should_stop(gen), "被下一次启动顶掉的旧代际必须退出");
     }
 }
